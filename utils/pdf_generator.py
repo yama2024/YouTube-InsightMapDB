@@ -19,22 +19,30 @@ class PDFGenerator:
     def _setup_fonts(self):
         """日本語フォントのセットアップ"""
         try:
-            # Noto Sans JPフォントの登録
-            font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
-            font_bold_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
-
-            # 通常フォントの登録
-            pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
-            # 太字フォントの登録
-            pdfmetrics.registerFont(TTFont('NotoSansJP-Bold', font_bold_path))
-
-            # フォントファミリーの設定
-            addMapping('NotoSansJP', 0, 0, 'NotoSansJP')  # 通常
-            addMapping('NotoSansJP', 1, 0, 'NotoSansJP-Bold')  # 太字
+            # システムにインストールされている可能性のあるフォントパスのリスト
+            font_paths = [
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc"
+            ]
+            
+            font_found = False
+            for font_path in font_paths:
+                if os.path.exists(font_path):
+                    pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
+                    font_found = True
+                    break
+            
+            if not font_found:
+                # フォントが見つからない場合は、Helveticaを使用
+                print("日本語フォントが見つかりませんでした。デフォルトフォントを使用します。")
+                self.use_fallback_fonts = True
+            else:
+                self.use_fallback_fonts = False
 
         except Exception as e:
             print(f"フォントの設定中にエラーが発生しました: {str(e)}")
-            # フォールバックフォントとしてHelveticaを使用
             self.use_fallback_fonts = True
             print("フォールバックフォントを使用します")
 
@@ -43,9 +51,8 @@ class PDFGenerator:
         self.styles = getSampleStyleSheet()
         
         # 基本フォント設定
-        base_font = 'NotoSansJP' if hasattr(self, 'use_fallback_fonts') is False else 'Helvetica'
-        base_font_bold = 'NotoSansJP-Bold' if hasattr(self, 'use_fallback_fonts') is False else 'Helvetica-Bold'
-
+        base_font = 'NotoSansJP' if not self.use_fallback_fonts else 'Helvetica'
+        
         # 本文スタイル
         self.styles.add(ParagraphStyle(
             name='JapaneseBody',
@@ -59,7 +66,7 @@ class PDFGenerator:
         # 見出しスタイル
         self.styles.add(ParagraphStyle(
             name='JapaneseHeading',
-            fontName=base_font_bold,
+            fontName=base_font,
             fontSize=14,
             leading=16,
             wordWrap='CJK',
@@ -72,7 +79,7 @@ class PDFGenerator:
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=self.styles['Title'],
-            fontName='NotoSansJP-Bold' if hasattr(self, 'use_fallback_fonts') is False else 'Helvetica-Bold',
+            fontName='NotoSansJP' if not self.use_fallback_fonts else 'Helvetica',
             fontSize=24,
             spaceAfter=30,
             alignment=1,
@@ -89,7 +96,7 @@ class PDFGenerator:
             ['動画時間', video_info['duration']]
         ]
         
-        base_font = 'NotoSansJP' if hasattr(self, 'use_fallback_fonts') is False else 'Helvetica'
+        base_font = 'NotoSansJP' if not self.use_fallback_fonts else 'Helvetica'
         
         table = Table(data, colWidths=[100, 400])
         table.setStyle(TableStyle([
@@ -100,8 +107,6 @@ class PDFGenerator:
             ('FONTNAME', (0, 0), (-1, -1), base_font),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
             ('PADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ]))
         return table
 
@@ -126,23 +131,24 @@ class PDFGenerator:
         
         try:
             # テキストを適切なサイズのチャンクに分割
-            paragraphs = text.split('\n')
-            for para in paragraphs:
-                if para.strip():
-                    elements.append(Paragraph(para.strip(), style))
-                    elements.append(Spacer(1, 10))
+            max_chars = 1000  # 1チャンクの最大文字数
+            chunks = [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
+            
+            for chunk in chunks:
+                elements.append(Paragraph(chunk, style))
+                elements.append(Spacer(1, 10))
             elements.append(Spacer(1, 20))
         except Exception as e:
             print(f"テキストコンテンツの追加中にエラーが発生しました: {str(e)}")
             # 基本的なテキスト追加を試行
-            elements.append(Paragraph(text, style))
+            elements.append(Paragraph(str(text), style))
             elements.append(Spacer(1, 20))
 
     def _add_mindmap(self, elements, mindmap_image):
         """マインドマップの追加"""
         if mindmap_image:
-            elements.append(Paragraph("マインドマップ", self.styles['JapaneseHeading']))
             try:
+                elements.append(Paragraph("マインドマップ", self.styles['JapaneseHeading']))
                 mindmap_buffer = io.BytesIO(mindmap_image)
                 mindmap_buffer.seek(0)
                 drawing = svg2rlg(mindmap_buffer)
@@ -201,7 +207,8 @@ class PDFGenerator:
             )
             
             # マインドマップの追加
-            self._add_mindmap(elements, mindmap_image)
+            if mindmap_image:
+                self._add_mindmap(elements, mindmap_image)
 
             # PDFの生成
             doc.build(elements)

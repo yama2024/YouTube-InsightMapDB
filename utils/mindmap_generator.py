@@ -79,25 +79,38 @@ class MindMapGenerator:
         try:
             G = nx.Graph()
             
-            # ノードとエッジの追加
+            # 一意のノードIDを生成
+            node_id = 0
+            node_mapping = {}
+            
+            # 中心ノードの追加
             center = mindmap_data['center']
-            G.add_node(center)
+            node_mapping[node_id] = center
+            G.add_node(node_id, label=center)
+            center_id = node_id
+            node_id += 1
             
             # 色の設定
-            node_colors = ['#1B365D']  # 中心ノードの色
+            node_colors = ['#1B365D']
             edge_colors = []
             
             # 各ブランチの追加
-            for i, branch in enumerate(mindmap_data['branches']):
-                G.add_node(branch['name'])
-                G.add_edge(center, branch['name'])
+            for branch in mindmap_data['branches']:
+                # メインブランチの追加
+                node_mapping[node_id] = branch['name']
+                G.add_node(node_id, label=branch['name'])
+                G.add_edge(center_id, node_id)
+                branch_id = node_id
+                node_id += 1
                 node_colors.append('#4A90E2')
                 edge_colors.append('#8AB4F8')
                 
                 # サブブランチの追加
                 for sub in branch['sub_branches']:
-                    G.add_node(sub)
-                    G.add_edge(branch['name'], sub)
+                    node_mapping[node_id] = sub
+                    G.add_node(node_id, label=sub)
+                    G.add_edge(branch_id, node_id)
+                    node_id += 1
                     node_colors.append('#7FB3D5')
                     edge_colors.append('#8AB4F8')
             
@@ -117,7 +130,7 @@ class MindMapGenerator:
                         mode='lines'
                     )
                 )
-
+            
             node_trace = go.Scatter(
                 x=[pos[node][0] for node in G.nodes()],
                 y=[pos[node][1] for node in G.nodes()],
@@ -127,11 +140,11 @@ class MindMapGenerator:
                     color=node_colors,
                     line_width=2
                 ),
-                text=list(G.nodes()),
+                text=[G.nodes[node]['label'] for node in G.nodes()],
                 textposition="middle center",
                 hoverinfo='text'
             )
-
+            
             # レイアウトの設定
             layout = go.Layout(
                 showlegend=False,
@@ -144,7 +157,7 @@ class MindMapGenerator:
                 width=800,
                 height=600
             )
-
+            
             # 図の作成
             fig = go.Figure(data=edge_trace + [node_trace], layout=layout)
             return fig
