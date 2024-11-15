@@ -23,36 +23,36 @@ if os.path.exists(css_path):
 # ヘッダーセクション
 st.title("Expand YouTube-map")
 st.markdown("""
-<div style='background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); 
+<div style='background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); 
             padding: 2rem; border-radius: 16px; margin: 2rem 0; 
             border: 1px solid rgba(255, 255, 255, 0.2);
             animation: fadeIn 0.8s ease-in;'>
-    <h4 style='margin: 0; color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
-              font-size: 1.5rem; margin-bottom: 1rem;'>
+    <h4 style='margin: 0; color: #1a365d; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+              font-size: 1.5rem; margin-bottom: 1rem; font-weight: 600;'>
         🎯 Expand Your Knowledge
     </h4>
-    <p style='color: rgba(255,255,255,0.9); margin-bottom: 1.5rem;'>
+    <p style='color: #2d3748; margin-bottom: 1.5rem; font-weight: 500;'>
         YouTube動画からインサイトを抽出し、知識を拡張するためのツールです。
     </p>
     <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;'>
-        <div style='background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 12px; 
-                    border: 1px solid rgba(255,255,255,0.1);'>
-            <h5 style='color: white; margin: 0; font-size: 1.1rem;'>📝 文字起こし</h5>
-            <p style='color: rgba(255,255,255,0.8); margin: 0.5rem 0 0 0; font-size: 0.9rem;'>
+        <div style='background: rgba(255,255,255,0.9); padding: 1rem; border-radius: 12px; 
+                    border: 1px solid rgba(26, 54, 93, 0.1);'>
+            <h5 style='color: #1a365d; margin: 0; font-size: 1.1rem; font-weight: 600;'>📝 文字起こし</h5>
+            <p style='color: #4a5568; margin: 0.5rem 0 0 0; font-size: 0.9rem; font-weight: 500;'>
                 動画の内容を自動でテキスト化
             </p>
         </div>
-        <div style='background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 12px;
-                    border: 1px solid rgba(255,255,255,0.1);'>
-            <h5 style='color: white; margin: 0; font-size: 1.1rem;'>🤖 AI要約</h5>
-            <p style='color: rgba(255,255,255,0.8); margin: 0.5rem 0 0 0; font-size: 0.9rem;'>
+        <div style='background: rgba(255,255,255,0.9); padding: 1rem; border-radius: 12px;
+                    border: 1px solid rgba(26, 54, 93, 0.1);'>
+            <h5 style='color: #1a365d; margin: 0; font-size: 1.1rem; font-weight: 600;'>🤖 AI要約</h5>
+            <p style='color: #4a5568; margin: 0.5rem 0 0 0; font-size: 0.9rem; font-weight: 500;'>
                 重要なポイントを自動で抽出
             </p>
         </div>
-        <div style='background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 12px;
-                    border: 1px solid rgba(255,255,255,0.1);'>
-            <h5 style='color: white; margin: 0; font-size: 1.1rem;'>🔄 マインドマップ</h5>
-            <p style='color: rgba(255,255,255,0.8); margin: 0.5rem 0 0 0; font-size: 0.9rem;'>
+        <div style='background: rgba(255,255,255,0.9); padding: 1rem; border-radius: 12px;
+                    border: 1px solid rgba(26, 54, 93, 0.1);'>
+            <h5 style='color: #1a365d; margin: 0; font-size: 1.1rem; font-weight: 600;'>🔄 マインドマップ</h5>
+            <p style='color: #4a5568; margin: 0.5rem 0 0 0; font-size: 0.9rem; font-weight: 500;'>
                 コンテンツを視覚的に構造化
             </p>
         </div>
@@ -83,23 +83,28 @@ if youtube_url:
         
         with col2:
             st.markdown(f"""
-            <div style='background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px);
+            <div style='background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px);
                         padding: 1.5rem; border-radius: 16px; height: 100%;
                         border: 1px solid rgba(255, 255, 255, 0.2);'>
-                <h2 style='margin: 0; color: white; font-size: 1.3rem; text-shadow: 1px 1px 2px rgba(0,0,0,0.2);'>
+                <h2 style='margin: 0; color: #1a365d; font-size: 1.3rem; font-weight: 600;
+                          text-shadow: 1px 1px 2px rgba(0,0,0,0.1);'>
                     {video_info['title']}
                 </h2>
                 <p style='margin: 1rem 0;'>
-                    <span style='background: rgba(255,255,255,0.2); padding: 0.4rem 0.8rem; 
-                              border-radius: 8px; margin-right: 0.8rem; color: white;'>
+                    <span style='background: rgba(26,54,93,0.1); padding: 0.4rem 0.8rem; 
+                              border-radius: 8px; margin-right: 0.8rem; color: #1a365d;
+                              font-weight: 500;'>
                         👤 {video_info['channel_title']}
                     </span>
-                    <span style='background: rgba(255,255,255,0.2); padding: 0.4rem 0.8rem;
-                              border-radius: 8px; margin-right: 0.8rem; color: white;'>
+                    <span style='background: rgba(26,54,93,0.1); padding: 0.4rem 0.8rem;
+                              border-radius: 8px; margin-right: 0.8rem; color: #1a365d;
+                              font-weight: 500;'>
                         ⏱️ {video_info['duration']}
                     </span>
                 </p>
-                <p style='margin: 0; color: rgba(255,255,255,0.9);'>📅 投稿日: {video_info['published_at']}</p>
+                <p style='margin: 0; color: #2d3748; font-weight: 500;'>
+                    📅 投稿日: {video_info['published_at']}
+                </p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -126,10 +131,10 @@ if youtube_url:
             summary = text_processor.generate_summary(transcript)
             st.markdown("### 📊 AI要約")
             st.markdown(f"""
-            <div style='background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px);
+            <div style='background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px);
                         padding: 1.5rem; border-radius: 16px;
                         border: 1px solid rgba(255, 255, 255, 0.2);'>
-                <div style='color: white;'>
+                <div style='color: #1a365d; font-weight: 500;'>
                     {summary}
                 </div>
             </div>
