@@ -2,10 +2,14 @@ from googleapiclient.discovery import build
 from datetime import datetime
 import isodate
 import re
+import os
 
 class YouTubeHelper:
     def __init__(self):
-        self.youtube = build('youtube', 'v3', developerKey='YOUR_API_KEY')
+        api_key = os.environ.get('YOUTUBE_API_KEY')
+        if not api_key:
+            raise ValueError("YouTube API key is not set in environment variables")
+        self.youtube = build('youtube', 'v3', developerKey=api_key)
 
     def extract_video_id(self, url):
         """URLからビデオIDを抽出"""

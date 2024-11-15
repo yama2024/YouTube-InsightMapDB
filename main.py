@@ -4,6 +4,7 @@ from utils.youtube_helper import YouTubeHelper
 from utils.text_processor import TextProcessor
 from utils.mindmap_generator import MindMapGenerator
 import plotly.graph_objects as go
+import os
 
 # ページ設定
 st.set_page_config(
@@ -13,8 +14,10 @@ st.set_page_config(
 )
 
 # カスタムCSSの読み込み
-with open('styles/custom.css') as f:
-    st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+css_path = 'styles/custom.css'
+if os.path.exists(css_path):
+    with open(css_path) as f:
+        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
 # タイトルと説明
 st.title("YouTube コンテンツ分析・可視化ツール")

@@ -1,10 +1,14 @@
 import networkx as nx
 import plotly.graph_objects as go
 import google.generativeai as genai
+import os
 
 class MindMapGenerator:
     def __init__(self):
-        genai.configure(api_key='YOUR_GEMINI_API_KEY')
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key:
+            raise ValueError("Gemini API key is not set in environment variables")
+        genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-pro')
 
     def generate_mindmap(self, text):

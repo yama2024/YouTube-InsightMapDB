@@ -1,10 +1,14 @@
 from youtube_transcript_api import YouTubeTranscriptApi
 import google.generativeai as genai
 import re
+import os
 
 class TextProcessor:
     def __init__(self):
-        genai.configure(api_key='YOUR_GEMINI_API_KEY')
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key:
+            raise ValueError("Gemini API key is not set in environment variables")
+        genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-pro')
 
     def get_transcript(self, url):
