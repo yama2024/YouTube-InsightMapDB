@@ -62,6 +62,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# セッション状態の初期化
+if 'pdf_data' not in st.session_state:
+    st.session_state.pdf_data = None
+if 'video_info' not in st.session_state:
+    st.session_state.video_info = None
+
 # URL入力セクション
 st.markdown("### 🎥 動画を分析する")
 youtube_url = st.text_input(
@@ -75,6 +81,7 @@ if youtube_url:
         # YouTube情報の取得
         yt_helper = YouTubeHelper()
         video_info = yt_helper.get_video_info(youtube_url)
+        st.session_state.video_info = video_info
         
         # 動画情報の表示
         st.markdown("### 📺 動画の基本情報")
@@ -123,7 +130,7 @@ if youtube_url:
                 # 文字起こしの保存ボタン
                 st.download_button(
                     label="💾 テキストを保存",
-                    data=transcript,
+                    data=transcript.encode('utf-8'),
                     file_name="transcript.txt",
                     mime="text/plain",
                     use_container_width=True
@@ -156,21 +163,26 @@ if youtube_url:
         # PDFレポートの生成と保存ボタンの追加
         st.markdown("### 📑 分析レポート")
         with st.spinner("PDFレポートを生成中..."):
-            pdf_gen = PDFGenerator()
-            pdf_data = pdf_gen.create_pdf(
-                video_info=video_info,
-                transcript=transcript,
-                summary=summary,
-                mindmap_image=mindmap_svg
-            )
-            
-            st.download_button(
-                label="📥 PDFレポートをダウンロード",
-                data=pdf_data,
-                file_name=f"{video_info['title']}_分析レポート.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+            try:
+                pdf_gen = PDFGenerator()
+                pdf_data = pdf_gen.create_pdf(
+                    video_info=video_info,
+                    transcript=transcript,
+                    summary=summary,
+                    mindmap_image=mindmap_svg
+                )
+                st.session_state.pdf_data = pdf_data
+                
+                st.download_button(
+                    label="📥 PDFレポートをダウンロード",
+                    data=pdf_data,
+                    file_name=f"{video_info['title']}_分析レポート.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+                
+            except Exception as e:
+                st.error(f"PDFレポートの生成中にエラーが発生しました: {str(e)}")
 
     except Exception as e:
         st.error(f"エラーが発生しました: {str(e)}")
