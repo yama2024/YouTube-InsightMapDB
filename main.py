@@ -3,8 +3,10 @@ import pandas as pd
 from utils.youtube_helper import YouTubeHelper
 from utils.text_processor import TextProcessor
 from utils.mindmap_generator import MindMapGenerator
+from utils.pdf_generator import PDFGenerator
 import plotly.graph_objects as go
 import os
+import io
 
 # ページ設定
 st.set_page_config(
@@ -79,7 +81,7 @@ if youtube_url:
         col1, col2 = st.columns([1, 2])
         
         with col1:
-            st.image(video_info['thumbnail_url'], use_column_width=True)
+            st.image(video_info['thumbnail_url'], use_container_width=True)
         
         with col2:
             st.markdown(f"""
@@ -114,7 +116,7 @@ if youtube_url:
         with st.spinner("文字起こしを生成中..."):
             transcript = text_processor.get_transcript(youtube_url)
             st.markdown("### 📝 文字起こし")
-            st.text_area("", transcript, height=200)
+            st.text_area("文字起こしテキスト", transcript, height=200, label_visibility="collapsed")
             
             col1, col2 = st.columns([1, 4])
             with col1:
@@ -147,6 +149,29 @@ if youtube_url:
             st.markdown("### 🔄 マインドマップ")
             fig = mindmap_gen.create_visualization(mindmap_data)
             st.plotly_chart(fig, use_container_width=True)
+
+            # マインドマップの画像をバイト列として保存
+            mindmap_bytes = fig.to_image(format="png")
+            mindmap_buffer = io.BytesIO(mindmap_bytes)
+
+        # PDFレポートの生成と保存ボタンの追加
+        st.markdown("### 📑 分析レポート")
+        with st.spinner("PDFレポートを生成中..."):
+            pdf_gen = PDFGenerator()
+            pdf_data = pdf_gen.create_pdf(
+                video_info=video_info,
+                transcript=transcript,
+                summary=summary,
+                mindmap_image_path=mindmap_buffer
+            )
+            
+            st.download_button(
+                label="📥 PDFレポートをダウンロード",
+                data=pdf_data,
+                file_name=f"{video_info['title']}_分析レポート.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
 
     except Exception as e:
         st.error(f"エラーが発生しました: {str(e)}")
