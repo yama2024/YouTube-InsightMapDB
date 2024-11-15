@@ -1,0 +1,79 @@
+/* メインコンテナのスタイリング */
+.main {
+    padding: 2rem;
+}
+
+/* タイトルのスタイリング */
+.st-emotion-cache-10trblm {
+    color: #1B365D;
+    font-family: 'Noto Sans JP', sans-serif;
+    margin-bottom: 2rem;
+}
+
+/* サブヘッダーのスタイリング */
+.st-emotion-cache-1629p8f {
+    color: #2C3E50;
+    font-family: 'Noto Sans JP', sans-serif;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+
+/* テキストエリアのスタイリング */
+.stTextArea textarea {
+    font-family: 'Noto Sans JP', sans-serif;
+    border: 1px solid #E0E3E7;
+    border-radius: 4px;
+    padding: 0.5rem;
+}
+
+/* ボタンのスタイリング */
+.stButton > button {
+    background-color: #1B365D;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    font-family: 'Noto Sans JP', sans-serif;
+    transition: background-color 0.3s;
+}
+
+.stButton > button:hover {
+    background-color: #2C5282;
+}
+
+/* エラーメッセージのスタイリング */
+.st-emotion-cache-16idsys {
+    background-color: #FEE2E2;
+    border: 1px solid #FCA5A5;
+    border-radius: 4px;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+/* プログレスインジケータのスタイリング */
+.stProgress > div > div {
+    background-color: #1B365D;
+}
+
+/* マインドマップコンテナのスタイリング */
+.element-container:has(> div > .js-plotly-plot) {
+    background-color: white;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* レスポンシブデザイン */
+@media (max-width: 768px) {
+    .main {
+        padding: 1rem;
+    }
+    
+    .st-emotion-cache-10trblm {
+        font-size: 1.5rem;
+    }
+    
+    .st-emotion-cache-1629p8f {
+        font-size: 1.2rem;
+    }
+}
