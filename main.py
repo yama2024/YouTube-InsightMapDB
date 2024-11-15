@@ -150,9 +150,8 @@ if youtube_url:
             fig = mindmap_gen.create_visualization(mindmap_data)
             st.plotly_chart(fig, use_container_width=True)
 
-            # マインドマップの画像をバイト列として保存
-            mindmap_bytes = fig.to_image(format="png")
-            mindmap_buffer = io.BytesIO(mindmap_bytes)
+            # マインドマップの画像をSVG形式で保存
+            mindmap_svg = fig.to_image(format="svg")
 
         # PDFレポートの生成と保存ボタンの追加
         st.markdown("### 📑 分析レポート")
@@ -162,7 +161,7 @@ if youtube_url:
                 video_info=video_info,
                 transcript=transcript,
                 summary=summary,
-                mindmap_image_path=mindmap_buffer
+                mindmap_image=mindmap_svg
             )
             
             st.download_button(

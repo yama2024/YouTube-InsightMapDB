@@ -2,6 +2,7 @@ import networkx as nx
 import plotly.graph_objects as go
 import google.generativeai as genai
 import os
+import io
 
 class MindMapGenerator:
     def __init__(self):
@@ -103,7 +104,9 @@ class MindMapGenerator:
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
+            paper_bgcolor='rgba(0,0,0,0)',
+            width=800,
+            height=600
         )
 
         # 図の作成

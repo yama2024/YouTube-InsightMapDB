@@ -6,6 +6,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Tabl
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import registerFontFamily
+from svglib.svglib import svg2rlg
 import os
 import io
 
@@ -29,7 +30,7 @@ class PDFGenerator:
             spaceAfter=20
         ))
 
-    def create_pdf(self, video_info, transcript, summary, mindmap_image_path=None):
+    def create_pdf(self, video_info, transcript, summary, mindmap_image=None):
         """分析結果のPDFを生成"""
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -110,11 +111,17 @@ class PDFGenerator:
         elements.append(Spacer(1, 20))
 
         # マインドマップ画像
-        if mindmap_image_path:
+        if mindmap_image:
             elements.append(Paragraph("マインドマップ", self.styles['JapaneseHeading']))
             try:
-                img = Image(mindmap_image_path, width=500, height=375)  # 4:3 aspect ratio
-                elements.append(img)
+                # SVGデータをReportLabの描画オブジェクトに変換
+                mindmap_buffer = io.BytesIO(mindmap_image)
+                drawing = svg2rlg(mindmap_buffer)
+                
+                if drawing:
+                    # 描画オブジェクトのサイズを調整
+                    drawing.scale(0.7, 0.7)  # Scale down to 70% of original size
+                    elements.append(drawing)
             except Exception as e:
                 print(f"マインドマップ画像の追加に失敗しました: {str(e)}")
 

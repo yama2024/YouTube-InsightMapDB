@@ -12,5 +12,6 @@ dependencies = [
     "plotly>=5.24.1",
     "reportlab>=4.2.5",
     "streamlit>=1.40.1",
+    "svglib>=1.5.1",
     "youtube-transcript-api>=0.6.2",
 ]
