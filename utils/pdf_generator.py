@@ -13,21 +13,53 @@ import requests
 
 class PDFGenerator:
     def __init__(self):
+        self._setup_fonts()
+        self._setup_styles()
+
+    def _setup_fonts(self):
+        """日本語フォントのセットアップ"""
+        try:
+            # Noto Sans JPフォントの登録
+            font_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+            font_bold_path = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
+
+            # 通常フォントの登録
+            pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
+            # 太字フォントの登録
+            pdfmetrics.registerFont(TTFont('NotoSansJP-Bold', font_bold_path))
+
+            # フォントファミリーの設定
+            addMapping('NotoSansJP', 0, 0, 'NotoSansJP')  # 通常
+            addMapping('NotoSansJP', 1, 0, 'NotoSansJP-Bold')  # 太字
+
+        except Exception as e:
+            print(f"フォントの設定中にエラーが発生しました: {str(e)}")
+            # フォールバックフォントとしてHelveticaを使用
+            self.use_fallback_fonts = True
+            print("フォールバックフォントを使用します")
+
+    def _setup_styles(self):
+        """スタイルの設定"""
         self.styles = getSampleStyleSheet()
         
-        # Japanese text styles
+        # 基本フォント設定
+        base_font = 'NotoSansJP' if hasattr(self, 'use_fallback_fonts') is False else 'Helvetica'
+        base_font_bold = 'NotoSansJP-Bold' if hasattr(self, 'use_fallback_fonts') is False else 'Helvetica-Bold'
+
+        # 本文スタイル
         self.styles.add(ParagraphStyle(
             name='JapaneseBody',
-            fontName='Helvetica',
+            fontName=base_font,
             fontSize=10,
             leading=14,
             wordWrap='CJK',
             encoding='utf-8'
         ))
         
+        # 見出しスタイル
         self.styles.add(ParagraphStyle(
             name='JapaneseHeading',
-            fontName='Helvetica-Bold',
+            fontName=base_font_bold,
             fontSize=14,
             leading=16,
             wordWrap='CJK',
@@ -40,7 +72,7 @@ class PDFGenerator:
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=self.styles['Title'],
-            fontName='Helvetica-Bold',
+            fontName='NotoSansJP-Bold' if hasattr(self, 'use_fallback_fonts') is False else 'Helvetica-Bold',
             fontSize=24,
             spaceAfter=30,
             alignment=1,
@@ -57,13 +89,15 @@ class PDFGenerator:
             ['動画時間', video_info['duration']]
         ]
         
+        base_font = 'NotoSansJP' if hasattr(self, 'use_fallback_fonts') is False else 'Helvetica'
+        
         table = Table(data, colWidths=[100, 400])
         table.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 1, colors.grey),
             ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
             ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTNAME', (0, 0), (-1, -1), base_font),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
             ('PADDING', (0, 0), (-1, -1), 6),
             ('TOPPADDING', (0, 0), (-1, -1), 3),
@@ -90,12 +124,19 @@ class PDFGenerator:
         if title:
             elements.append(Paragraph(title, self.styles['JapaneseHeading']))
         
-        paragraphs = text.split('\n')
-        for para in paragraphs:
-            if para.strip():
-                elements.append(Paragraph(para.strip(), style))
-                elements.append(Spacer(1, 10))
-        elements.append(Spacer(1, 20))
+        try:
+            # テキストを適切なサイズのチャンクに分割
+            paragraphs = text.split('\n')
+            for para in paragraphs:
+                if para.strip():
+                    elements.append(Paragraph(para.strip(), style))
+                    elements.append(Spacer(1, 10))
+            elements.append(Spacer(1, 20))
+        except Exception as e:
+            print(f"テキストコンテンツの追加中にエラーが発生しました: {str(e)}")
+            # 基本的なテキスト追加を試行
+            elements.append(Paragraph(text, style))
+            elements.append(Spacer(1, 20))
 
     def _add_mindmap(self, elements, mindmap_image):
         """マインドマップの追加"""
@@ -107,7 +148,7 @@ class PDFGenerator:
                 drawing = svg2rlg(mindmap_buffer)
                 
                 if drawing:
-                    # Scale down to fit the page width
+                    # ページ幅に合わせてスケール調整
                     scale_factor = min(0.7, (A4[0] - 2*72) / drawing.width)
                     drawing.scale(scale_factor, scale_factor)
                     elements.append(drawing)
