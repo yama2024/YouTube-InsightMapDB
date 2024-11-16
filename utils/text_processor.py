@@ -79,10 +79,30 @@ class TextProcessor:
 {text}
 """
         try:
-            response = self.model.generate_content(prompt)
+            generation_config = genai.types.GenerationConfig(
+                temperature=0.3,
+                top_p=0.8,
+                top_k=40,
+                max_output_tokens=2048,
+            )
+            
+            safety_settings = {
+                "HARM_CATEGORY_DANGEROUS": "BLOCK_NONE"
+            }
+            
+            response = self.model.generate_content(
+                prompt,
+                generation_config=generation_config,
+                safety_settings=safety_settings
+            )
+            
+            if not response.text:
+                raise ValueError("校閲結果が空です")
+                
             return response.text
+            
         except Exception as e:
-            raise Exception("テキストの校閲に失敗しました")
+            raise Exception(f"テキストの校閲に失敗しました: {str(e)}")
 
     def _extract_video_id(self, url):
         """URLからビデオIDを抽出"""
