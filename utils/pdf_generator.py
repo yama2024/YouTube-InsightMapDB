@@ -25,7 +25,7 @@ class PDFGenerator:
         """日本語フォントのセットアップ"""
         try:
             # フォントをダウンロード
-            font_url = "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/Japanese/NotoSansJP-Regular.otf"
+            font_url = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansJP-Regular.otf"
             logger.info("日本語フォントのダウンロードを開始します")
             response = requests.get(font_url)
             
@@ -110,10 +110,10 @@ class PDFGenerator:
             
             # 動画情報テーブル
             data = [
-                ['タイトル', video_info['title']],
-                ['チャンネル', video_info['channel_title']],
-                ['投稿日', video_info['published_at']],
-                ['動画時間', video_info['duration']]
+                ['タイトル', video_info['title'].encode('utf-8').decode('utf-8')],
+                ['チャンネル', video_info['channel_title'].encode('utf-8').decode('utf-8')],
+                ['投稿日', video_info['published_at'].encode('utf-8').decode('utf-8')],
+                ['動画時間', video_info['duration'].encode('utf-8').decode('utf-8')]
             ]
             
             table = Table(data, colWidths=[100, 400])
@@ -151,14 +151,16 @@ class PDFGenerator:
             max_chars = 1000
             chunks = [transcript[i:i+max_chars] for i in range(0, len(transcript), max_chars)]
             for chunk in chunks:
-                elements.append(Paragraph(chunk, self.styles['JapaneseBody']))
+                text = chunk.encode('utf-8').decode('utf-8')
+                elements.append(Paragraph(text, self.styles['JapaneseBody']))
                 elements.append(Spacer(1, 10))
             elements.append(Spacer(1, 20))
 
             # 要約
             logger.info("要約の追加を開始します")
             elements.append(Paragraph("AI要約", self.styles['JapaneseHeading']))
-            elements.append(Paragraph(summary, self.styles['JapaneseBody']))
+            summary_text = summary.encode('utf-8').decode('utf-8')
+            elements.append(Paragraph(summary_text, self.styles['JapaneseBody']))
             elements.append(Spacer(1, 20))
 
             # マインドマップ
