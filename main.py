@@ -272,9 +272,8 @@ if youtube_url:
                 font-weight: 700;
             ">📝 文字起こし</h3>
             """, unsafe_allow_html=True)
-            st.text_area("文字起こしテキスト", transcript, height=200, label_visibility="collapsed")
             
-            col1, col2 = st.columns([1, 4])
+            col1, col2, col3 = st.columns([1, 2, 2])
             with col1:
                 st.download_button(
                     label="💾 テキストを保存",
@@ -283,33 +282,46 @@ if youtube_url:
                     mime="text/plain",
                     use_container_width=True
                 )
+            with col2:
+                if st.button("✨ 校閲して整形する", use_container_width=True):
+                    try:
+                        with st.spinner("テキストを校閲中..."):
+                            proofread_transcript = text_processor.proofread_text(transcript)
+                            st.session_state.proofread_transcript = proofread_transcript
+                            st.experimental_rerun()
+                    except Exception as e:
+                        st.error(f"校閲中にエラーが発生しました: {str(e)}")
 
-        with st.spinner("要約を生成中..."):
-            summary = text_processor.generate_summary(transcript)
-            st.markdown("""
-            <h3 style="
-                font-size: 2rem;
-                color: white;
-                margin: 2rem 0 1rem;
-                font-weight: 700;
-            ">📊 AI要約</h3>
-            """, unsafe_allow_html=True)
-            st.markdown(f"""
-            <div style="
-                background: rgba(255, 255, 255, 0.15);
-                backdrop-filter: blur(10px);
-                padding: 2rem;
-                border-radius: 20px;
-                border: 1px solid rgba(255, 255, 255, 0.2);
-            ">
-                <div style="
+            # テキストエリアを校閲済みテキストで更新
+            display_text = st.session_state.get('proofread_transcript', transcript)
+            st.text_area("文字起こしテキスト", display_text, height=200, label_visibility="collapsed")
+
+            with col3:
+                st.markdown("""
+                <h3 style="
+                    font-size: 2rem;
                     color: white;
-                    font-weight: 500;
-                    font-size: 1.1rem;
-                    line-height: 1.6;
-                ">{summary}</div>
-            </div>
-            """, unsafe_allow_html=True)
+                    margin: 2rem 0 1rem;
+                    font-weight: 700;
+                ">📊 AI要約</h3>
+                """, unsafe_allow_html=True)
+                summary = text_processor.generate_summary(transcript)
+                st.markdown(f"""
+                <div style="
+                    background: rgba(255, 255, 255, 0.15);
+                    backdrop-filter: blur(10px);
+                    padding: 2rem;
+                    border-radius: 20px;
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                ">
+                    <div style="
+                        color: white;
+                        font-weight: 500;
+                        font-size: 1.1rem;
+                        line-height: 1.6;
+                    ">{summary}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
         # マインドマップの生成と表示
         mindmap_gen = MindMapGenerator()

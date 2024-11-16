@@ -38,6 +38,24 @@ class TextProcessor:
         except Exception as e:
             raise Exception("要約の生成に失敗しました")
 
+    def proofread_text(self, text):
+        """テキストを校閲して整形"""
+        prompt = f"""
+        以下のテキストを校閲して、読みやすく整形してください：
+        - 句読点や改行を適切に追加
+        - 誤字脱字を修正
+        - 話し言葉を書き言葉に修正
+        - 文章の構造を整理
+        
+        テキスト:
+        {text}
+        """
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            raise Exception("テキストの校閲に失敗しました")
+
     def _extract_video_id(self, url):
         """URLからビデオIDを抽出"""
         video_id_match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', url)
