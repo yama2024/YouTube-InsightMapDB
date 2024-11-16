@@ -52,98 +52,170 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         font-weight: 700;
     }
+    
+    .app-header {
+        text-align: center;
+        padding: 2rem 0;
+        animation: fadeIn 1.2s ease-in;
+    }
+    
+    .app-header h1 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(90deg, #1a365d, #2d4a8a);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .app-header p {
+        font-size: 1.2rem;
+        color: #4a5568;
+        margin-bottom: 2rem;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+    }
+    
+    .feature-container {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 2.5rem;
+        border-radius: 20px;
+        margin: 2rem 0;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        animation: fadeIn 0.8s ease-in;
+    }
+    
+    .feature-container h4 {
+        margin: 0;
+        color: #1a365d;
+        font-size: 1.8rem;
+        margin-bottom: 1.5rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+    
+    .feature-container p {
+        color: #2d3748;
+        margin-bottom: 2rem;
+        font-weight: 500;
+        font-size: 1.1rem;
+        line-height: 1.6;
+    }
+    
+    .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+    }
+    
+    .feature-card {
+        background: rgba(255,255,255,0.9);
+        padding: 1.5rem;
+        border-radius: 16px;
+        border: 1px solid rgba(26, 54, 93, 0.1);
+    }
+    
+    .feature-card h5 {
+        color: #1a365d;
+        margin: 0;
+        font-size: 1.3rem;
+        font-weight: 700;
+    }
+    
+    .feature-card p {
+        color: #4a5568;
+        margin: 0.8rem 0 0 0;
+        font-size: 1rem;
+        font-weight: 500;
+        line-height: 1.5;
+    }
+    
+    .info-container {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 2rem;
+        border-radius: 20px;
+        height: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    
+    .info-container h2 {
+        margin: 0;
+        color: #1a365d;
+        font-size: 1.5rem;
+        font-weight: 700;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        line-height: 1.4;
+    }
+    
+    .info-tags {
+        margin: 1.5rem 0;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .info-tags span {
+        background: rgba(26,54,93,0.1);
+        padding: 0.6rem 1rem;
+        border-radius: 12px;
+        margin-right: 1rem;
+        color: #1a365d;
+        font-weight: 600;
+        display: inline-block;
+        margin-bottom: 0.5rem;
+    }
+    
+    .publish-date {
+        margin: 0;
+        color: #2d3748;
+        font-weight: 500;
+        font-size: 1.1rem;
+    }
+    
+    .summary-container {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 2rem;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    
+    .summary-content {
+        color: #1a365d;
+        font-weight: 500;
+        font-size: 1.1rem;
+        line-height: 1.6;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ヘッダーセクション
 st.markdown("""
-<div style='text-align: center; padding: 2rem 0; animation: fadeIn 1.2s ease-in;'>
-    <h1 style='font-size: 2.5rem; font-weight: 800; margin-bottom: 0.5rem;
-              background: linear-gradient(90deg, #1a365d, #2d4a8a);
-              -webkit-background-clip: text;
-              -webkit-text-fill-color: transparent;'>
-        YouTube Insight Map
-    </h1>
-    <p style='font-size: 1.2rem; color: #4a5568; margin-bottom: 2rem;
-              font-weight: 500; letter-spacing: 0.5px;'>
-        動画コンテンツを知識の地図に変換
-    </p>
+<div class='app-header'>
+    <h1>YouTube Insight Map</h1>
+    <p>動画コンテンツを知識の地図に変換</p>
 </div>
-""", unsafe_allow_html=True)
 
-st.markdown("""
-<div style='background: rgba(255, 255, 255, 0.95); 
-            backdrop-filter: blur(10px); 
-            padding: 2.5rem; 
-            border-radius: 20px; 
-            margin: 2rem 0; 
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-            animation: fadeIn 0.8s ease-in;'>
-    <h4 style='margin: 0; color: #1a365d; 
-              font-size: 1.8rem; 
-              margin-bottom: 1.5rem; 
-              font-weight: 700;
-              letter-spacing: 0.5px;'>
-        🎯 コンテンツを深く理解する
-    </h4>
-    <p style='color: #2d3748; 
-              margin-bottom: 2rem; 
-              font-weight: 500;
-              font-size: 1.1rem;
-              line-height: 1.6;'>
-        AIを活用して動画コンテンツを分析し、知識を構造化します。
-    </p>
-    <div style='display: grid; 
-                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
-                gap: 1.5rem;'>
-        <div class='card-hover' style='background: rgba(255,255,255,0.9); 
-                    padding: 1.5rem; 
-                    border-radius: 16px;
-                    border: 1px solid rgba(26, 54, 93, 0.1);'>
-            <h5 style='color: #1a365d; 
-                      margin: 0; 
-                      font-size: 1.3rem; 
-                      font-weight: 700;'>📝 文字起こし</h5>
-            <p style='color: #4a5568; 
-                      margin: 0.8rem 0 0 0; 
-                      font-size: 1rem; 
-                      font-weight: 500;
-                      line-height: 1.5;'>
-                高精度な音声認識で動画の内容を自動でテキスト化
-            </p>
+<div class='feature-container'>
+    <h4>🎯 コンテンツを深く理解する</h4>
+    <p>AIを活用して動画コンテンツを分析し、知識を構造化します。</p>
+    <div class='feature-grid'>
+        <div class='feature-card'>
+            <h5>📝 文字起こし</h5>
+            <p>高精度な音声認識で動画の内容を自動でテキスト化</p>
         </div>
-        <div class='card-hover' style='background: rgba(255,255,255,0.9); 
-                    padding: 1.5rem; 
-                    border-radius: 16px;
-                    border: 1px solid rgba(26, 54, 93, 0.1);'>
-            <h5 style='color: #1a365d; 
-                      margin: 0; 
-                      font-size: 1.3rem; 
-                      font-weight: 700;'>🤖 AI要約</h5>
-            <p style='color: #4a5568; 
-                      margin: 0.8rem 0 0 0; 
-                      font-size: 1rem; 
-                      font-weight: 500;
-                      line-height: 1.5;'>
-                重要なポイントを自動で抽出し、簡潔に要約
-            </p>
+        <div class='feature-card'>
+            <h5>🤖 AI要約</h5>
+            <p>重要なポイントを自動で抽出し、簡潔に要約</p>
         </div>
-        <div class='card-hover' style='background: rgba(255,255,255,0.9); 
-                    padding: 1.5rem; 
-                    border-radius: 16px;
-                    border: 1px solid rgba(26, 54, 93, 0.1);'>
-            <h5 style='color: #1a365d; 
-                      margin: 0; 
-                      font-size: 1.3rem; 
-                      font-weight: 700;'>🔄 マインドマップ</h5>
-            <p style='color: #4a5568; 
-                      margin: 0.8rem 0 0 0; 
-                      font-size: 1rem; 
-                      font-weight: 500;
-                      line-height: 1.5;'>
-                コンテンツを視覚的に構造化し、理解を深める
-            </p>
+        <div class='feature-card'>
+            <h5>🔄 マインドマップ</h5>
+            <p>コンテンツを視覚的に構造化し、理解を深める</p>
         </div>
     </div>
 </div>
@@ -156,7 +228,7 @@ if 'video_info' not in st.session_state:
     st.session_state.video_info = None
 
 # URL入力セクション
-st.markdown("<h3 class='section-header' style='font-size: 1.8rem; margin: 2rem 0 1rem;'>🎥 動画を分析する</h3>", unsafe_allow_html=True)
+st.markdown("<h3 class='section-header'>🎥 動画を分析する</h3>", unsafe_allow_html=True)
 youtube_url = st.text_input(
     "YouTube URLを入力してください",
     placeholder="https://www.youtube.com/watch?v=...",
@@ -171,7 +243,7 @@ if youtube_url:
         st.session_state.video_info = video_info
         
         # 動画情報の表示
-        st.markdown("<h3 class='section-header' style='font-size: 1.8rem; margin: 2rem 0 1rem;'>📺 動画の基本情報</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 class='section-header'>📺 動画の基本情報</h3>", unsafe_allow_html=True)
         col1, col2 = st.columns([1, 2])
         
         with col1:
@@ -179,49 +251,13 @@ if youtube_url:
         
         with col2:
             st.markdown(f"""
-            <div style='background: rgba(255, 255, 255, 0.95); 
-                        backdrop-filter: blur(10px);
-                        padding: 2rem; 
-                        border-radius: 20px; 
-                        height: 100%;
-                        border: 1px solid rgba(255, 255, 255, 0.2);
-                        box-shadow: 0 8px 32px rgba(0,0,0,0.1);'>
-                <h2 style='margin: 0; 
-                          color: #1a365d; 
-                          font-size: 1.5rem; 
-                          font-weight: 700;
-                          text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
-                          line-height: 1.4;'>
-                    {video_info['title']}
-                </h2>
-                <p style='margin: 1.5rem 0;'>
-                    <span style='background: rgba(26,54,93,0.1); 
-                              padding: 0.6rem 1rem; 
-                              border-radius: 12px; 
-                              margin-right: 1rem; 
-                              color: #1a365d;
-                              font-weight: 600;
-                              display: inline-block;
-                              margin-bottom: 0.5rem;'>
-                        👤 {video_info['channel_title']}
-                    </span>
-                    <span style='background: rgba(26,54,93,0.1); 
-                              padding: 0.6rem 1rem; 
-                              border-radius: 12px; 
-                              margin-right: 1rem; 
-                              color: #1a365d;
-                              font-weight: 600;
-                              display: inline-block;
-                              margin-bottom: 0.5rem;'>
-                        ⏱️ {video_info['duration']}
-                    </span>
+            <div class='info-container'>
+                <h2>{video_info['title']}</h2>
+                <p class='info-tags'>
+                    <span>👤 {video_info['channel_title']}</span>
+                    <span>⏱️ {video_info['duration']}</span>
                 </p>
-                <p style='margin: 0; 
-                         color: #2d3748; 
-                         font-weight: 500;
-                         font-size: 1.1rem;'>
-                    📅 投稿日: {video_info['published_at']}
-                </p>
+                <p class='publish-date'>📅 投稿日: {video_info['published_at']}</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -230,12 +266,11 @@ if youtube_url:
         
         with st.spinner("文字起こしを生成中..."):
             transcript = text_processor.get_transcript(youtube_url)
-            st.markdown("<h3 class='section-header' style='font-size: 1.8rem; margin: 2rem 0 1rem;'>📝 文字起こし</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 class='section-header'>📝 文字起こし</h3>", unsafe_allow_html=True)
             st.text_area("文字起こしテキスト", transcript, height=200, label_visibility="collapsed")
             
             col1, col2 = st.columns([1, 4])
             with col1:
-                # 文字起こしの保存ボタン
                 st.download_button(
                     label="💾 テキストを保存",
                     data=transcript.encode('utf-8'),
@@ -246,20 +281,10 @@ if youtube_url:
 
         with st.spinner("要約を生成中..."):
             summary = text_processor.generate_summary(transcript)
-            st.markdown("<h3 class='section-header' style='font-size: 1.8rem; margin: 2rem 0 1rem;'>📊 AI要約</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 class='section-header'>📊 AI要約</h3>", unsafe_allow_html=True)
             st.markdown(f"""
-            <div style='background: rgba(255, 255, 255, 0.95); 
-                        backdrop-filter: blur(10px);
-                        padding: 2rem; 
-                        border-radius: 20px;
-                        border: 1px solid rgba(255, 255, 255, 0.2);
-                        box-shadow: 0 8px 32px rgba(0,0,0,0.1);'>
-                <div style='color: #1a365d; 
-                          font-weight: 500;
-                          font-size: 1.1rem;
-                          line-height: 1.6;'>
-                    {summary}
-                </div>
+            <div class='summary-container'>
+                <div class='summary-content'>{summary}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -267,7 +292,7 @@ if youtube_url:
         mindmap_gen = MindMapGenerator()
         with st.spinner("マインドマップを生成中..."):
             mindmap_data = mindmap_gen.generate_mindmap(transcript)
-            st.markdown("<h3 class='section-header' style='font-size: 1.8rem; margin: 2rem 0 1rem;'>🔄 マインドマップ</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 class='section-header'>🔄 マインドマップ</h3>", unsafe_allow_html=True)
             fig = mindmap_gen.create_visualization(mindmap_data)
             st.plotly_chart(fig, use_container_width=True)
 
@@ -275,7 +300,7 @@ if youtube_url:
             mindmap_svg = fig.to_image(format="svg")
 
         # PDFレポートの生成と保存ボタンの追加
-        st.markdown("<h3 class='section-header' style='font-size: 1.8rem; margin: 2rem 0 1rem;'>📑 分析レポート</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 class='section-header'>📑 分析レポート</h3>", unsafe_allow_html=True)
         with st.spinner("PDFレポートを生成中..."):
             try:
                 pdf_gen = PDFGenerator()
