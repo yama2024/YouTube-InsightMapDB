@@ -58,7 +58,51 @@ class TextProcessor:
             raise Exception("要約の生成に失敗しました")
 
     def proofread_text(self, text):
-        prompt = f"""
+        def chunk_text(text, chunk_size=1000):
+            # Split text into sentences
+            sentences = text.split('。')
+            chunks = []
+            current_chunk = []
+            current_length = 0
+            
+            for sentence in sentences:
+                if not sentence.strip():
+                    continue
+                
+                # Add period back if it was removed by split
+                sentence = sentence + '。'
+                sentence_length = len(sentence)
+                
+                if current_length + sentence_length > chunk_size and current_chunk:
+                    chunks.append(''.join(current_chunk))
+                    current_chunk = [sentence]
+                    current_length = sentence_length
+                else:
+                    current_chunk.append(sentence)
+                    current_length += sentence_length
+                    
+            if current_chunk:
+                chunks.append(''.join(current_chunk))
+            return chunks
+
+        try:
+            # Split text into manageable chunks
+            text_chunks = chunk_text(text)
+            proofread_chunks = []
+            
+            for i, chunk in enumerate(text_chunks, 1):
+                generation_config = genai.types.GenerationConfig(
+                    temperature=0.3,
+                    top_p=0.8,
+                    top_k=40,
+                    max_output_tokens=2048,
+                )
+                
+                safety_settings = {
+                    "HARM_CATEGORY_DANGEROUS": "BLOCK_NONE"
+                }
+                
+                chunk_prompt = f"""
 # あなたの目的:
 ユーザーが入力したテキストを校閲します。
 
@@ -70,37 +114,29 @@ class TextProcessor:
 1.校閲した文章以外の出力は決して行ってはいけません。
 2.校閲した文章のみを出力します。
 3.改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
-4.ユーザーから"OK"という旨の入力を受け取ったら出力の続きを出力してください。その際に校閲した文章以外の出力は禁じます。
-5.時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
-6.スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
-7.テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
+4.時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
+5.スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
+6.テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
 
 テキスト:
-{text}
+{chunk}
 """
-        try:
-            generation_config = genai.types.GenerationConfig(
-                temperature=0.3,
-                top_p=0.8,
-                top_k=40,
-                max_output_tokens=2048,
-            )
-            
-            safety_settings = {
-                "HARM_CATEGORY_DANGEROUS": "BLOCK_NONE"
-            }
-            
-            response = self.model.generate_content(
-                prompt,
-                generation_config=generation_config,
-                safety_settings=safety_settings
-            )
-            
-            if not response.text:
-                raise ValueError("校閲結果が空です")
                 
-            return response.text
-            
+                response = self.model.generate_content(
+                    chunk_prompt,
+                    generation_config=generation_config,
+                    safety_settings=safety_settings
+                )
+                
+                if not response.text:
+                    raise ValueError(f"チャンク {i} の校閲結果が空です")
+                    
+                proofread_chunks.append(response.text)
+                
+            # Combine all proofread chunks
+            final_text = '\n'.join(proofread_chunks)
+            return final_text
+                
         except Exception as e:
             raise Exception(f"テキストの校閲に失敗しました: {str(e)}")
 
