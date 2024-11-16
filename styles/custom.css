@@ -1,61 +1,171 @@
+/* The edited code was missing some important components, so I've completed the code based on the intention. */
 /* Google Fonts の追加 */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
 
 /* グローバルスタイル */
-.stApp {
-    font-family: 'Noto Sans JP', sans-serif;
-    background: linear-gradient(135deg, #1a365d, #4a90e2, #7fb3d5) !important;
-    min-height: 100vh;
-    color: white;
+div.stApp {
+    font-family: 'Noto Sans JP', sans-serif !important;
+    background: linear-gradient(-45deg, #1a365d, #4a90e2, #7fb3d5) !important;
+    background-size: 400% 400% !important;
+    animation: gradientBG 15s ease infinite !important;
+    min-height: 100vh !important;
+    color: white !important;
+}
+
+@keyframes gradientBG {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
 
 /* グラスモーフィズム効果 */
-.glass-container {
-    background: rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 20px;
-    padding: 2rem;
-    margin: 1.5rem 0;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s ease;
+div.glass-container {
+    background: rgba(255, 255, 255, 0.15) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 20px !important;
+    padding: 2rem !important;
+    margin: 1.5rem 0 !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+    transition: all 0.3s ease !important;
 }
 
-.glass-container:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15);
+div.glass-container:hover {
+    transform: translateY(-5px) !important;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15) !important;
 }
 
 /* アプリヘッダー */
-.title {
-    font-size: 3.5rem;
-    font-weight: 800;
-    background: linear-gradient(45deg, #FFFFFF, #E0E7FF);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-transform: capitalize;
-    text-align: center;
-    margin: 2rem 0;
-    letter-spacing: 1px;
-    animation: fadeInDown 1.2s ease-out;
+div.app-title {
+    font-size: 3.5rem !important;
+    font-weight: 800 !important;
+    background: linear-gradient(45deg, #FFFFFF, #E0E7FF) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    text-transform: capitalize !important;
+    text-align: center !important;
+    margin: 2rem 0 !important;
+    letter-spacing: 1px !important;
+    animation: fadeIn 1.2s ease-out !important;
 }
 
-.subtitle {
-    font-size: 1.4rem;
-    color: rgba(255, 255, 255, 0.95);
-    text-align: center;
-    font-weight: 500;
-    margin-bottom: 3rem;
-    animation: fadeInUp 1.2s ease-out;
+div.app-subtitle {
+    font-size: 1.4rem !important;
+    color: rgba(255, 255, 255, 0.95) !important;
+    text-align: center !important;
+    font-weight: 500 !important;
+    margin-bottom: 3rem !important;
+    animation: fadeIn 1.2s ease-out !important;
+}
+
+/* セクションヘッダー */
+h3.section-header {
+    font-size: 2rem !important;
+    color: white !important;
+    margin: 2.5rem 0 1.5rem !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+}
+
+/* 入力フィールド */
+div.stTextInput > div > div > input {
+    background: rgba(255, 255, 255, 0.95) !important;
+    color: #1a365d !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(26, 54, 93, 0.2) !important;
+    padding: 0.75rem 1rem !important;
+    font-size: 1.1rem !important;
+    transition: all 0.3s ease !important;
+}
+
+div.stTextInput > div > div > input:focus {
+    border-color: #4a90e2 !important;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2) !important;
+}
+
+/* テキストエリア */
+div.stTextArea > div > div > textarea {
+    background: rgba(255, 255, 255, 0.95) !important;
+    color: #1a365d !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(26, 54, 93, 0.2) !important;
+    padding: 1rem !important;
+    font-size: 1.1rem !important;
+    transition: all 0.3s ease !important;
+}
+
+div.stTextArea > div > div > textarea:focus {
+    border-color: #4a90e2 !important;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2) !important;
+}
+
+/* ボタン */
+div.stButton > button {
+    background: linear-gradient(45deg, #1a365d, #4a90e2) !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.75rem 1.5rem !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    transition: all 0.3s ease !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+div.stButton > button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* アニメーション */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* レスポンシブデザイン */
+@media (max-width: 768px) {
+    div.app-title {
+        font-size: 2.5rem !important;
+    }
+    
+    div.app-subtitle {
+        font-size: 1.2rem !important;
+    }
+    
+    div.glass-container {
+        padding: 1.5rem !important;
+    }
+    
+    h3.section-header {
+        font-size: 1.8rem !important;
+    }
+}
+
+/* 情報タグ */
+.info-tag {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.6rem 1rem;
+    border-radius: 12px;
+    color: white;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.info-tag:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
 }
 
 /* セクションヘッダー */
 .section-header {
     color: white;
     font-size: 2rem;
-    margin: 2rem 0 1rem;
+    margin: 2.5rem 0 1.5rem;
     font-weight: 700;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
     animation: fadeIn 0.8s ease-in;
 }
 
@@ -93,6 +203,22 @@
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
+/* テキストエリア */
+.stTextArea > div > div > textarea {
+    background: rgba(255, 255, 255, 0.95);
+    color: #1a365d;
+    border-radius: 10px;
+    border: 1px solid rgba(26, 54, 93, 0.2);
+    padding: 1rem;
+    font-size: 1.1rem;
+    transition: all 0.3s ease;
+}
+
+.stTextArea > div > div > textarea:focus {
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
 /* アニメーション */
 @keyframes fadeIn {
     from { opacity: 0; }
@@ -123,19 +249,24 @@
 
 /* レスポンシブデザイン */
 @media (max-width: 768px) {
-    .title {
+    div.app-title {
         font-size: 2.5rem;
     }
     
-    .subtitle {
+    div.app-subtitle {
         font-size: 1.2rem;
     }
 
-    .glass-container {
+    div.glass-container {
         padding: 1.5rem;
     }
 
-    .section-header {
+    h3.section-header {
         font-size: 1.8rem;
+    }
+
+    .info-tag {
+        padding: 0.5rem 0.8rem;
+        font-size: 0.9rem;
     }
 }
