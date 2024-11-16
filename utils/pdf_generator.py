@@ -11,6 +11,7 @@ import os
 import io
 import requests
 import logging
+import re
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
@@ -22,29 +23,51 @@ class PDFGenerator:
         self._setup_styles()
 
     def _setup_fonts(self):
-        """日本語フォントのセットアップ"""
         try:
-            # フォントをダウンロード
-            font_url = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansJP-Regular.otf"
-            logger.info("日本語フォントのダウンロードを開始します")
+            # Google Fonts APIから直接フォントをダウンロード
+            font_url = "https://fonts.googleapis.com/css2?family=Noto+Sans+JP&display=swap"
             response = requests.get(font_url)
-            
             if response.status_code == 200:
-                font_path = "/tmp/NotoSansJP-Regular.otf"
+                # フォントファイルのURLを抽出
+                font_file_url = re.search(r'src: url\((.*?)\)', response.text)
+                if font_file_url:
+                    font_response = requests.get(font_file_url.group(1))
+                    if font_response.status_code == 200:
+                        font_path = "/tmp/NotoSansJP-Regular.ttf"
+                        with open(font_path, "wb") as f:
+                            f.write(font_response.content)
+                        
+                        # フォントを登録
+                        pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
+                        addMapping('NotoSansJP', 0, 0, 'NotoSansJP')
+                        self.use_fallback_fonts = False
+                        logger.info("日本語フォントを正常に設定しました")
+                        return
+            
+            # 代替方法：直接Noto Sans JPのwoffファイルを使用
+            alt_font_url = "https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.woff2"
+            response = requests.get(alt_font_url)
+            if response.status_code == 200:
+                font_path = "/tmp/NotoSansJP-Regular.ttf"
                 with open(font_path, "wb") as f:
                     f.write(response.content)
-                logger.info(f"フォントを保存しました: {font_path}")
                 
-                # フォントを登録
                 pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
                 addMapping('NotoSansJP', 0, 0, 'NotoSansJP')
                 self.use_fallback_fonts = False
-                logger.info("日本語フォントを正常に設定しました")
+                logger.info("代替方法で日本語フォントを設定しました")
             else:
-                raise Exception(f"フォントのダウンロードに失敗しました。ステータスコード: {response.status_code}")
+                raise Exception("フォントのダウンロードに失敗しました")
         except Exception as e:
             logger.error(f"フォントの設定中にエラーが発生しました: {str(e)}")
             self.use_fallback_fonts = True
+
+    def _encode_text(self, text):
+        try:
+            return text.encode('utf-8').decode('utf-8')
+        except Exception as e:
+            logger.error(f"テキストエンコーディングエラー: {str(e)}")
+            return text
 
     def _setup_styles(self):
         """スタイルの設定"""
@@ -110,10 +133,10 @@ class PDFGenerator:
             
             # 動画情報テーブル
             data = [
-                ['タイトル', video_info['title'].encode('utf-8').decode('utf-8')],
-                ['チャンネル', video_info['channel_title'].encode('utf-8').decode('utf-8')],
-                ['投稿日', video_info['published_at'].encode('utf-8').decode('utf-8')],
-                ['動画時間', video_info['duration'].encode('utf-8').decode('utf-8')]
+                ['タイトル', self._encode_text(video_info['title'])],
+                ['チャンネル', self._encode_text(video_info['channel_title'])],
+                ['投稿日', self._encode_text(video_info['published_at'])],
+                ['動画時間', self._encode_text(video_info['duration'])]
             ]
             
             table = Table(data, colWidths=[100, 400])
@@ -151,7 +174,7 @@ class PDFGenerator:
             max_chars = 1000
             chunks = [transcript[i:i+max_chars] for i in range(0, len(transcript), max_chars)]
             for chunk in chunks:
-                text = chunk.encode('utf-8').decode('utf-8')
+                text = self._encode_text(chunk)
                 elements.append(Paragraph(text, self.styles['JapaneseBody']))
                 elements.append(Spacer(1, 10))
             elements.append(Spacer(1, 20))
@@ -159,7 +182,7 @@ class PDFGenerator:
             # 要約
             logger.info("要約の追加を開始します")
             elements.append(Paragraph("AI要約", self.styles['JapaneseHeading']))
-            summary_text = summary.encode('utf-8').decode('utf-8')
+            summary_text = self._encode_text(summary)
             elements.append(Paragraph(summary_text, self.styles['JapaneseBody']))
             elements.append(Spacer(1, 20))
 

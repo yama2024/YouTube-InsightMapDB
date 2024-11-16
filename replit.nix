@@ -1,5 +1,10 @@
 {pkgs}: {
   deps = [
+    pkgs.librsvg
+    pkgs.cairo
+    pkgs.pango
+    pkgs.harfbuzz
+    pkgs.glib
     pkgs.ghostscript
     pkgs.fontconfig
     pkgs.zlib
