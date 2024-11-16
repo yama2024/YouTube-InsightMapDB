@@ -28,27 +28,27 @@ st.markdown('''
 # 機能紹介セクション
 st.markdown('''
 <div class="glass-container feature-container">
-    <h4 class="section-header" style="margin-top: 0;">🎯 動画コンテンツの深い理解</h4>
+    <h4 class="section-header" style="margin-top: 0;">🎯 Advanced Content Analysis</h4>
     <p class="feature-description">
-        AIテクノロジーを活用して動画コンテンツを分析し、知識を構造化します。
+        AIテクノロジーを活用して動画コンテンツを分析し、知識を構造化します
     </p>
     <div class="feature-grid">
         <div class="feature-card">
-            <h5 class="feature-title">📝 文字起こし</h5>
+            <h5 class="feature-title">📝 高精度文字起こし</h5>
             <p class="feature-text">
-                高精度な自動音声認識による文字起こし
+                AIによる高精度な音声認識と文字起こし
             </p>
         </div>
         <div class="feature-card">
-            <h5 class="feature-title">🤖 AI要約</h5>
+            <h5 class="feature-title">🤖 インテリジェント要約</h5>
             <p class="feature-text">
-                重要ポイントの自動抽出
+                重要ポイントを自動で抽出・整理
             </p>
         </div>
         <div class="feature-card">
-            <h5 class="feature-title">🔄 マインドマップ</h5>
+            <h5 class="feature-title">🔄 ダイナミックマップ</h5>
             <p class="feature-text">
-                コンテンツ構造の可視化
+                コンテンツ構造をビジュアライズ
             </p>
         </div>
     </div>
@@ -62,7 +62,7 @@ if 'video_info' not in st.session_state:
     st.session_state.video_info = None
 
 # URL入力セクション
-st.markdown('<h3 class="section-header">🎥 動画を分析</h3>', unsafe_allow_html=True)
+st.markdown('<h3 class="section-header">🎥 Analyze Your Video</h3>', unsafe_allow_html=True)
 
 youtube_url = st.text_input(
     "YouTube URLを入力",
@@ -78,7 +78,7 @@ if youtube_url:
         st.session_state.video_info = video_info
         
         # 動画情報セクション
-        st.markdown('<h3 class="section-header">📺 動画情報</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 class="section-header">📺 Video Information</h3>', unsafe_allow_html=True)
         
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -103,7 +103,7 @@ if youtube_url:
         text_processor = TextProcessor()
         with st.spinner("文字起こしを生成中..."):
             transcript = text_processor.get_transcript(youtube_url)
-            st.markdown('<h3 class="section-header">📝 文字起こし</h3>', unsafe_allow_html=True)
+            st.markdown('<h3 class="section-header">📝 Transcript</h3>', unsafe_allow_html=True)
 
             # Original transcript display
             st.markdown('<h5 class="subsection-header">元の文字起こし</h5>', unsafe_allow_html=True)
@@ -114,7 +114,7 @@ if youtube_url:
                 st.button("📋 コピー", key="copy_original", use_container_width=True)
 
             # AI要約セクション
-            st.markdown('<h3 class="section-header">📊 AI要約</h3>', unsafe_allow_html=True)
+            st.markdown('<h3 class="section-header">📊 AI Summary</h3>', unsafe_allow_html=True)
             summary = text_processor.generate_summary(transcript)
             
             col1, col2 = st.columns([4, 1])
@@ -130,7 +130,7 @@ if youtube_url:
                 st.button("📋 コピー", key="copy_summary", use_container_width=True)
 
             # Add proofread button after summary
-            st.markdown('<h3 class="section-header">✨ テキスト校閲</h3>', unsafe_allow_html=True)
+            st.markdown('<h3 class="section-header">✨ Text Enhancement</h3>', unsafe_allow_html=True)
             if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
                 try:
                     with st.spinner("テキストを校閲中..."):
@@ -152,7 +152,7 @@ if youtube_url:
         mindmap_gen = MindMapGenerator()
         with st.spinner("マインドマップを生成中..."):
             mindmap_data = mindmap_gen.generate_mindmap(transcript)
-            st.markdown('<h3 class="section-header">🔄 マインドマップ</h3>', unsafe_allow_html=True)
+            st.markdown('<h3 class="section-header">🔄 Mind Map</h3>', unsafe_allow_html=True)
             
             fig = mindmap_gen.create_visualization(mindmap_data)
             fig.update_layout(
@@ -164,7 +164,7 @@ if youtube_url:
             mindmap_svg = fig.to_image(format="svg")
 
         # PDFレポート生成
-        st.markdown('<h3 class="section-header">📑 分析レポート</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 class="section-header">📑 Analysis Report</h3>', unsafe_allow_html=True)
         
         with st.spinner("PDFレポートを生成中..."):
             try:
@@ -178,7 +178,7 @@ if youtube_url:
                 st.session_state.pdf_data = pdf_data
                 
                 st.download_button(
-                    label="📥 PDFレポートをダウンロード",
+                    label="📥 Download PDF Report",
                     data=pdf_data,
                     file_name=f"{video_info['title']}_分析レポート.pdf",
                     mime="application/pdf",
