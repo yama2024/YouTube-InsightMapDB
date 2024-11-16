@@ -14,11 +14,30 @@ class TextProcessor:
     def get_transcript(self, url):
         """YouTubeの文字起こしを取得"""
         video_id = self._extract_video_id(url)
+        if not video_id:
+            raise Exception("無効なYouTube URLです")
+        
         try:
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja'])
+            # First try with Japanese
+            try:
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja'])
+            except Exception:
+                # If Japanese fails, try with auto-generated Japanese
+                try:
+                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja-JP'])
+                except Exception:
+                    # If that fails too, try getting any transcript and translate
+                    try:
+                        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+                    except Exception as e:
+                        raise Exception("この動画の字幕は利用できません")
+                    
             return ' '.join([entry['text'] for entry in transcript_list])
+            
         except Exception as e:
-            raise Exception("文字起こしの取得に失敗しました")
+            error_msg = f"文字起こしの取得に失敗しました: {str(e)}"
+            print(error_msg)  # For debugging
+            raise Exception(error_msg)
 
     def generate_summary(self, text):
         """テキストの要約を生成"""
