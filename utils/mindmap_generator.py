@@ -14,34 +14,31 @@ class MindMapGenerator:
         self.model = genai.GenerativeModel('gemini-pro')
 
     def generate_mindmap(self, text):
-        """テキストからマインドマップのデータを生成"""
-        prompt = f"""
-        以下のテキストから階層的なマインドマップを生成してください。
-        以下の形式でJSON形式で出力してください：
-        
-        {{
-            "center": "中心テーマ",
-            "branches": [
-                {{
-                    "name": "メインブランチ1",
-                    "sub_branches": ["サブブランチ1", "サブブランチ2"]
-                }},
-                // 他のブランチ...
-            ]
-        }}
-        
-        テキスト:
-        {text}
-        """
-        
         try:
+            prompt = f"""
+            以下のテキストから階層的なマインドマップを生成してください。
+            以下の形式で出力してください（コメントは含めないでください）：
+            
+            {{
+                "center": "中心テーマ",
+                "branches": [
+                    {{
+                        "name": "メインブランチ1",
+                        "sub_branches": ["サブブランチ1", "サブブランチ2"]
+                    }}
+                ]
+            }}
+            
+            テキスト:
+            {text}
+            """
+            
             response = self.model.generate_content(prompt)
             if not response.text:
                 raise ValueError("APIレスポンスが空です")
 
-            # 文字列をJSON形式に変換する前に整形
+            # コードブロックとコメントを除去
             json_str = response.text.strip()
-            # 最初と最後の```を削除（もし存在する場合）
             if json_str.startswith('```json'):
                 json_str = json_str[7:]
             elif json_str.startswith('```'):
@@ -49,20 +46,11 @@ class MindMapGenerator:
             if json_str.endswith('```'):
                 json_str = json_str[:-3]
             
-            json_str = json_str.strip()
+            # コメント行を除去
+            json_str = '\n'.join([line for line in json_str.split('\n') if not line.strip().startswith('//')])
             
             try:
-                # JSONとして解析
-                mindmap_data = json.loads(json_str)
-                
-                # 必要なキーが存在するか確認
-                if not isinstance(mindmap_data, dict):
-                    raise ValueError("マインドマップデータが辞書形式ではありません")
-                if "center" not in mindmap_data:
-                    raise ValueError("中心テーマが見つかりません")
-                if "branches" not in mindmap_data or not isinstance(mindmap_data["branches"], list):
-                    raise ValueError("ブランチデータが正しい形式ではありません")
-                
+                mindmap_data = json.loads(json_str.strip())
                 return mindmap_data
             except json.JSONDecodeError as e:
                 print(f"JSON解析エラー: {str(e)}")

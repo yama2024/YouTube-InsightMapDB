@@ -24,38 +24,19 @@ class PDFGenerator:
 
     def _setup_fonts(self):
         try:
-            # Google Fonts APIから直接フォントをダウンロード
-            font_url = "https://fonts.googleapis.com/css2?family=Noto+Sans+JP&display=swap"
+            # 直接Noto Sans JP Regular fontをダウンロード
+            font_url = "https://fonts.gstatic.com/s/notosansjp/v52/-F6pfjtqLzI2JPCgQBnw7HFQei0q1H1hj-sNFQ.otf"
             response = requests.get(font_url)
             if response.status_code == 200:
-                # フォントファイルのURLを抽出
-                font_file_url = re.search(r'src: url\((.*?)\)', response.text)
-                if font_file_url:
-                    font_response = requests.get(font_file_url.group(1))
-                    if font_response.status_code == 200:
-                        font_path = "/tmp/NotoSansJP-Regular.ttf"
-                        with open(font_path, "wb") as f:
-                            f.write(font_response.content)
-                        
-                        # フォントを登録
-                        pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
-                        addMapping('NotoSansJP', 0, 0, 'NotoSansJP')
-                        self.use_fallback_fonts = False
-                        logger.info("日本語フォントを正常に設定しました")
-                        return
-            
-            # 代替方法：直接Noto Sans JPのwoffファイルを使用
-            alt_font_url = "https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.woff2"
-            response = requests.get(alt_font_url)
-            if response.status_code == 200:
-                font_path = "/tmp/NotoSansJP-Regular.ttf"
+                font_path = "/tmp/NotoSansJP-Regular.otf"
                 with open(font_path, "wb") as f:
                     f.write(response.content)
                 
+                # フォントを登録
                 pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
                 addMapping('NotoSansJP', 0, 0, 'NotoSansJP')
                 self.use_fallback_fonts = False
-                logger.info("代替方法で日本語フォントを設定しました")
+                logger.info("日本語フォントを正常に設定しました")
             else:
                 raise Exception("フォントのダウンロードに失敗しました")
         except Exception as e:
@@ -64,10 +45,13 @@ class PDFGenerator:
 
     def _encode_text(self, text):
         try:
-            return text.encode('utf-8').decode('utf-8')
+            # UTF-8エンコーディングを確実に適用
+            if isinstance(text, str):
+                return text.encode('utf-8').decode('utf-8')
+            return text.decode('utf-8') if isinstance(text, bytes) else str(text)
         except Exception as e:
             logger.error(f"テキストエンコーディングエラー: {str(e)}")
-            return text
+            return str(text)
 
     def _setup_styles(self):
         """スタイルの設定"""
@@ -102,6 +86,15 @@ class PDFGenerator:
         """分析結果のPDFを生成"""
         try:
             buffer = io.BytesIO()
+            
+            # PDFのメタデータを設定
+            pdf_metadata = {
+                'Title': 'YouTube動画分析レポート',
+                'Author': 'Expand YouTube-map',
+                'Subject': video_info['title'],
+                'Creator': 'Expand YouTube-map PDF Generator'
+            }
+            
             doc = SimpleDocTemplate(
                 buffer,
                 pagesize=A4,
@@ -109,7 +102,11 @@ class PDFGenerator:
                 leftMargin=72,
                 topMargin=72,
                 bottomMargin=72,
-                encoding='utf-8'
+                encoding='utf-8',
+                title=pdf_metadata['Title'],
+                author=pdf_metadata['Author'],
+                subject=pdf_metadata['Subject'],
+                creator=pdf_metadata['Creator']
             )
 
             elements = []
