@@ -1,5 +1,7 @@
 {pkgs}: {
   deps = [
+    pkgs.ghostscript
+    pkgs.fontconfig
     pkgs.zlib
     pkgs.tk
     pkgs.tcl
