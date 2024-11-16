@@ -117,7 +117,7 @@ class MindMapGenerator:
             # レイアウトの計算
             pos = nx.spring_layout(G)
             
-            # プロットの作成
+            # エッジトレースの作成
             edge_trace = []
             for edge in G.edges():
                 x0, y0 = pos[edge[0]]
@@ -131,6 +131,7 @@ class MindMapGenerator:
                     )
                 )
             
+            # ノードトレースの設定を更新
             node_trace = go.Scatter(
                 x=[pos[node][0] for node in G.nodes()],
                 y=[pos[node][1] for node in G.nodes()],
@@ -142,10 +143,15 @@ class MindMapGenerator:
                 ),
                 text=[G.nodes[node]['label'] for node in G.nodes()],
                 textposition="middle center",
+                textfont=dict(
+                    family='Noto Sans JP, sans-serif',
+                    size=12,
+                    color='#1a365d'
+                ),
                 hoverinfo='text'
             )
             
-            # レイアウトの設定
+            # レイアウトの設定を更新
             layout = go.Layout(
                 showlegend=False,
                 hovermode='closest',
@@ -155,7 +161,12 @@ class MindMapGenerator:
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
                 width=800,
-                height=600
+                height=600,
+                font=dict(
+                    family='Noto Sans JP, sans-serif',
+                    size=12,
+                    color='#1a365d'
+                )
             )
             
             # 図の作成
