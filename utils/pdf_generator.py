@@ -12,6 +12,7 @@ import io
 import requests
 import logging
 import re
+import tempfile
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
@@ -23,59 +24,73 @@ class PDFGenerator:
         self._setup_styles()
 
     def _setup_fonts(self):
+        """日本語フォントのセットアップ"""
         try:
-            # Google Fonts APIから直接フォントをダウンロード
-            font_url = "https://fonts.googleapis.com/css2?family=Noto+Sans+JP&display=swap"
-            response = requests.get(font_url)
-            if response.status_code == 200:
-                # フォントファイルのURLを抽出
-                font_file_url = re.search(r'src: url\((.*?)\)', response.text)
-                if font_file_url:
-                    font_response = requests.get(font_file_url.group(1))
-                    if font_response.status_code == 200:
-                        font_path = "/tmp/NotoSansJP-Regular.ttf"
-                        with open(font_path, "wb") as f:
-                            f.write(font_response.content)
-                        
-                        # フォントを登録
-                        pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
-                        addMapping('NotoSansJP', 0, 0, 'NotoSansJP')
-                        self.use_fallback_fonts = False
-                        logger.info("日本語フォントを正常に設定しました")
-                        return
+            # フォントファイルのダウンロードとセットアップ
+            font_urls = {
+                'regular': "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansJP-Regular.otf",
+                'bold': "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansJP-Bold.otf"
+            }
             
-            # 代替方法：直接Noto Sans JPのwoffファイルを使用
-            alt_font_url = "https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.woff2"
-            response = requests.get(alt_font_url)
-            if response.status_code == 200:
-                font_path = "/tmp/NotoSansJP-Regular.ttf"
-                with open(font_path, "wb") as f:
-                    f.write(response.content)
-                
-                pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
-                addMapping('NotoSansJP', 0, 0, 'NotoSansJP')
-                self.use_fallback_fonts = False
-                logger.info("代替方法で日本語フォントを設定しました")
-            else:
-                raise Exception("フォントのダウンロードに失敗しました")
+            font_files = {}
+            for style, url in font_urls.items():
+                response = requests.get(url)
+                if response.status_code == 200:
+                    # 一時ファイルにフォントを保存
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.otf') as f:
+                        f.write(response.content)
+                        font_files[style] = f.name
+
+            # フォントの登録
+            pdfmetrics.registerFont(TTFont('NotoSansJP-Regular', font_files['regular']))
+            pdfmetrics.registerFont(TTFont('NotoSansJP-Bold', font_files['bold']))
+            
+            # フォントマッピングの設定
+            addMapping('NotoSansJP-Regular', 0, 0, 'NotoSansJP-Regular')
+            addMapping('NotoSansJP-Bold', 1, 0, 'NotoSansJP-Bold')
+            
+            self.use_fallback_fonts = False
+            logger.info("日本語フォントの設定が完了しました")
+            
         except Exception as e:
             logger.error(f"フォントの設定中にエラーが発生しました: {str(e)}")
             self.use_fallback_fonts = True
 
     def _encode_text(self, text):
-        try:
+        """テキストのエンコード処理"""
+        if isinstance(text, str):
             return text.encode('utf-8').decode('utf-8')
-        except Exception as e:
-            logger.error(f"テキストエンコーディングエラー: {str(e)}")
-            return text
+        return str(text)
 
     def _setup_styles(self):
         """スタイルの設定"""
         self.styles = getSampleStyleSheet()
         
         # 基本フォント設定
-        base_font = 'NotoSansJP' if not self.use_fallback_fonts else 'Helvetica'
-        logger.info(f"使用するフォント: {base_font}")
+        base_font = 'NotoSansJP-Regular' if not self.use_fallback_fonts else 'Helvetica'
+        bold_font = 'NotoSansJP-Bold' if not self.use_fallback_fonts else 'Helvetica-Bold'
+        
+        # タイトルスタイル
+        self.styles.add(ParagraphStyle(
+            name='CustomTitle',
+            fontName=bold_font,
+            fontSize=24,
+            leading=32,
+            alignment=1,
+            spaceAfter=30,
+            wordWrap='CJK'
+        ))
+        
+        # 見出しスタイル
+        self.styles.add(ParagraphStyle(
+            name='JapaneseHeading',
+            fontName=bold_font,
+            fontSize=16,
+            leading=24,
+            spaceBefore=20,
+            spaceAfter=10,
+            wordWrap='CJK'
+        ))
         
         # 本文スタイル
         self.styles.add(ParagraphStyle(
@@ -83,52 +98,36 @@ class PDFGenerator:
             fontName=base_font,
             fontSize=10,
             leading=14,
-            wordWrap='CJK',
-            encoding='utf-8'
-        ))
-        
-        # 見出しスタイル
-        self.styles.add(ParagraphStyle(
-            name='JapaneseHeading',
-            fontName=base_font,
-            fontSize=14,
-            leading=16,
-            wordWrap='CJK',
-            encoding='utf-8',
-            spaceAfter=20
+            spaceBefore=6,
+            spaceAfter=6,
+            wordWrap='CJK'
         ))
 
     def create_pdf(self, video_info, transcript, summary, mindmap_image=None):
         """分析結果のPDFを生成"""
         try:
+            # バッファの作成
             buffer = io.BytesIO()
+            
+            # PDFドキュメントの設定
             doc = SimpleDocTemplate(
                 buffer,
                 pagesize=A4,
-                rightMargin=72,
-                leftMargin=72,
-                topMargin=72,
-                bottomMargin=72,
+                rightMargin=50,
+                leftMargin=50,
+                topMargin=50,
+                bottomMargin=50,
                 encoding='utf-8'
             )
 
+            # 要素の生成
             elements = []
             logger.info("PDFの生成を開始します")
 
             # タイトル
-            title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=self.styles['Title'],
-                fontName='NotoSansJP' if not self.use_fallback_fonts else 'Helvetica',
-                fontSize=24,
-                spaceAfter=30,
-                alignment=1,
-                encoding='utf-8'
-            )
-            elements.append(Paragraph("YouTube動画分析レポート", title_style))
-            elements.append(Spacer(1, 20))
+            elements.append(Paragraph("YouTube動画分析レポート", self.styles['CustomTitle']))
 
-            # 動画情報
+            # 動画情報セクション
             elements.append(Paragraph("動画情報", self.styles['JapaneseHeading']))
             
             # 動画情報テーブル
@@ -139,23 +138,25 @@ class PDFGenerator:
                 ['動画時間', self._encode_text(video_info['duration'])]
             ]
             
+            # テーブルスタイルの改善
             table = Table(data, colWidths=[100, 400])
             table.setStyle(TableStyle([
-                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F0F2F6')),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#1B365D')),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, -1), 'NotoSansJP' if not self.use_fallback_fonts else 'Helvetica'),
+                ('FONTNAME', (0, 0), (0, -1), 'NotoSansJP-Bold' if not self.use_fallback_fonts else 'Helvetica-Bold'),
+                ('FONTNAME', (1, 0), (-1, -1), 'NotoSansJP-Regular' if not self.use_fallback_fonts else 'Helvetica'),
                 ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('PADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#E2E8F0')),
             ]))
             elements.append(table)
             elements.append(Spacer(1, 20))
 
-            # サムネイル
+            # サムネイル画像
             if 'thumbnail_url' in video_info:
                 try:
-                    logger.info("サムネイル画像の取得を開始します")
                     response = requests.get(video_info['thumbnail_url'])
                     if response.status_code == 200:
                         thumbnail_data = response.content
@@ -163,55 +164,67 @@ class PDFGenerator:
                         img = Image(thumbnail_buffer, width=400, height=225)
                         elements.append(img)
                         elements.append(Spacer(1, 20))
-                        logger.info("サムネイル画像を追加しました")
                 except Exception as e:
                     logger.error(f"サムネイル画像の取得に失敗しました: {str(e)}")
 
-            # 文字起こし
-            logger.info("文字起こしの追加を開始します")
-            elements.append(Paragraph("文字起こし", self.styles['JapaneseHeading']))
-            # テキストを適切なサイズのチャンクに分割
-            max_chars = 1000
-            chunks = [transcript[i:i+max_chars] for i in range(0, len(transcript), max_chars)]
-            for chunk in chunks:
-                text = self._encode_text(chunk)
-                elements.append(Paragraph(text, self.styles['JapaneseBody']))
-                elements.append(Spacer(1, 10))
+            # AI要約セクション
+            elements.append(Paragraph("AI要約", self.styles['JapaneseHeading']))
+            summary_paragraphs = summary.split('\n')
+            for paragraph in summary_paragraphs:
+                if paragraph.strip():
+                    elements.append(Paragraph(self._encode_text(paragraph), self.styles['JapaneseBody']))
             elements.append(Spacer(1, 20))
 
-            # 要約
-            logger.info("要約の追加を開始します")
-            elements.append(Paragraph("AI要約", self.styles['JapaneseHeading']))
-            summary_text = self._encode_text(summary)
-            elements.append(Paragraph(summary_text, self.styles['JapaneseBody']))
-            elements.append(Spacer(1, 20))
+            # 文字起こしセクション
+            elements.append(Paragraph("文字起こし", self.styles['JapaneseHeading']))
+            # テキストを適切なサイズのチャンクに分割
+            max_chars = 800
+            chunks = [transcript[i:i+max_chars] for i in range(0, len(transcript), max_chars)]
+            for chunk in chunks:
+                elements.append(Paragraph(self._encode_text(chunk), self.styles['JapaneseBody']))
 
             # マインドマップ
             if mindmap_image:
                 try:
-                    logger.info("マインドマップの追加を開始します")
                     elements.append(Paragraph("マインドマップ", self.styles['JapaneseHeading']))
                     mindmap_buffer = io.BytesIO(mindmap_image)
                     mindmap_buffer.seek(0)
-                    drawing = svg2rlg(mindmap_buffer)
                     
+                    # SVGをReportLab描画オブジェクトに変換
+                    drawing = svg2rlg(mindmap_buffer)
                     if drawing:
-                        scale_factor = min(0.7, (A4[0] - 2*72) / drawing.width)
+                        # 適切なサイズにスケーリング
+                        scale_factor = min(0.75, (A4[0] - 100) / drawing.width)
                         drawing.scale(scale_factor, scale_factor)
+                        drawing.height = drawing.height * scale_factor
+                        drawing.width = drawing.width * scale_factor
+                        
                         elements.append(drawing)
-                        elements.append(Spacer(1, 20))
-                        logger.info("マインドマップを追加しました")
                 except Exception as e:
                     logger.error(f"マインドマップの追加に失敗しました: {str(e)}")
 
             # PDFの生成
-            logger.info("PDFのビルドを開始します")
             doc.build(elements)
-            pdf_data = buffer.getvalue()
-            buffer.close()
-            logger.info("PDFの生成が完了しました")
-            return pdf_data
             
+            # バッファの位置を先頭に戻す
+            buffer.seek(0)
+            
+            # PDFデータを取得
+            pdf_data = buffer.getvalue()
+            
+            # バッファをクローズ
+            buffer.close()
+            
+            # 一時ファイルの削除
+            try:
+                for font_file in getattr(self, '_font_files', {}).values():
+                    if os.path.exists(font_file):
+                        os.remove(font_file)
+            except Exception as e:
+                logger.error(f"一時ファイルの削除中にエラーが発生しました: {str(e)}")
+
+            return pdf_data
+
         except Exception as e:
             error_msg = f"PDFの生成中にエラーが発生しました: {str(e)}"
             logger.error(error_msg)

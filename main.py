@@ -171,16 +171,19 @@ if youtube_url:
                     summary=summary,
                     mindmap_image=mindmap_svg
                 )
-                st.session_state.pdf_data = pdf_data
                 
-                st.download_button(
-                    label="📥 PDFレポートをダウンロード",
-                    data=pdf_data,
-                    file_name=f"{video_info['title']}_分析レポート.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-                
+                # PDFデータが正しく生成されたことを確認
+                if pdf_data:
+                    st.download_button(
+                        label="📥 PDFレポートをダウンロード",
+                        data=pdf_data,
+                        file_name=f"{video_info['title']}_分析レポート.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                else:
+                    st.error("PDFの生成に失敗しました")
+                    
             except Exception as e:
                 st.error(f"PDFレポートの生成中にエラーが発生しました: {str(e)}")
 
