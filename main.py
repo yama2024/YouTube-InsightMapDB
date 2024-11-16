@@ -105,14 +105,6 @@ if youtube_url:
             transcript = text_processor.get_transcript(youtube_url)
             st.markdown('<h3 class="section-header">📝 文字起こし</h3>', unsafe_allow_html=True)
 
-            if st.button("✨ 校閲して整形", use_container_width=True, key="proofread_button"):
-                try:
-                    with st.spinner("テキストを校閲中..."):
-                        proofread_transcript = text_processor.proofread_text(transcript)
-                        st.session_state.proofread_transcript = proofread_transcript
-                except Exception as e:
-                    st.error(f"校閲中にエラーが発生しました: {str(e)}")
-
             # Original transcript display
             st.markdown('<h5 class="subsection-header">元の文字起こし</h5>', unsafe_allow_html=True)
             col1, col2 = st.columns([4, 1])
@@ -145,6 +137,16 @@ if youtube_url:
                 ''', unsafe_allow_html=True)
             with col2:
                 st.button("📋 コピー", key="copy_summary", use_container_width=True)
+
+            # Add proofread button after summary
+            st.markdown('<h3 class="section-header">✨ テキスト校閲</h3>', unsafe_allow_html=True)
+            if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
+                try:
+                    with st.spinner("テキストを校閲中..."):
+                        proofread_transcript = text_processor.proofread_text(transcript)
+                        st.session_state.proofread_transcript = proofread_transcript
+                except Exception as e:
+                    st.error(f"校閲中にエラーが発生しました: {str(e)}")
 
         # マインドマップ生成
         mindmap_gen = MindMapGenerator()
