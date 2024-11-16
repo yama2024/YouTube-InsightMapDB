@@ -14,10 +14,15 @@ st.set_page_config(
 )
 
 # カスタムCSSの読み込み
-css_path = 'styles/custom.css'
-if os.path.exists(css_path):
-    with open(css_path) as f:
-        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+def load_css():
+    css_path = os.path.join(os.path.dirname(__file__), 'styles', 'custom.css')
+    if os.path.exists(css_path):
+        with open(css_path) as f:
+            st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+    else:
+        st.error("CSS file not found!")
+
+load_css()
 
 # アプリヘッダー
 st.markdown('''
@@ -134,23 +139,58 @@ if youtube_url:
             if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
                 try:
                     with st.spinner("テキストを校閲中..."):
-                        # Always use the original transcript for proofreading
                         proofread_transcript = text_processor.proofread_text(transcript)
                         st.session_state.proofread_transcript = proofread_transcript
                         
-                        # Split proofread text into chunks
-                        chunks = proofread_transcript.split('\n\n')
-                        
-                        # Display each chunk in a separate container
-                        for i, chunk in enumerate(chunks, 1):
-                            if chunk.strip():  # Only display non-empty chunks
+                        # Determine if text needs to be split (more than 2000 characters as threshold)
+                        if len(proofread_transcript) <= 2000:
+                            # Show in single window if text is short enough
+                            st.markdown('<h5 class="subsection-header">校閲済みテキスト</h5>', unsafe_allow_html=True)
+                            col1, col2 = st.columns([4, 1])
+                            with col1:
+                                st.text_area(
+                                    "校閲済みテキスト",
+                                    proofread_transcript,
+                                    height=300,
+                                    label_visibility="collapsed"
+                                )
+                            with col2:
+                                st.button("📋 コピー", key="copy_proofread", use_container_width=True)
+                        else:
+                            # Split text into chunks of roughly equal size
+                            total_length = len(proofread_transcript)
+                            chunk_size = total_length // 3 if total_length > 4000 else total_length // 2
+                            
+                            chunks = []
+                            current_chunk = []
+                            current_length = 0
+                            
+                            # Split at sentence boundaries
+                            for sentence in proofread_transcript.split('。'):
+                                if not sentence.strip():
+                                    continue
+                                sentence = sentence + '。'
+                                
+                                if current_length + len(sentence) > chunk_size and current_chunk:
+                                    chunks.append(''.join(current_chunk))
+                                    current_chunk = [sentence]
+                                    current_length = len(sentence)
+                                else:
+                                    current_chunk.append(sentence)
+                                    current_length += len(sentence)
+                            
+                            if current_chunk:
+                                chunks.append(''.join(current_chunk))
+                            
+                            # Display each chunk
+                            for i, chunk in enumerate(chunks, 1):
                                 st.markdown(f'<h5 class="subsection-header">校閲済みテキスト_{i}</h5>', unsafe_allow_html=True)
                                 col1, col2 = st.columns([4, 1])
                                 with col1:
                                     st.text_area(
                                         f"校閲済みテキスト_{i}",
                                         chunk.strip(),
-                                        height=150,
+                                        height=200,
                                         label_visibility="collapsed"
                                     )
                                 with col2:
