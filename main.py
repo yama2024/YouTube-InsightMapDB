@@ -138,13 +138,24 @@ if youtube_url:
                         proofread_transcript = text_processor.proofread_text(transcript)
                         st.session_state.proofread_transcript = proofread_transcript
                         
-                        # Display proofread result below the button
-                        st.markdown('<h5 class="subsection-header">校閲済みテキスト</h5>', unsafe_allow_html=True)
-                        col1, col2 = st.columns([4, 1])
-                        with col1:
-                            st.text_area("校閲済みテキスト", proofread_transcript, height=200, label_visibility="collapsed")
-                        with col2:
-                            st.button("📋 コピー", key="copy_proofread", use_container_width=True)
+                        # Split proofread text into chunks
+                        chunks = proofread_transcript.split('\n\n')
+                        
+                        # Display each chunk in a separate container
+                        for i, chunk in enumerate(chunks, 1):
+                            if chunk.strip():  # Only display non-empty chunks
+                                st.markdown(f'<h5 class="subsection-header">校閲済みテキスト_{i}</h5>', unsafe_allow_html=True)
+                                col1, col2 = st.columns([4, 1])
+                                with col1:
+                                    st.text_area(
+                                        f"校閲済みテキスト_{i}",
+                                        chunk.strip(),
+                                        height=150,
+                                        label_visibility="collapsed"
+                                    )
+                                with col2:
+                                    st.button("📋 コピー", key=f"copy_proofread_{i}", use_container_width=True)
+                                    
                 except Exception as e:
                     st.error(f"校閲中にエラーが発生しました: {str(e)}")
 

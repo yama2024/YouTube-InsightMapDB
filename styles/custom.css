@@ -305,3 +305,93 @@ div.stButton > button:hover {
         font-size: 1.6rem !important;
     }
 }
+
+/* Enhanced Subsection Headers */
+.subsection-header {
+    font-size: 1.8rem !important;
+    color: white !important;
+    margin: 1.5rem 0 1rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+    text-transform: capitalize !important;
+    background: linear-gradient(45deg, rgba(74,144,226,0.1), rgba(127,179,213,0.1)) !important;
+    padding: 0.8rem 1.2rem !important;
+    border-radius: 12px !important;
+    border-left: 4px solid #4a90e2 !important;
+    transition: all 0.3s ease !important;
+}
+
+.subsection-header:hover {
+    background: linear-gradient(45deg, rgba(74,144,226,0.15), rgba(127,179,213,0.15)) !important;
+    transform: translateX(5px) !important;
+}
+
+/* Text Area Enhancement */
+.stTextArea textarea {
+    background: rgba(255, 255, 255, 0.98) !important;
+    color: #1a365d !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(26, 54, 93, 0.2) !important;
+    padding: 1rem !important;
+    font-size: 1.1rem !important;
+    line-height: 1.6 !important;
+    font-family: 'Noto Sans JP', sans-serif !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+.stTextArea textarea:focus {
+    border-color: #4a90e2 !important;
+    box-shadow: 0 4px 20px rgba(74, 144, 226, 0.25) !important;
+    transform: translateY(-2px) !important;
+}
+
+/* Animations */
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .app-title {
+        font-size: 3.2rem !important;
+    }
+    
+    .app-subtitle {
+        font-size: 1.4rem !important;
+    }
+    
+    .glass-container {
+        padding: 2rem !important;
+    }
+    
+    .section-header {
+        font-size: 2rem !important;
+    }
+    
+    .feature-description {
+        font-size: 1.2rem !important;
+    }
+    
+    .video-title {
+        font-size: 1.6rem !important;
+    }
+}
