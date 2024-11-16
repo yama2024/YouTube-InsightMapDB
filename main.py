@@ -113,15 +113,6 @@ if youtube_url:
             with col2:
                 st.button("📋 コピー", key="copy_original", use_container_width=True)
 
-            # Proofread text display
-            if 'proofread_transcript' in st.session_state:
-                st.markdown('<h5 class="subsection-header">校閲済みテキスト</h5>', unsafe_allow_html=True)
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.text_area("校閲済みテキスト", st.session_state.proofread_transcript, height=200, label_visibility="collapsed")
-                with col2:
-                    st.button("📋 コピー", key="copy_proofread", use_container_width=True)
-
             # AI要約セクション
             st.markdown('<h3 class="section-header">📊 AI要約</h3>', unsafe_allow_html=True)
             summary = text_processor.generate_summary(transcript)
@@ -143,8 +134,17 @@ if youtube_url:
             if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
                 try:
                     with st.spinner("テキストを校閲中..."):
+                        # Always use the original transcript for proofreading
                         proofread_transcript = text_processor.proofread_text(transcript)
                         st.session_state.proofread_transcript = proofread_transcript
+                        
+                        # Display proofread result below the button
+                        st.markdown('<h5 class="subsection-header">校閲済みテキスト</h5>', unsafe_allow_html=True)
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.text_area("校閲済みテキスト", proofread_transcript, height=200, label_visibility="collapsed")
+                        with col2:
+                            st.button("📋 コピー", key="copy_proofread", use_container_width=True)
                 except Exception as e:
                     st.error(f"校閲中にエラーが発生しました: {str(e)}")
 
