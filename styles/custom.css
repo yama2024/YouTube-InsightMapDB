@@ -17,7 +17,7 @@ div.stApp {
     100% { background-position: 0% 50%; }
 }
 
-/* Enhanced Glass Container */
+/* Enhanced Glass Container with Animated Border */
 .glass-container {
     background: rgba(255, 255, 255, 0.15) !important;
     backdrop-filter: blur(15px) !important;
@@ -28,6 +28,28 @@ div.stApp {
     margin: 2rem 0 !important;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
     transition: all 0.4s ease !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.glass-container::before {
+    content: "" !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: -100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.2),
+        transparent
+    ) !important;
+    transition: 0.5s !important;
+}
+
+.glass-container:hover::before {
+    left: 100% !important;
 }
 
 .glass-container:hover {
@@ -36,7 +58,7 @@ div.stApp {
     background: rgba(255, 255, 255, 0.18) !important;
 }
 
-/* App Title & Subtitle */
+/* App Title & Subtitle with Enhanced Animation */
 .app-title {
     font-size: 4.5rem !important;
     font-weight: 800 !important;
@@ -47,9 +69,22 @@ div.stApp {
     text-align: center !important;
     margin: 2.5rem 0 1rem !important;
     letter-spacing: 1.5px !important;
-    animation: fadeInDown 1.2s ease-out !important;
+    animation: fadeInDown 1.2s ease-out, titleGlow 3s ease-in-out infinite alternate !important;
     text-transform: capitalize !important;
     text-shadow: 0 2px 10px rgba(0,0,0,0.1) !important;
+}
+
+@keyframes titleGlow {
+    from {
+        text-shadow: 0 0 5px rgba(255,255,255,0.1),
+                     0 0 10px rgba(255,255,255,0.1),
+                     0 0 15px rgba(255,255,255,0.1);
+    }
+    to {
+        text-shadow: 0 0 10px rgba(255,255,255,0.2),
+                     0 0 20px rgba(255,255,255,0.2),
+                     0 0 30px rgba(255,255,255,0.2);
+    }
 }
 
 .app-subtitle {
@@ -60,9 +95,10 @@ div.stApp {
     margin-bottom: 3.5rem !important;
     animation: fadeInUp 1.2s ease-out !important;
     letter-spacing: 0.5px !important;
+    text-transform: uppercase !important;
 }
 
-/* Feature Grid */
+/* Feature Grid with Enhanced Cards */
 .feature-container {
     padding: 3rem !important;
     background: rgba(255, 255, 255, 0.12) !important;
@@ -88,6 +124,24 @@ div.stApp {
     padding: 2rem !important;
     transition: all 0.4s ease !important;
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.feature-card::after {
+    content: "" !important;
+    position: absolute !important;
+    top: -50% !important;
+    left: -50% !important;
+    width: 200% !important;
+    height: 200% !important;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%) !important;
+    opacity: 0 !important;
+    transition: opacity 0.3s ease !important;
+}
+
+.feature-card:hover::after {
+    opacity: 1 !important;
 }
 
 .feature-card:hover {
@@ -111,52 +165,7 @@ div.stApp {
     line-height: 1.6 !important;
 }
 
-/* Video Information */
-.video-info {
-    height: 100% !important;
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: space-between !important;
-}
-
-.video-title {
-    color: white !important;
-    font-size: 2rem !important;
-    font-weight: 700 !important;
-    margin-bottom: 1.5rem !important;
-    line-height: 1.4 !important;
-    letter-spacing: 0.5px !important;
-}
-
-.video-stats {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 1rem !important;
-    margin: 1.5rem 0 !important;
-}
-
-.stat-badge {
-    background: rgba(255, 255, 255, 0.15) !important;
-    padding: 0.8rem 1.2rem !important;
-    border-radius: 15px !important;
-    font-weight: 500 !important;
-    transition: all 0.3s ease !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
-}
-
-.stat-badge:hover {
-    background: rgba(255, 255, 255, 0.2) !important;
-    transform: translateY(-2px) !important;
-}
-
-.video-date {
-    color: rgba(255, 255, 255, 0.9) !important;
-    font-weight: 500 !important;
-    font-size: 1.2rem !important;
-    margin: 0 !important;
-}
-
-/* Section Headers */
+/* Enhanced Section Headers */
 .section-header {
     font-size: 2.4rem !important;
     color: white !important;
@@ -166,6 +175,7 @@ div.stApp {
     letter-spacing: 0.5px !important;
     position: relative !important;
     padding-left: 1rem !important;
+    text-transform: capitalize !important;
 }
 
 .section-header::before {
@@ -178,17 +188,19 @@ div.stApp {
     height: 70% !important;
     background: linear-gradient(to bottom, #4a90e2, #7fb3d5) !important;
     border-radius: 2px !important;
+    animation: headerGlow 2s ease-in-out infinite alternate !important;
 }
 
-.subsection-header {
-    font-size: 1.8rem !important;
-    color: white !important;
-    margin: 2rem 0 1.5rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.5px !important;
+@keyframes headerGlow {
+    from {
+        box-shadow: 0 0 5px rgba(74,144,226,0.5);
+    }
+    to {
+        box-shadow: 0 0 15px rgba(74,144,226,0.8);
+    }
 }
 
-/* Input Fields */
+/* Enhanced Input Fields */
 div.stTextInput > div > div > input {
     background: rgba(255, 255, 255, 0.98) !important;
     color: #1a365d !important;
@@ -206,7 +218,7 @@ div.stTextInput > div > div > input:focus {
     transform: translateY(-2px) !important;
 }
 
-/* Buttons */
+/* Enhanced Buttons */
 div.stButton > button {
     background: linear-gradient(45deg, #1a365d, #4a90e2) !important;
     color: white !important;
@@ -218,25 +230,30 @@ div.stButton > button {
     text-transform: uppercase !important;
     letter-spacing: 1px !important;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15) !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+div.stButton > button::before {
+    content: "" !important;
+    position: absolute !important;
+    top: -50% !important;
+    left: -50% !important;
+    width: 200% !important;
+    height: 200% !important;
+    background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, transparent 60%) !important;
+    transition: all 0.4s ease !important;
+    opacity: 0 !important;
+}
+
+div.stButton > button:hover::before {
+    opacity: 1 !important;
 }
 
 div.stButton > button:hover {
     transform: translateY(-3px) !important;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25) !important;
     background: linear-gradient(45deg, #4a90e2, #1a365d) !important;
-}
-
-/* Summary Container */
-.summary-container {
-    background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.summary-text {
-    color: white !important;
-    font-weight: 500 !important;
-    font-size: 1.2rem !important;
-    line-height: 1.7 !important;
-    letter-spacing: 0.3px !important;
 }
 
 /* Animations */

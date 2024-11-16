@@ -12,27 +12,36 @@ class TextProcessor:
         self.model = genai.GenerativeModel('gemini-pro')
 
     def get_transcript(self, url):
-        """YouTubeの文字起こしを取得"""
         video_id = self._extract_video_id(url)
         if not video_id:
             raise Exception("無効なYouTube URLです")
         
         try:
-            # First try with Japanese
-            try:
-                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja'])
-            except Exception:
-                # If Japanese fails, try with auto-generated Japanese
+            # Try multiple language options in sequence
+            languages_to_try = [
+                ['ja'],           # Japanese
+                ['ja-JP'],        # Japanese auto-generated
+                ['en'],           # English
+                ['en-US'],        # English auto-generated
+                None             # Any available language
+            ]
+            
+            transcript = None
+            for lang in languages_to_try:
                 try:
-                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja-JP'])
-                except Exception:
-                    # If that fails too, try getting any transcript and translate
-                    try:
+                    if lang:
+                        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=lang)
+                    else:
                         transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-                    except Exception as e:
-                        raise Exception("この動画の字幕は利用できません")
+                    transcript = ' '.join([entry['text'] for entry in transcript_list])
+                    break
+                except Exception:
+                    continue
                     
-            return ' '.join([entry['text'] for entry in transcript_list])
+            if not transcript:
+                raise Exception("この動画には字幕が設定されていません。\n字幕が設定されている動画を選択してください。")
+                
+            return transcript
             
         except Exception as e:
             error_msg = f"文字起こしの取得に失敗しました: {str(e)}"
