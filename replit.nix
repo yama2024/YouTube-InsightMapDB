@@ -1,8 +1,5 @@
 {pkgs}: {
   deps = [
-    pkgs.inkscape
-    pkgs.gdk-pixbuf
-    pkgs.libffi
     pkgs.librsvg
     pkgs.cairo
     pkgs.pango
