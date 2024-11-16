@@ -288,7 +288,7 @@ if youtube_url:
                         with st.spinner("テキストを校閲中..."):
                             proofread_transcript = text_processor.proofread_text(transcript)
                             st.session_state.proofread_transcript = proofread_transcript
-                            st.experimental_rerun()
+                            st.rerun()
                     except Exception as e:
                         st.error(f"校閲中にエラーが発生しました: {str(e)}")
 
