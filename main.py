@@ -10,7 +10,7 @@ import io
 
 # ページ設定
 st.set_page_config(
-    page_title="YouTube Insight Map",
+    page_title="YouTube InsightMap",
     page_icon="🎯",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -22,7 +22,7 @@ if os.path.exists(css_path):
     with open(css_path) as f:
         st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
-# Additional CSS for enhanced visuals
+# Enhanced visual styles
 st.markdown("""
 <style>
     @keyframes gradientBG {
@@ -37,144 +37,119 @@ st.markdown("""
         animation: gradientBG 15s ease infinite;
     }
     
-    .element-container {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 15px;
-        padding: 1.5rem;
-        margin: 1rem 0;
+    .glass-container {
+        background: rgba(255, 255, 255, 0.15) !important;
+        backdrop-filter: blur(12px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-radius: 20px !important;
+        padding: 2rem !important;
+        margin: 1.5rem 0 !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
     }
     
-    .css-1d391kg {  /* Streamlit's default containers */
-        background: rgba(255, 255, 255, 0.05) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        padding: 1rem !important;
-        border-radius: 15px !important;
+    .stTextInput > div > div > input {
+        background: rgba(255, 255, 255, 0.95) !important;
+        color: #1a365d !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(26, 54, 93, 0.2) !important;
+        padding: 0.75rem 1rem !important;
+        font-size: 1.1rem !important;
+        transition: all 0.3s ease !important;
     }
     
-    .stButton>button {
-        background: linear-gradient(45deg, #1a365d, #4a90e2);
-        color: white;
-        border: none;
-        padding: 0.5rem 1rem;
-        border-radius: 10px;
-        transition: all 0.3s ease;
+    .stTextInput > div > div > input:focus {
+        border-color: #4a90e2 !important;
+        box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2) !important;
     }
     
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    .stButton > button {
+        background: linear-gradient(45deg, #1a365d, #4a90e2) !important;
+        color: white !important;
+        border: none !important;
+        padding: 0.75rem 1.5rem !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.5px !important;
     }
     
-    /* Enhanced text input styling */
-    .stTextInput>div>div>input {
-        background: rgba(255, 255, 255, 0.9);
-        border-radius: 10px;
-        border: 1px solid rgba(26, 54, 93, 0.2);
-        padding: 0.5rem 1rem;
-        transition: all 0.3s ease;
+    .stButton > button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2) !important;
     }
     
-    .stTextInput>div>div>input:focus {
-        border-color: #4a90e2;
-        box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+    .title {
+        font-size: 3.5rem !important;
+        font-weight: 800 !important;
+        background: linear-gradient(45deg, #FFFFFF, #E0E7FF) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        text-transform: capitalize !important;
+        text-align: center !important;
+        margin: 2rem 0 !important;
+        letter-spacing: 1px !important;
+    }
+    
+    .subtitle {
+        font-size: 1.4rem !important;
+        color: rgba(255, 255, 255, 0.95) !important;
+        text-align: center !important;
+        font-weight: 500 !important;
+        margin-bottom: 3rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ヘッダーセクション
+# Enhanced header section
 st.markdown("""
-<div style="text-align: center; padding: 2rem 0;">
-    <h1 style="
-        font-size: 3.5rem;
-        font-weight: 800;
-        background: linear-gradient(45deg, #FFFFFF, #E0E7FF);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 1rem;
-        text-transform: capitalize;
-    ">YouTube Insight Map</h1>
-    <p style="
-        font-size: 1.4rem;
-        color: rgba(255, 255, 255, 0.9);
-        margin-bottom: 2rem;
-        font-weight: 500;
-    ">動画コンテンツを知識の地図に変換</p>
-</div>
+<div class="title">YouTube InsightMap</div>
+<div class="subtitle">コンテンツを知識の地図に変換</div>
+""", unsafe_allow_html=True)
 
-<div style="
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    padding: 2.5rem;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    margin: 2rem 0;
-">
-    <h4 style="
-        color: white;
-        font-size: 2rem;
-        margin-bottom: 1.5rem;
-        font-weight: 700;
-    ">🎯 コンテンツを深く理解する</h4>
-    <p style="
-        color: rgba(255, 255, 255, 0.9);
-        margin-bottom: 2rem;
-        font-size: 1.2rem;
-        line-height: 1.6;
-    ">AIを活用して動画コンテンツを分析し、知識を構造化します。</p>
-    <div style="
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1.5rem;
-    ">
-        <div style="
-            background: rgba(255, 255, 255, 0.15);
-            padding: 1.5rem;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: transform 0.3s ease;
-        ">
+# Feature showcase section
+st.markdown("""
+<div class="glass-container">
+    <h4 style="color: white; font-size: 2rem; margin-bottom: 1.5rem; font-weight: 700;">
+        🎯 コンテンツを深く理解する
+    </h4>
+    <p style="color: rgba(255, 255, 255, 0.95); margin-bottom: 2rem; font-size: 1.2rem; line-height: 1.6;">
+        AIを活用して動画コンテンツを分析し、知識を構造化します。
+    </p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+        <div class="glass-container" style="margin: 0 !important;">
             <h5 style="color: white; margin: 0; font-size: 1.3rem; font-weight: 700;">📝 文字起こし</h5>
-            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">高精度な音声認識で動画の内容を自動でテキスト化</p>
+            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">
+                高精度な音声認識で動画の内容を自動でテキスト化
+            </p>
         </div>
-        <div style="
-            background: rgba(255, 255, 255, 0.15);
-            padding: 1.5rem;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: transform 0.3s ease;
-        ">
+        <div class="glass-container" style="margin: 0 !important;">
             <h5 style="color: white; margin: 0; font-size: 1.3rem; font-weight: 700;">🤖 AI要約</h5>
-            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">重要なポイントを自動で抽出し、簡潔に要約</p>
+            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">
+                重要なポイントを自動で抽出し、簡潔に要約
+            </p>
         </div>
-        <div style="
-            background: rgba(255, 255, 255, 0.15);
-            padding: 1.5rem;
-            border-radius: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: transform 0.3s ease;
-        ">
+        <div class="glass-container" style="margin: 0 !important;">
             <h5 style="color: white; margin: 0; font-size: 1.3rem; font-weight: 700;">🔄 マインドマップ</h5>
-            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">コンテンツを視覚的に構造化し、理解を深める</p>
+            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">
+                コンテンツを視覚的に構造化し、理解を深める
+            </p>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# セッション状態の初期化
+# Initialize session state
 if 'pdf_data' not in st.session_state:
     st.session_state.pdf_data = None
 if 'video_info' not in st.session_state:
     st.session_state.video_info = None
 
-# URL入力セクション
+# URL input section with enhanced styling
 st.markdown("""
-<h3 style="
-    font-size: 2rem;
-    color: white;
-    margin: 2rem 0 1rem;
-    font-weight: 700;
-">🎥 動画を分析する</h3>
+<h3 style="color: white; font-size: 2rem; margin: 2rem 0 1rem; font-weight: 700;">
+    🎥 動画を分析する
+</h3>
 """, unsafe_allow_html=True)
 
 youtube_url = st.text_input(

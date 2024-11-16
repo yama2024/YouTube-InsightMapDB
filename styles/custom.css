@@ -6,185 +6,136 @@
     font-family: 'Noto Sans JP', sans-serif;
     background: linear-gradient(135deg, #1a365d, #4a90e2, #7fb3d5) !important;
     min-height: 100vh;
+    color: white;
+}
+
+/* グラスモーフィズム効果 */
+.glass-container {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    padding: 2rem;
+    margin: 1.5rem 0;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.glass-container:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15);
 }
 
 /* アプリヘッダー */
-.app-header {
-    text-align: center;
-    padding: 2rem 0;
-    animation: fadeIn 1.2s ease-in;
-}
-
-.app-header h1 {
-    font-size: 2.5rem;
+.title {
+    font-size: 3.5rem;
     font-weight: 800;
-    margin-bottom: 0.5rem;
-    background: linear-gradient(90deg, #1a365d, #2d4a8a);
+    background: linear-gradient(45deg, #FFFFFF, #E0E7FF);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-}
-
-.app-header p {
-    font-size: 1.2rem;
-    color: #4a5568;
-    margin-bottom: 2rem;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-}
-
-/* 機能コンテナ */
-.feature-container {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    padding: 2.5rem;
-    border-radius: 20px;
+    text-transform: capitalize;
+    text-align: center;
     margin: 2rem 0;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-    animation: fadeIn 0.8s ease-in;
+    letter-spacing: 1px;
+    animation: fadeInDown 1.2s ease-out;
 }
 
-.feature-container h4 {
-    color: #1a365d;
-    font-size: 1.8rem;
-    margin-bottom: 1.5rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}
-
-.feature-container > p {
-    color: #2d3748;
-    margin-bottom: 2rem;
+.subtitle {
+    font-size: 1.4rem;
+    color: rgba(255, 255, 255, 0.95);
+    text-align: center;
     font-weight: 500;
-    font-size: 1.1rem;
-    line-height: 1.6;
-}
-
-/* 機能カードグリッド */
-.feature-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.5rem;
-}
-
-.feature-card {
-    background: rgba(255,255,255,0.9);
-    padding: 1.5rem;
-    border-radius: 16px;
-    border: 1px solid rgba(26, 54, 93, 0.1);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.feature-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-}
-
-.feature-card h5 {
-    color: #1a365d;
-    margin: 0;
-    font-size: 1.3rem;
-    font-weight: 700;
-}
-
-.feature-card p {
-    color: #4a5568;
-    margin: 0.8rem 0 0 0;
-    font-size: 1rem;
-    font-weight: 500;
-    line-height: 1.5;
+    margin-bottom: 3rem;
+    animation: fadeInUp 1.2s ease-out;
 }
 
 /* セクションヘッダー */
 .section-header {
-    font-size: 1.8rem;
+    color: white;
+    font-size: 2rem;
     margin: 2rem 0 1rem;
-    background: linear-gradient(90deg, #1a365d, #2d4a8a);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
     font-weight: 700;
+    animation: fadeIn 0.8s ease-in;
 }
 
-/* 情報コンテナ */
-.info-container {
+/* 入力フィールド */
+.stTextInput > div > div > input {
     background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    padding: 2rem;
-    border-radius: 20px;
-    height: 100%;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-}
-
-.info-container h2 {
-    margin: 0;
     color: #1a365d;
-    font-size: 1.5rem;
-    font-weight: 700;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
-    line-height: 1.4;
+    border-radius: 10px;
+    border: 1px solid rgba(26, 54, 93, 0.2);
+    padding: 0.75rem 1rem;
+    font-size: 1.1rem;
+    transition: all 0.3s ease;
 }
 
-.info-tags {
-    margin: 1.5rem 0;
+.stTextInput > div > div > input:focus {
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
 }
 
-.info-tags span {
-    background: rgba(26,54,93,0.1);
-    padding: 0.6rem 1rem;
-    border-radius: 12px;
-    margin-right: 1rem;
-    color: #1a365d;
+/* ボタン */
+.stButton > button {
+    background: linear-gradient(45deg, #1a365d, #4a90e2);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
     font-weight: 600;
-    display: inline-block;
-    margin-bottom: 0.5rem;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.publish-date {
-    margin: 0;
-    color: #2d3748;
-    font-weight: 500;
-    font-size: 1.1rem;
-}
-
-/* 要約コンテナ */
-.summary-container {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    padding: 2rem;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-}
-
-.summary-content {
-    color: #1a365d;
-    font-weight: 500;
-    font-size: 1.1rem;
-    line-height: 1.6;
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
 /* アニメーション */
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* レスポンシブデザイン */
 @media (max-width: 768px) {
-    .app-header h1 {
-        font-size: 1.8rem;
+    .title {
+        font-size: 2.5rem;
     }
     
-    .app-header p {
-        font-size: 1rem;
+    .subtitle {
+        font-size: 1.2rem;
     }
 
-    .feature-container {
+    .glass-container {
         padding: 1.5rem;
     }
 
-    .feature-card {
-        padding: 1.2rem;
+    .section-header {
+        font-size: 1.8rem;
     }
 }
