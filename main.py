@@ -22,33 +22,33 @@ if os.path.exists(css_path):
 # アプリヘッダー
 st.markdown('''
 <div class="app-title">YouTube InsightMap</div>
-<div class="app-subtitle">コンテンツを知識の地図に変換</div>
+<div class="app-subtitle">Content Knowledge Visualization</div>
 ''', unsafe_allow_html=True)
 
 # 機能紹介セクション
 st.markdown('''
-<div class="glass-container">
-    <h4 class="section-header" style="margin-top: 0;">🎯 コンテンツを深く理解する</h4>
-    <p style="color: rgba(255, 255, 255, 0.95); margin-bottom: 2rem; font-size: 1.2rem; line-height: 1.6;">
-        AIを活用して動画コンテンツを分析し、知識を構造化します。
+<div class="glass-container feature-container">
+    <h4 class="section-header" style="margin-top: 0;">🎯 Deep Content Understanding</h4>
+    <p class="feature-description">
+        Analyze video content and structure knowledge using AI technology.
     </p>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
-        <div class="glass-container" style="margin: 0 !important;">
-            <h5 style="color: white; margin: 0; font-size: 1.3rem; font-weight: 700;">📝 文字起こし</h5>
-            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">
-                高精度な音声認識で動画の内容を自動でテキスト化
+    <div class="feature-grid">
+        <div class="feature-card">
+            <h5 class="feature-title">📝 Transcription</h5>
+            <p class="feature-text">
+                Automatic speech-to-text with high accuracy
             </p>
         </div>
-        <div class="glass-container" style="margin: 0 !important;">
-            <h5 style="color: white; margin: 0; font-size: 1.3rem; font-weight: 700;">🤖 AI要約</h5>
-            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">
-                重要なポイントを自動で抽出し、簡潔に要約
+        <div class="feature-card">
+            <h5 class="feature-title">🤖 AI Summary</h5>
+            <p class="feature-text">
+                Extract key points automatically
             </p>
         </div>
-        <div class="glass-container" style="margin: 0 !important;">
-            <h5 style="color: white; margin: 0; font-size: 1.3rem; font-weight: 700;">🔄 マインドマップ</h5>
-            <p style="color: rgba(255, 255, 255, 0.9); margin: 0.8rem 0 0 0; font-size: 1rem;">
-                コンテンツを視覚的に構造化し、理解を深める
+        <div class="feature-card">
+            <h5 class="feature-title">🔄 Mind Map</h5>
+            <p class="feature-text">
+                Visualize content structure
             </p>
         </div>
     </div>
@@ -62,12 +62,12 @@ if 'video_info' not in st.session_state:
     st.session_state.video_info = None
 
 # URL入力セクション
-st.markdown('<h3 class="section-header">🎥 動画を分析する</h3>', unsafe_allow_html=True)
+st.markdown('<h3 class="section-header">🎥 Analyze Video</h3>', unsafe_allow_html=True)
 
 youtube_url = st.text_input(
-    "YouTube URLを入力してください",
+    "Enter YouTube URL",
     placeholder="https://www.youtube.com/watch?v=...",
-    help="分析したいYouTube動画のURLを入力してください"
+    help="Input the URL of the YouTube video you want to analyze"
 )
 
 if youtube_url:
@@ -78,78 +78,79 @@ if youtube_url:
         st.session_state.video_info = video_info
         
         # 動画情報セクション
-        st.markdown('<h3 class="section-header">📺 動画の基本情報</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 class="section-header">📺 Video Information</h3>', unsafe_allow_html=True)
         
         col1, col2 = st.columns([1, 2])
         with col1:
-            st.image(video_info['thumbnail_url'], use_container_width=True)
+            st.image(video_info['thumbnail_url'], use_column_width=True)
         
         with col2:
             st.markdown(f'''
-            <div class="glass-container" style="height: 100%;">
-                <h2 style="color: white; font-size: 1.8rem; font-weight: 700; margin-bottom: 1rem; line-height: 1.4;">
-                    {video_info['title']}
-                </h2>
-                <div style="display: flex; flex-wrap: wrap; gap: 0.8rem; margin: 1.5rem 0;">
-                    <span class="glass-container" style="margin: 0; padding: 0.6rem 1rem;">
-                        👤 {video_info['channel_title']}
-                    </span>
-                    <span class="glass-container" style="margin: 0; padding: 0.6rem 1rem;">
-                        ⏱️ {video_info['duration']}
-                    </span>
-                    <span class="glass-container" style="margin: 0; padding: 0.6rem 1rem;">
-                        👁️ {video_info['view_count']}回視聴
-                    </span>
+            <div class="glass-container video-info">
+                <h2 class="video-title">{video_info['title']}</h2>
+                <div class="video-stats">
+                    <span class="stat-badge">👤 {video_info['channel_title']}</span>
+                    <span class="stat-badge">⏱️ {video_info['duration']}</span>
+                    <span class="stat-badge">👁️ {video_info['view_count']} Views</span>
                 </div>
-                <p style="color: rgba(255, 255, 255, 0.9); font-weight: 500; font-size: 1.1rem; margin: 0;">
-                    📅 投稿日: {video_info['published_at']}
+                <p class="video-date">
+                    📅 Published: {video_info['published_at']}
                 </p>
             </div>
             ''', unsafe_allow_html=True)
 
         # テキスト処理
         text_processor = TextProcessor()
-        with st.spinner("文字起こしを生成中..."):
+        with st.spinner("Generating transcript..."):
             transcript = text_processor.get_transcript(youtube_url)
-            st.markdown('<h3 class="section-header">📝 文字起こし</h3>', unsafe_allow_html=True)
+            st.markdown('<h3 class="section-header">📝 Transcript</h3>', unsafe_allow_html=True)
 
-            if st.button("✨ 校閲して整形する", use_container_width=True):
+            if st.button("✨ Proofread & Format", use_container_width=True, key="proofread_button"):
                 try:
-                    with st.spinner("テキストを校閲中..."):
+                    with st.spinner("Proofreading text..."):
                         proofread_transcript = text_processor.proofread_text(transcript)
                         st.session_state.proofread_transcript = proofread_transcript
-                        st.rerun()
                 except Exception as e:
-                    st.error(f"校閲中にエラーが発生しました: {str(e)}")
+                    st.error(f"Error during proofreading: {str(e)}")
 
-            display_text = st.session_state.get('proofread_transcript', transcript)
+            # Original transcript display
+            st.markdown('<h5 class="subsection-header">Original Transcript</h5>', unsafe_allow_html=True)
             col1, col2 = st.columns([4, 1])
             with col1:
-                st.text_area("文字起こしテキスト", display_text, height=200, label_visibility="collapsed")
+                st.text_area("Original transcript text", transcript, height=200, label_visibility="collapsed")
             with col2:
-                st.button("📋 コピー", key="copy_transcript", use_container_width=True)
+                st.button("📋 Copy", key="copy_original", use_container_width=True)
 
-            # AI要約セクション
-            st.markdown('<h3 class="section-header">📊 AI要約</h3>', unsafe_allow_html=True)
+            # Proofread text display
+            if 'proofread_transcript' in st.session_state:
+                st.markdown('<h5 class="subsection-header">Proofread Text</h5>', unsafe_allow_html=True)
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.text_area("Proofread text", st.session_state.proofread_transcript, height=200, label_visibility="collapsed")
+                with col2:
+                    st.button("📋 Copy", key="copy_proofread", use_container_width=True)
+
+            # AI Summary section
+            st.markdown('<h3 class="section-header">📊 AI Summary</h3>', unsafe_allow_html=True)
             summary = text_processor.generate_summary(transcript)
             
             col1, col2 = st.columns([4, 1])
             with col1:
                 st.markdown(f'''
-                <div class="glass-container">
-                    <div style="color: white; font-weight: 500; font-size: 1.1rem; line-height: 1.6;">
+                <div class="glass-container summary-container">
+                    <div class="summary-text">
                         {summary}
                     </div>
                 </div>
                 ''', unsafe_allow_html=True)
             with col2:
-                st.button("📋 コピー", key="copy_summary", use_container_width=True)
+                st.button("📋 Copy", key="copy_summary", use_container_width=True)
 
-        # マインドマップ生成
+        # Mind Map generation
         mindmap_gen = MindMapGenerator()
-        with st.spinner("マインドマップを生成中..."):
+        with st.spinner("Generating mind map..."):
             mindmap_data = mindmap_gen.generate_mindmap(transcript)
-            st.markdown('<h3 class="section-header">🔄 マインドマップ</h3>', unsafe_allow_html=True)
+            st.markdown('<h3 class="section-header">🔄 Mind Map</h3>', unsafe_allow_html=True)
             
             fig = mindmap_gen.create_visualization(mindmap_data)
             fig.update_layout(
@@ -160,10 +161,10 @@ if youtube_url:
             st.plotly_chart(fig, use_container_width=True)
             mindmap_svg = fig.to_image(format="svg")
 
-        # PDFレポート生成
-        st.markdown('<h3 class="section-header">📑 分析レポート</h3>', unsafe_allow_html=True)
+        # PDF Report generation
+        st.markdown('<h3 class="section-header">📑 Analysis Report</h3>', unsafe_allow_html=True)
         
-        with st.spinner("PDFレポートを生成中..."):
+        with st.spinner("Generating PDF report..."):
             try:
                 pdf_gen = PDFGenerator()
                 pdf_data = pdf_gen.create_pdf(
@@ -175,15 +176,15 @@ if youtube_url:
                 st.session_state.pdf_data = pdf_data
                 
                 st.download_button(
-                    label="📥 PDFレポートをダウンロード",
+                    label="📥 Download PDF Report",
                     data=pdf_data,
-                    file_name=f"{video_info['title']}_分析レポート.pdf",
+                    file_name=f"{video_info['title']}_analysis_report.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
                 
             except Exception as e:
-                st.error(f"PDFレポートの生成中にエラーが発生しました: {str(e)}")
+                st.error(f"Error generating PDF report: {str(e)}")
 
     except Exception as e:
-        st.error(f"エラーが発生しました: {str(e)}")
+        st.error(f"An error occurred: {str(e)}")
