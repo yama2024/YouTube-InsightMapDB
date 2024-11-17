@@ -101,7 +101,7 @@ st.markdown('''
 <div class="glass-container feature-container">
     <h4 class="section-header" style="margin-top: 0;">🎯 Advanced Content Analysis</h4>
     <p class="feature-description">
-        AIテクノロジーを活用して動画コンテンツを分析し、知識を構造化します
+        AIを活用して動画コンテンツを分析・可視化し、知識を効率的に構造化します
     </p>
     <div class="feature-grid">
         <div class="feature-card">
