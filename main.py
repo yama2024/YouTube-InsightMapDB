@@ -163,13 +163,14 @@ def get_step_status(step_number):
     return ""
 
 def render_step_header(step_number, title, emoji, description=""):
+    """Render an enhanced step header with improved typography and visibility"""
     status = get_step_status(step_number)
     st.markdown(f'''
     <div class="step-header {status}">
         <div class="step-number">{step_number}</div>
         <div class="step-content">
-            <h3 class="step-title">{emoji} {title}</h3>
-            {f'<p class="step-description">{description}</p>' if description else ''}
+            <div class="step-title">{emoji} {title}</div>
+            {f'<div class="step-description">{description}</div>' if description else ''}
         </div>
     </div>
     ''', unsafe_allow_html=True)
@@ -177,9 +178,6 @@ def render_step_header(step_number, title, emoji, description=""):
 # Step 1: Video Input
 with st.expander("Step 1: Video Input", expanded=st.session_state.current_step == 1):
     render_step_header(1, "Video Input", "🎥", "分析したいYouTube動画のURLを入力してください")
-    st.markdown('''
-    <div class="section-description">分析したいYouTube動画のURLを入力してください</div>
-    ''', unsafe_allow_html=True)
     
     youtube_url = st.text_input(
         "YouTube URL",
