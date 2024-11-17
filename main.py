@@ -13,19 +13,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Initialize session state for theme
-if 'theme' not in st.session_state:
-    st.session_state.theme = 'ocean'
-
-# Theme definitions
-THEMES = {
-    'ocean': 'Ocean Blue',
-    'sunset': 'Sunset',
-    'forest': 'Forest',
-    'midnight': 'Midnight',
-    'lavender': 'Lavender'
-}
-
 # カスタムCSSの読み込み
 def load_css():
     css_path = os.path.join(os.path.dirname(__file__), 'styles', 'custom.css')
@@ -36,36 +23,6 @@ def load_css():
         st.error("CSS file not found!")
 
 load_css()
-
-# Theme selector
-col1, col2 = st.columns([6, 1])
-with col2:
-    selected_theme = st.selectbox(
-        "テーマ",
-        options=list(THEMES.keys()),
-        format_func=lambda x: THEMES[x],
-        label_visibility="collapsed",
-        key="theme_selector"
-    )
-    if selected_theme != st.session_state.theme:
-        st.session_state.theme = selected_theme
-        st.rerun()
-
-# Apply current theme using pure CSS
-st.markdown(f'''
-    <style>
-        div.stApp {{
-            background: linear-gradient(-45deg, 
-                var(--primary-gradient-1), 
-                var(--primary-gradient-2), 
-                var(--primary-gradient-3)
-            ) !important;
-        }}
-    </style>
-    <script>
-        document.body.setAttribute('data-theme', '{st.session_state.theme}');
-    </script>
-''', unsafe_allow_html=True)
 
 # アプリヘッダー
 st.markdown('''
