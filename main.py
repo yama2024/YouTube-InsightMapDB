@@ -26,8 +26,10 @@ load_css()
 
 # アプリヘッダー
 st.markdown('''
-<div class="app-title">YouTube InsightMap</div>
-<div class="app-subtitle">Content Knowledge Visualization</div>
+<div class="app-header">
+    <div class="app-title">YouTube InsightMap</div>
+    <div class="app-subtitle">Content Knowledge Visualization</div>
+</div>
 ''', unsafe_allow_html=True)
 
 # 機能紹介セクション
@@ -39,22 +41,28 @@ st.markdown('''
     </p>
     <div class="feature-grid">
         <div class="feature-card">
-            <h5 class="feature-title">📝 高精度文字起こし</h5>
+            <div class="feature-icon">📝</div>
+            <h5 class="feature-title">高精度文字起こし</h5>
             <p class="feature-text">
                 AIによる高精度な音声認識と文字起こし
             </p>
+            <div class="feature-glow"></div>
         </div>
         <div class="feature-card">
-            <h5 class="feature-title">🤖 インテリジェント要約</h5>
+            <div class="feature-icon">🤖</div>
+            <h5 class="feature-title">インテリジェント要約</h5>
             <p class="feature-text">
                 重要ポイントを自動で抽出・整理
             </p>
+            <div class="feature-glow"></div>
         </div>
         <div class="feature-card">
-            <h5 class="feature-title">🔄 ダイナミックマップ</h5>
+            <div class="feature-icon">🔄</div>
+            <h5 class="feature-title">ダイナミックマップ</h5>
             <p class="feature-text">
                 コンテンツ構造をビジュアライズ
             </p>
+            <div class="feature-glow"></div>
         </div>
     </div>
 </div>

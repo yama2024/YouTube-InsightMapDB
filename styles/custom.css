@@ -1,5 +1,5 @@
 /* Google Fonts の追加 */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&display=swap');
 
 /* グローバルスタイル */
 div.stApp {
@@ -17,152 +17,154 @@ div.stApp {
     100% { background-position: 0% 50%; }
 }
 
-/* Enhanced Glass Container with Animated Border */
-.glass-container {
-    background: rgba(255, 255, 255, 0.12) !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.3) !important;
-    border-radius: 24px !important;
-    padding: 2.5rem !important;
-    margin: 2rem 0 !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2) !important;
-    transition: all 0.4s ease !important;
-    position: relative !important;
-    overflow: hidden !important;
+/* アプリヘッダー */
+.app-header {
+    text-align: center;
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+    position: relative;
 }
 
-.glass-container::before {
-    content: "" !important;
-    position: absolute !important;
-    top: 0 !important;
-    left: -100% !important;
-    width: 100% !important;
-    height: 100% !important;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.2),
-        transparent
-    ) !important;
-    transition: 0.5s !important;
-}
-
-.glass-container:hover::before {
-    left: 100% !important;
-}
-
-.glass-container:hover {
-    transform: translateY(-5px) !important;
-    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25) !important;
-    background: rgba(255, 255, 255, 0.15) !important;
-}
-
-/* Enhanced App Title & Subtitle with Animation */
 .app-title {
-    font-size: 4.5rem !important;
-    font-weight: 800 !important;
+    font-size: 5rem !important;
+    font-weight: 900 !important;
     background: linear-gradient(45deg, #FFFFFF, #E0E7FF) !important;
     -webkit-background-clip: text !important;
     background-clip: text !important;
     -webkit-text-fill-color: transparent !important;
     text-align: center !important;
-    margin: 2.5rem 0 1rem !important;
-    letter-spacing: 1.5px !important;
+    margin: 2rem 0 1rem !important;
+    letter-spacing: 2px !important;
     animation: fadeInDown 1.2s ease-out, titleGlow 3s ease-in-out infinite alternate !important;
-    text-shadow: 0 2px 10px rgba(0,0,0,0.1) !important;
+    text-shadow: 0 2px 15px rgba(255,255,255,0.15) !important;
     text-transform: capitalize !important;
+    position: relative;
 }
 
-@keyframes titleGlow {
-    from {
-        text-shadow: 0 0 5px rgba(255,255,255,0.1),
-                     0 0 10px rgba(255,255,255,0.1),
-                     0 0 15px rgba(255,255,255,0.1);
-    }
-    to {
-        text-shadow: 0 0 10px rgba(255,255,255,0.2),
-                     0 0 20px rgba(255,255,255,0.2),
-                     0 0 30px rgba(255,255,255,0.2);
-    }
+.app-title::after {
+    content: "";
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100px;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, #fff, transparent);
+    animation: lineGlow 2s ease-in-out infinite;
+}
+
+@keyframes lineGlow {
+    0%, 100% { width: 100px; opacity: 0.5; }
+    50% { width: 200px; opacity: 1; }
 }
 
 .app-subtitle {
-    font-size: 1.8rem !important;
+    font-size: 2rem !important;
     color: rgba(255, 255, 255, 0.95) !important;
     text-align: center !important;
     font-weight: 500 !important;
-    margin-bottom: 3.5rem !important;
+    margin: 1rem 0 3rem !important;
     animation: fadeInUp 1.2s ease-out !important;
-    letter-spacing: 0.5px !important;
+    letter-spacing: 1px !important;
     text-transform: uppercase !important;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+}
+
+/* Enhanced Glass Container */
+.glass-container {
+    background: rgba(255, 255, 255, 0.08) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 24px !important;
+    padding: 3rem !important;
+    margin: 2rem 0 !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+    transition: all 0.4s ease !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.glass-container:hover {
+    transform: translateY(-5px) !important;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25) !important;
+    background: rgba(255, 255, 255, 0.12) !important;
 }
 
 /* Enhanced Feature Cards */
 .feature-container {
     padding: 3rem !important;
-    background: rgba(255, 255, 255, 0.12) !important;
 }
 
 .feature-description {
     color: rgba(255, 255, 255, 0.95) !important;
-    margin-bottom: 2.5rem !important;
-    font-size: 1.4rem !important;
+    margin-bottom: 3rem !important;
+    font-size: 1.5rem !important;
     line-height: 1.7 !important;
     text-align: center !important;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
 }
 
 .feature-grid {
     display: grid !important;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
-    gap: 2rem !important;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)) !important;
+    gap: 2.5rem !important;
 }
 
 .feature-card {
-    background: rgba(255, 255, 255, 0.12) !important;
+    background: rgba(255, 255, 255, 0.08) !important;
     border-radius: 20px !important;
-    padding: 2rem !important;
+    padding: 2.5rem !important;
     transition: all 0.4s ease !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
     position: relative !important;
     overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
 }
 
-.feature-card::after {
-    content: "" !important;
-    position: absolute !important;
-    top: -50% !important;
-    left: -50% !important;
-    width: 200% !important;
-    height: 200% !important;
-    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%) !important;
-    opacity: 0 !important;
-    transition: opacity 0.3s ease !important;
+.feature-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at center, rgba(255,255,255,0.1), transparent);
+    opacity: 0;
+    transition: opacity 0.4s ease;
 }
 
-.feature-card:hover::after {
-    opacity: 1 !important;
+.feature-card:hover::before {
+    opacity: 1;
 }
 
-.feature-card:hover {
-    transform: translateY(-5px) !important;
-    background: rgba(255, 255, 255, 0.18) !important;
-    border-color: rgba(255, 255, 255, 0.3) !important;
+.feature-icon {
+    font-size: 3rem !important;
+    margin-bottom: 1.5rem !important;
+    position: relative !important;
+    z-index: 2 !important;
 }
 
 .feature-title {
     color: white !important;
     margin: 0 0 1rem 0 !important;
-    font-size: 1.5rem !important;
+    font-size: 1.8rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.5px !important;
+    position: relative !important;
+    z-index: 2 !important;
 }
 
 .feature-text {
     color: rgba(255, 255, 255, 0.9) !important;
     margin: 0 !important;
-    font-size: 1.1rem !important;
+    font-size: 1.2rem !important;
     line-height: 1.6 !important;
+    position: relative !important;
+    z-index: 2 !important;
 }
 
 /* Enhanced Section Headers */
