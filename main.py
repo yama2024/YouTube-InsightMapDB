@@ -293,26 +293,34 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
 # Step 4: Enhancement
 with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_step == 4):
     if st.session_state.transcript and st.session_state.summary:
-        st.markdown('<h5 class="subsection-header">✨ Text Enhancement</h5>', unsafe_allow_html=True)
+        st.markdown('''
+        <div class="glass-container">
+            <h4 class="section-header">Text Enhancement Results</h4>
+            <p class="section-description">AIによる文章の校閲・整形を行います</p>
+        </div>
+        ''', unsafe_allow_html=True)
                 
         if 'proofread_transcript' not in st.session_state:
-            if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
+            if st.button("🔄 テキストを校閲", use_container_width=True, key="proofread_button", 
+                        help="AIによって文章を校閲・整形します"):
                 progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
                 try:
                     text_processor = TextProcessor()
                     proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
                     
-                    st.markdown("### Text Enhancement Results")
-                    st.markdown("校閲・整形された結果を表示します")
+                    st.markdown('''
+                    <div class="glass-container">
+                        <div class="text-enhancement-results">
+                    ''', unsafe_allow_html=True)
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.markdown("**元のテキスト**")
-                        copy_text_block(st.session_state.transcript)
+                        copy_text_block(st.session_state.transcript, "元のテキスト")
                     
                     with col2:
-                        st.markdown("**校閲後のテキスト**")
-                        copy_text_block(proofread_transcript)
+                        copy_text_block(proofread_transcript, "校閲後のテキスト")
+                    
+                    st.markdown('</div></div>', unsafe_allow_html=True)
                     
                     st.session_state.proofread_transcript = proofread_transcript
                     st.session_state.current_step = 5
@@ -325,19 +333,22 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                         progress_bar.empty()
                     st.error(f"テキストの校閲に失敗しました: {str(e)}")
         else:
-            st.markdown("### Text Enhancement Results")
-            st.markdown("校閲・整形された結果を表示します")
+            st.markdown('''
+            <div class="glass-container">
+                <div class="text-enhancement-results">
+            ''', unsafe_allow_html=True)
             
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("**元のテキスト**")
-                copy_text_block(st.session_state.transcript)
+                copy_text_block(st.session_state.transcript, "元のテキスト")
             
             with col2:
-                st.markdown("**校閲後のテキスト**")
-                copy_text_block(st.session_state.proofread_transcript)
+                copy_text_block(st.session_state.proofread_transcript, "校閲後のテキスト")
             
-            if st.button("校閲をやり直す", use_container_width=True, key="reproofread_button"):
+            st.markdown('</div></div>', unsafe_allow_html=True)
+            
+            if st.button("🔄 校閲をやり直す", use_container_width=True, key="reproofread_button",
+                        help="テキストの校閲をもう一度実行します"):
                 del st.session_state.proofread_transcript
                 st.rerun()
 
