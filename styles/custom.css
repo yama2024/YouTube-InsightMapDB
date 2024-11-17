@@ -1,14 +1,56 @@
 /* Google Fonts の追加 */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&display=swap');
 
+/* Theme Variables */
+:root {
+    --primary-gradient-1: #1a365d;
+    --primary-gradient-2: #4a90e2;
+    --primary-gradient-3: #7fb3d5;
+    --text-primary: white;
+    --text-secondary: rgba(255, 255, 255, 0.95);
+    --glass-bg: rgba(255, 255, 255, 0.08);
+    --glass-border: rgba(255, 255, 255, 0.2);
+}
+
+/* Theme Classes */
+.theme-ocean {
+    --primary-gradient-1: #1a365d;
+    --primary-gradient-2: #4a90e2;
+    --primary-gradient-3: #7fb3d5;
+}
+
+.theme-sunset {
+    --primary-gradient-1: #662d60;
+    --primary-gradient-2: #e94e77;
+    --primary-gradient-3: #f9a26c;
+}
+
+.theme-forest {
+    --primary-gradient-1: #1b4332;
+    --primary-gradient-2: #40916c;
+    --primary-gradient-3: #95d5b2;
+}
+
+.theme-midnight {
+    --primary-gradient-1: #0f172a;
+    --primary-gradient-2: #334155;
+    --primary-gradient-3: #64748b;
+}
+
+.theme-lavender {
+    --primary-gradient-1: #4c1d95;
+    --primary-gradient-2: #7c3aed;
+    --primary-gradient-3: #c4b5fd;
+}
+
 /* グローバルスタイル */
 div.stApp {
     font-family: 'Noto Sans JP', sans-serif !important;
-    background: linear-gradient(-45deg, #1a365d, #4a90e2, #7fb3d5) !important;
+    background: linear-gradient(-45deg, var(--primary-gradient-1), var(--primary-gradient-2), var(--primary-gradient-3)) !important;
     background-size: 400% 400% !important;
     animation: gradientBG 15s ease infinite !important;
     min-height: 100vh !important;
-    color: white !important;
+    color: var(--text-primary) !important;
 }
 
 @keyframes gradientBG {
@@ -28,7 +70,7 @@ div.stApp {
 .app-title {
     font-size: 5rem !important;
     font-weight: 900 !important;
-    background: linear-gradient(45deg, #FFFFFF, #E0E7FF) !important;
+    background: linear-gradient(45deg, var(--text-primary), #E0E7FF) !important;
     -webkit-background-clip: text !important;
     background-clip: text !important;
     -webkit-text-fill-color: transparent !important;
@@ -60,7 +102,7 @@ div.stApp {
 
 .app-subtitle {
     font-size: 2rem !important;
-    color: rgba(255, 255, 255, 0.95) !important;
+    color: var(--text-secondary) !important;
     text-align: center !important;
     font-weight: 500 !important;
     margin: 1rem 0 3rem !important;
@@ -72,10 +114,10 @@ div.stApp {
 
 /* Enhanced Glass Container */
 .glass-container {
-    background: rgba(255, 255, 255, 0.08) !important;
+    background: var(--glass-bg) !important;
     backdrop-filter: blur(20px) !important;
     -webkit-backdrop-filter: blur(20px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border: 1px solid var(--glass-border) !important;
     border-radius: 24px !important;
     padding: 3rem !important;
     margin: 2rem 0 !important;
@@ -97,7 +139,7 @@ div.stApp {
 }
 
 .feature-description {
-    color: rgba(255, 255, 255, 0.95) !important;
+    color: var(--text-secondary) !important;
     margin-bottom: 3rem !important;
     font-size: 1.5rem !important;
     line-height: 1.7 !important;
@@ -112,7 +154,7 @@ div.stApp {
 }
 
 .feature-card {
-    background: rgba(255, 255, 255, 0.08) !important;
+    background: var(--glass-bg) !important;
     border-radius: 20px !important;
     padding: 2.5rem !important;
     transition: all 0.4s ease !important;
@@ -149,7 +191,7 @@ div.stApp {
 }
 
 .feature-title {
-    color: white !important;
+    color: var(--text-primary) !important;
     margin: 0 0 1rem 0 !important;
     font-size: 1.8rem !important;
     font-weight: 700 !important;
@@ -170,7 +212,7 @@ div.stApp {
 /* Enhanced Section Headers */
 .section-header {
     font-size: 2.4rem !important;
-    color: white !important;
+    color: var(--text-primary) !important;
     margin: 3rem 0 2rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.5px !important;
@@ -187,7 +229,7 @@ div.stApp {
     transform: translateY(-50%) !important;
     width: 4px !important;
     height: 70% !important;
-    background: linear-gradient(to bottom, #4a90e2, #7fb3d5) !important;
+    background: linear-gradient(to bottom, var(--primary-gradient-2), var(--primary-gradient-3)) !important;
     border-radius: 2px !important;
     animation: headerGlow 2s ease-in-out infinite alternate !important;
 }
@@ -223,8 +265,8 @@ div.stApp {
 
 /* Enhanced Buttons */
 div.stButton > button {
-    background: linear-gradient(45deg, #1a365d, #4a90e2) !important;
-    color: white !important;
+    background: linear-gradient(45deg, var(--primary-gradient-1), var(--primary-gradient-2)) !important;
+    color: var(--text-primary) !important;
     border: none !important;
     padding: 0.9rem 1.8rem !important;
     border-radius: 15px !important;
@@ -256,7 +298,7 @@ div.stButton > button:hover::before {
 div.stButton > button:hover {
     transform: translateY(-3px) !important;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25) !important;
-    background: linear-gradient(45deg, #4a90e2, #1a365d) !important;
+    background: linear-gradient(45deg, var(--primary-gradient-2), var(--primary-gradient-1)) !important;
 }
 
 /* Animations */
@@ -303,4 +345,31 @@ div.stButton > button:hover {
     .feature-description {
         font-size: 1.2rem !important;
     }
+}
+
+/* Theme Selector Styles */
+.theme-selector {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1000;
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 0.5rem;
+    border: 1px solid var(--glass-border);
+}
+
+.theme-selector select {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    padding: 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.theme-selector select option {
+    background: var(--primary-gradient-1);
+    color: var(--text-primary);
 }
