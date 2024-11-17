@@ -287,21 +287,51 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
 with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_step == 4):
     if st.session_state.transcript and st.session_state.summary:
         st.markdown('<h5 class="subsection-header">✨ Text Enhancement</h5>', unsafe_allow_html=True)
-        if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
-            progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
-            try:
-                text_processor = TextProcessor()
-                proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
-                st.session_state.proofread_transcript = proofread_transcript
-                st.session_state.current_step = 5
-                update_progress('proofread')
-                time.sleep(0.5)
-                progress_bar.empty()
-                show_success_message("テキストの校閲が完了しました", key="proofread_success")
-            except Exception as e:
-                if 'progress_bar' in locals():
+                
+        if 'proofread_transcript' not in st.session_state:
+            if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
+                progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
+                try:
+                    text_processor = TextProcessor()
+                    proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
+                    st.session_state.proofread_transcript = proofread_transcript
+                    st.session_state.current_step = 5
+                    update_progress('proofread')
+                    time.sleep(0.5)
                     progress_bar.empty()
-                st.error(f"テキストの校閲に失敗しました: {str(e)}")
+                    show_success_message("テキストの校閲が完了しました", key="proofread_success")
+                except Exception as e:
+                    if 'progress_bar' in locals():
+                        progress_bar.empty()
+                    st.error(f"テキストの校閲に失敗しました: {str(e)}")
+        else:
+            # Display the comparison of original and enhanced text
+            st.markdown('''
+            <div class="glass-container">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <h6 style="color: white; margin-bottom: 0.5rem;">Original Text</h6>
+                        <div style="background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 8px;">
+                            {}
+                        </div>
+                    </div>
+                    <div>
+                        <h6 style="color: white; margin-bottom: 0.5rem;">Enhanced Text</h6>
+                        <div style="background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 8px;">
+                            {}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            '''.format(
+                st.session_state.transcript.replace('\n', '<br>'),
+                st.session_state.proofread_transcript.replace('\n', '<br>')
+            ), unsafe_allow_html=True)
+                    
+            # Add option to regenerate if needed
+            if st.button("校閲をやり直す", use_container_width=True, key="reproofread_button"):
+                del st.session_state.proofread_transcript
+                st.experimental_rerun()
 
 # Step 5: Export
 with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step == 5):
