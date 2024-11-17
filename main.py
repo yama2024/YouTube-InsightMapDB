@@ -6,7 +6,7 @@ from utils.pdf_generator import PDFGenerator
 import os
 import time
 
-# ページ設定
+# Page configuration
 st.set_page_config(
     page_title="YouTube InsightMap",
     page_icon="🎯",
@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# カスタムCSSの読み込み
+# Load CSS and helper functions
 def load_css():
     css_path = os.path.join(os.path.dirname(__file__), 'styles', 'custom.css')
     if os.path.exists(css_path):
@@ -88,7 +88,7 @@ def show_success_message(message, key=None):
     ''', unsafe_allow_html=True)
     return placeholder
 
-# アプリヘッダー
+# Application Header
 st.markdown('''
 <div class="app-header">
     <div class="app-title">YouTube InsightMap</div>
@@ -96,7 +96,7 @@ st.markdown('''
 </div>
 ''', unsafe_allow_html=True)
 
-# 機能紹介セクション
+# Feature Introduction
 st.markdown('''
 <div class="glass-container feature-container">
     <h4 class="section-header" style="margin-top: 0;">🎯 Advanced Content Analysis</h4>
@@ -107,79 +107,69 @@ st.markdown('''
         <div class="feature-card">
             <div class="feature-icon">📝</div>
             <h5 class="feature-title">高精度文字起こし</h5>
-            <p class="feature-text">
-                AIによる高精度な音声認識と文字起こし
-            </p>
-            <div class="feature-glow"></div>
+            <p class="feature-text">AIによる高精度な音声認識と文字起こし</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🤖</div>
             <h5 class="feature-title">インテリジェント要約</h5>
-            <p class="feature-text">
-                重要ポイントを自動で抽出・整理
-            </p>
-            <div class="feature-glow"></div>
+            <p class="feature-text">重要ポイントを自動で抽出・整理</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🔄</div>
             <h5 class="feature-title">ダイナミックマップ</h5>
-            <p class="feature-text">
-                コンテンツ構造をビジュアライズ
-            </p>
-            <div class="feature-glow"></div>
+            <p class="feature-text">コンテンツ構造をビジュアライズ</p>
         </div>
     </div>
 </div>
 ''', unsafe_allow_html=True)
 
-# セッション状態の初期化
-if 'pdf_data' not in st.session_state:
-    st.session_state.pdf_data = None
+# Initialize session state
+if 'current_step' not in st.session_state:
+    st.session_state.current_step = 1
 if 'video_info' not in st.session_state:
     st.session_state.video_info = None
-if 'processing_state' not in st.session_state:
-    st.session_state.processing_state = None
+if 'transcript' not in st.session_state:
+    st.session_state.transcript = None
+if 'summary' not in st.session_state:
+    st.session_state.summary = None
+if 'mindmap' not in st.session_state:
+    st.session_state.mindmap = None
+if 'pdf_data' not in st.session_state:
+    st.session_state.pdf_data = None
 
-# Input Section
-st.markdown('''
-<div class="section-divider">
-    <h3 class="section-header">📥 Input Section</h3>
-    <p class="section-description">分析したいYouTube動画のURLを入力してください</p>
-</div>
-''', unsafe_allow_html=True)
+# Step 1: Video Input
+with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_step == 1):
+    st.markdown('''
+    <div class="section-description">分析したいYouTube動画のURLを入力してください</div>
+    ''', unsafe_allow_html=True)
+    
+    youtube_url = st.text_input(
+        "YouTube URL",
+        placeholder="https://www.youtube.com/watch?v=...",
+        help="分析したいYouTube動画のURLを入力してください"
+    )
 
-youtube_url = st.text_input(
-    "YouTube URL",
-    placeholder="https://www.youtube.com/watch?v=...",
-    help="分析したいYouTube動画のURLを入力してください"
-)
-
-if youtube_url:
-    try:
-        # YouTube情報の取得
-        with st.spinner():
-            loading_spinner = show_loading_spinner("動画情報を取得中...", key="video_info")
-            try:
+    if youtube_url:
+        try:
+            with st.spinner():
+                loading_spinner = show_loading_spinner("動画情報を取得中...", key="video_info")
                 yt_helper = YouTubeHelper()
                 video_info = yt_helper.get_video_info(youtube_url)
                 st.session_state.video_info = video_info
+                st.session_state.current_step = 2
                 time.sleep(0.5)
                 loading_spinner.empty()
                 show_success_message("動画情報の取得が完了しました", key="video_info_success")
-            except Exception as e:
-                loading_spinner.empty()
-                st.error(f"動画情報の取得に失敗しました: {str(e)}")
-                st.stop()
+        except Exception as e:
+            loading_spinner.empty()
+            st.error(f"動画情報の取得に失敗しました: {str(e)}")
+            st.stop()
 
-        # Content Overview Section
-        st.markdown('''
-        <div class="section-divider">
-            <h3 class="section-header">📊 Content Overview</h3>
-            <p class="section-description">動画の基本情報と文字起こしの確認</p>
-        </div>
-        ''', unsafe_allow_html=True)
+# Step 2: Content Overview
+with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.current_step == 2):
+    if st.session_state.video_info:
+        video_info = st.session_state.video_info
         
-        # Video Information
         col1, col2 = st.columns([1, 2])
         with col1:
             st.image(video_info['thumbnail_url'], use_container_width=True)
@@ -193,192 +183,142 @@ if youtube_url:
                     <span class="stat-badge">⏱️ {video_info['duration']}</span>
                     <span class="stat-badge">👁️ {video_info['view_count']}回視聴</span>
                 </div>
-                <p class="video-date">
-                    📅 投稿日: {video_info['published_at']}
-                </p>
+                <p class="video-date">📅 投稿日: {video_info['published_at']}</p>
             </div>
             ''', unsafe_allow_html=True)
 
         # Transcript Processing
-        text_processor = TextProcessor()
-        with st.spinner():
-            loading_dots = show_loading_dots("文字起こしを生成中...", key="transcript")
-            try:
-                transcript = text_processor.get_transcript(youtube_url)
-                time.sleep(0.5)
-                loading_dots.empty()
-                show_success_message("文字起こしの生成が完了しました", key="transcript_success")
-            except Exception as e:
-                loading_dots.empty()
-                st.error(f"文字起こしの生成に失敗しました: {str(e)}")
-                st.stop()
+        if 'transcript' not in st.session_state or not st.session_state.transcript:
+            text_processor = TextProcessor()
+            with st.spinner():
+                loading_dots = show_loading_dots("文字起こしを生成中...", key="transcript")
+                try:
+                    transcript = text_processor.get_transcript(youtube_url)
+                    st.session_state.transcript = transcript
+                    st.session_state.current_step = 3
+                    time.sleep(0.5)
+                    loading_dots.empty()
+                    show_success_message("文字起こしの生成が完了しました", key="transcript_success")
+                except Exception as e:
+                    loading_dots.empty()
+                    st.error(f"文字起こしの生成に失敗しました: {str(e)}")
+                    st.stop()
 
+# Step 3: Content Analysis
+with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.current_step == 3):
+    if st.session_state.transcript:
+        # Original Transcript
         st.markdown('<h5 class="subsection-header">📝 Original Transcript</h5>', unsafe_allow_html=True)
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.text_area("文字起こしテキスト", transcript, height=200, label_visibility="collapsed")
-        with col2:
-            st.button("📋 コピー", key="copy_original", use_container_width=True)
-
-        # Analysis Section
-        st.markdown('''
-        <div class="section-divider">
-            <h3 class="section-header">🔍 Analysis Section</h3>
-            <p class="section-description">AIによる要約とマインドマップの生成</p>
-        </div>
-        ''', unsafe_allow_html=True)
-
-        # AI Summary
-        with st.spinner():
-            shimmer_loading = show_shimmer_loading("AI要約を生成中...", key="summary")
-            try:
-                summary = text_processor.generate_summary(transcript)
-                time.sleep(0.5)
-                shimmer_loading.empty()
-                show_success_message("AI要約の生成が完了しました", key="summary_success")
-            except Exception as e:
-                shimmer_loading.empty()
-                st.error(f"AI要約の生成に失敗しました: {str(e)}")
-                st.stop()
+        with st.container():
+            st.text_area("文字起こしテキスト", st.session_state.transcript, height=200, label_visibility="collapsed")
         
-        st.markdown('<h5 class="subsection-header">📊 AI Summary</h5>', unsafe_allow_html=True)
-        col1, col2 = st.columns([4, 1])
-        with col1:
+        # AI Summary
+        if 'summary' not in st.session_state or not st.session_state.summary:
+            with st.spinner():
+                shimmer_loading = show_shimmer_loading("AI要約を生成中...", key="summary")
+                try:
+                    text_processor = TextProcessor()
+                    summary = text_processor.generate_summary(st.session_state.transcript)
+                    st.session_state.summary = summary
+                    time.sleep(0.5)
+                    shimmer_loading.empty()
+                    show_success_message("AI要約の生成が完了しました", key="summary_success")
+                except Exception as e:
+                    shimmer_loading.empty()
+                    st.error(f"AI要約の生成に失敗しました: {str(e)}")
+                    st.stop()
+        
+        if st.session_state.summary:
+            st.markdown('<h5 class="subsection-header">📊 AI Summary</h5>', unsafe_allow_html=True)
             st.markdown(f'''
             <div class="glass-container summary-container">
-                <div class="summary-text">
-                    {summary}
-                </div>
+                <div class="summary-text">{st.session_state.summary}</div>
             </div>
             ''', unsafe_allow_html=True)
-        with col2:
-            st.button("📋 コピー", key="copy_summary", use_container_width=True)
 
-        # Mind Map
-        st.markdown('<h5 class="subsection-header">🔄 Mind Map Visualization</h5>', unsafe_allow_html=True)
-        mindmap_gen = MindMapGenerator()
-        try:
-            with st.spinner():
-                loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
-                mindmap_data = mindmap_gen.generate_mindmap(transcript)
-                fig = mindmap_gen.create_visualization(mindmap_data)
-                fig.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color='white'),
-                )
-                time.sleep(0.5)
+        # Mind Map Visualization
+        if 'mindmap' not in st.session_state or not st.session_state.mindmap:
+            st.markdown('<h5 class="subsection-header">🔄 Mind Map Visualization</h5>', unsafe_allow_html=True)
+            mindmap_gen = MindMapGenerator()
+            try:
+                with st.spinner():
+                    loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
+                    mindmap_data = mindmap_gen.generate_mindmap(st.session_state.transcript)
+                    fig = mindmap_gen.create_visualization(mindmap_data)
+                    fig.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        font=dict(color='white'),
+                    )
+                    st.session_state.mindmap = fig
+                    st.session_state.current_step = 4
+                    time.sleep(0.5)
+                    loading_container.empty()
+                    show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
+            except Exception as e:
                 loading_container.empty()
-                show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
-                st.plotly_chart(fig, use_container_width=True)
-                mindmap_svg = fig.to_image(format="svg")
-        except Exception as e:
-            loading_container.empty()
-            st.error(f"マインドマップの生成に失敗しました: {str(e)}")
-            st.stop()
-
-        # Enhancement Section
-        st.markdown('''
-        <div class="section-divider">
-            <h3 class="section-header">✨ Enhancement Section</h3>
-            <p class="section-description">テキストの校閲と整形</p>
-        </div>
-        ''', unsafe_allow_html=True)
-
-        if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
-            progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
-            try:
-                proofread_transcript = text_processor.proofread_text(transcript)
-                st.session_state.proofread_transcript = proofread_transcript
-                time.sleep(0.5)
-                progress_bar.empty()
-                show_success_message("テキストの校閲が完了しました", key="proofread_success")
-                
-                if len(proofread_transcript) <= 2000:
-                    st.markdown('<h5 class="subsection-header">校閲済みテキスト</h5>', unsafe_allow_html=True)
-                    col1, col2 = st.columns([4, 1])
-                    with col1:
-                        st.text_area(
-                            "校閲済みテキスト",
-                            proofread_transcript,
-                            height=300,
-                            label_visibility="collapsed"
-                        )
-                    with col2:
-                        st.button("📋 コピー", key="copy_proofread", use_container_width=True)
-                else:
-                    chunks = text_processor.chunk_text(proofread_transcript)
-                    total_chunks = len(chunks)
-                    
-                    for i, chunk in enumerate(chunks, 1):
-                        progress_value = i / total_chunks
-                        progress_bar = show_progress_bar(
-                            f"チャンク {i}/{total_chunks} を処理中...",
-                            progress_value,
-                            key=f"chunk_{i}"
-                        )
-                        st.markdown(f'<h5 class="subsection-header">校閲済みテキスト_{i}</h5>', unsafe_allow_html=True)
-                        col1, col2 = st.columns([4, 1])
-                        with col1:
-                            st.text_area(
-                                f"校閲済みテキスト_{i}",
-                                chunk.strip(),
-                                height=200,
-                                label_visibility="collapsed"
-                            )
-                        with col2:
-                            st.button("📋 コピー", key=f"copy_proofread_{i}", use_container_width=True)
-                        progress_bar.empty()
-            except Exception as e:
-                progress_bar.empty()
-                st.error(f"テキストの校閲に失敗しました: {str(e)}")
+                st.error(f"マインドマップの生成に失敗しました: {str(e)}")
                 st.stop()
-
-        # Final Output Section
-        st.markdown('''
-        <div class="section-divider">
-            <h3 class="section-header">📑 Final Output</h3>
-            <p class="section-description">分析レポートの生成とダウンロード</p>
-        </div>
-        ''', unsafe_allow_html=True)
         
-        with st.spinner():
-            progress_container = show_loading_dots("PDFレポートを生成中...", key="pdf")
-            try:
-                if 'proofread_transcript' not in st.session_state:
-                    progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
-                    try:
-                        proofread_transcript = text_processor.proofread_text(transcript)
-                        st.session_state.proofread_transcript = proofread_transcript
-                        progress_bar.empty()
-                        show_success_message("テキストの校閲が完了しました", key="proofread_success")
-                    except Exception as e:
-                        progress_bar.empty()
-                        st.error(f"テキストの校閲に失敗しました: {str(e)}")
-                        st.stop()
+        if st.session_state.mindmap:
+            st.plotly_chart(st.session_state.mindmap, use_container_width=True)
 
-                pdf_gen = PDFGenerator()
-                pdf_data = pdf_gen.create_pdf(
-                    video_info=video_info,
-                    transcript=transcript,
-                    summary=summary,
-                    proofread_text=st.session_state.get('proofread_transcript', '')
-                )
-                st.session_state.pdf_data = pdf_data
-                time.sleep(0.5)
-                progress_container.empty()
-                show_success_message("PDFレポートの生成が完了しました", key="pdf_success")
-                
-                st.download_button(
-                    label="📥 Download PDF Report",
-                    data=pdf_data,
-                    file_name=f"{video_info['title']}_分析レポート.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-            except Exception as e:
-                progress_container.empty()
-                st.error(f"PDFレポートの生成に失敗しました: {str(e)}")
-            
-    except Exception as e:
-        st.error(f"エラーが発生しました: {str(e)}")
+# Step 4: Enhancement & Export
+with st.expander("Step 4: Enhancement & Export 📑", expanded=st.session_state.current_step == 4):
+    if st.session_state.transcript and st.session_state.summary:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown('<h5 class="subsection-header">✨ Text Enhancement</h5>', unsafe_allow_html=True)
+            if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
+                progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
+                try:
+                    text_processor = TextProcessor()
+                    proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
+                    st.session_state.proofread_transcript = proofread_transcript
+                    time.sleep(0.5)
+                    progress_bar.empty()
+                    show_success_message("テキストの校閲が完了しました", key="proofread_success")
+                except Exception as e:
+                    progress_bar.empty()
+                    st.error(f"テキストの校閲に失敗しました: {str(e)}")
+        
+        with col2:
+            st.markdown('<h5 class="subsection-header">📥 Export Report</h5>', unsafe_allow_html=True)
+            if st.button("PDFレポートを生成", use_container_width=True, key="generate_pdf"):
+                progress_container = show_loading_dots("PDFレポートを生成中...", key="pdf")
+                try:
+                    pdf_gen = PDFGenerator()
+                    pdf_data = pdf_gen.create_pdf(
+                        video_info=st.session_state.video_info,
+                        transcript=st.session_state.transcript,
+                        summary=st.session_state.summary,
+                        proofread_text=st.session_state.get('proofread_transcript', '')
+                    )
+                    st.session_state.pdf_data = pdf_data
+                    time.sleep(0.5)
+                    progress_container.empty()
+                    show_success_message("PDFレポートの生成が完了しました", key="pdf_success")
+                except Exception as e:
+                    progress_container.empty()
+                    st.error(f"PDFレポートの生成に失敗しました: {str(e)}")
+        
+        if st.session_state.pdf_data:
+            st.download_button(
+                label="📥 Download PDF Report",
+                data=st.session_state.pdf_data,
+                file_name=f"{st.session_state.video_info['title']}_分析レポート.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
+# Progress Indicator
+progress_percentage = (st.session_state.current_step / 4) * 100
+st.markdown(f'''
+<div class="progress-indicator">
+    <div class="progress-bar">
+        <div class="progress-fill" style="width: {progress_percentage}%"></div>
+    </div>
+    <p class="progress-text">Step {st.session_state.current_step} of 4</p>
+</div>
+''', unsafe_allow_html=True)
