@@ -120,6 +120,15 @@ st.markdown('''
 # Initialize session state
 if 'current_step' not in st.session_state:
     st.session_state.current_step = 1
+if 'steps_completed' not in st.session_state:
+    st.session_state.steps_completed = {
+        'video_info': False,
+        'transcript': False,
+        'summary': False,
+        'mindmap': False,
+        'proofread': False,
+        'pdf': False
+    }
 if 'video_info' not in st.session_state:
     st.session_state.video_info = None
 if 'transcript' not in st.session_state:
@@ -130,6 +139,9 @@ if 'mindmap' not in st.session_state:
     st.session_state.mindmap = None
 if 'pdf_data' not in st.session_state:
     st.session_state.pdf_data = None
+
+def update_progress(step_name):
+    st.session_state.steps_completed[step_name] = True
 
 # Step 1: Video Input
 with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_step == 1):
@@ -150,6 +162,7 @@ with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_s
             video_info = yt_helper.get_video_info(youtube_url)
             st.session_state.video_info = video_info
             st.session_state.current_step = 2
+            update_progress('video_info')
             time.sleep(0.5)
             loading_spinner.empty()
             show_success_message("動画情報の取得が完了しました", key="video_info_success")
@@ -197,6 +210,7 @@ with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.curr
                 transcript = text_processor.get_transcript(youtube_url)
                 st.session_state.transcript = transcript
                 st.session_state.current_step = 3
+                update_progress('transcript')
                 time.sleep(0.5)
                 loading_dots.empty()
                 show_success_message("文字起こしの生成が完了しました", key="transcript_success")
@@ -223,6 +237,7 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
                     text_processor = TextProcessor()
                     summary = text_processor.generate_summary(st.session_state.transcript)
                     st.session_state.summary = summary
+                    update_progress('summary')
                     time.sleep(0.5)
                     shimmer_loading.empty()
                     show_success_message("AI要約の生成が完了しました", key="summary_success")
@@ -255,6 +270,7 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
                     )
                     st.session_state.mindmap = fig
                     st.session_state.current_step = 4
+                    update_progress('mindmap')
                     time.sleep(0.5)
                     loading_container.empty()
                     show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
@@ -278,6 +294,7 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                 proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
                 st.session_state.proofread_transcript = proofread_transcript
                 st.session_state.current_step = 5
+                update_progress('proofread')
                 time.sleep(0.5)
                 progress_bar.empty()
                 show_success_message("テキストの校閲が完了しました", key="proofread_success")
@@ -301,6 +318,7 @@ with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step =
                     proofread_text=st.session_state.get('proofread_transcript', '')
                 )
                 st.session_state.pdf_data = pdf_data
+                update_progress('pdf')
                 time.sleep(0.5)
                 progress_container.empty()
                 show_success_message("PDFレポートの生成が完了しました", key="pdf_success")
@@ -320,11 +338,34 @@ with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step =
 
 # Progress Indicator
 progress_percentage = (st.session_state.current_step / 5) * 100
-st.markdown(f'''
-<div class="progress-indicator">
-    <div class="progress-bar">
-        <div class="progress-fill" style="width: {progress_percentage}%"></div>
+step_names = {
+    'video_info': 'Video Information',
+    'transcript': 'Transcript Generation',
+    'summary': 'Summary Creation',
+    'mindmap': 'Mind Map Generation',
+    'proofread': 'Text Enhancement',
+    'pdf': 'PDF Export'
+}
+
+st.markdown('''
+<div class="progress-section">
+    <h4 class="progress-header">Overall Progress</h4>
+    <div class="progress-bar-main">
+        <div class="progress-fill" style="width: {}%"></div>
     </div>
-    <p class="progress-text">Step {st.session_state.current_step} of 5</p>
+    <p class="progress-text">Step {} of 5</p>
 </div>
-''', unsafe_allow_html=True)
+'''.format(progress_percentage, st.session_state.current_step), unsafe_allow_html=True)
+
+# Detailed Progress Indicators
+st.markdown('<div class="detailed-progress">', unsafe_allow_html=True)
+for step_key, step_name in step_names.items():
+    status = "completed" if st.session_state.steps_completed[step_key] else "pending"
+    icon = "✓" if status == "completed" else "○"
+    st.markdown(f'''
+    <div class="progress-item {status}">
+        <span class="progress-icon">{icon}</span>
+        <span class="progress-label">{step_name}</span>
+    </div>
+    ''', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
