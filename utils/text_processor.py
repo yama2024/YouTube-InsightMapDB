@@ -6,6 +6,7 @@ import os
 import tempfile
 import pytube
 import io
+import time
 
 class TextProcessor:
     def __init__(self):
@@ -166,7 +167,7 @@ class TextProcessor:
         except Exception as e:
             raise Exception("要約の生成に失敗しました")
 
-    def proofread_text(self, text):
+    def proofread_text(self, text, max_retries=3, initial_delay=1):
         def chunk_text(text, chunk_size=2000):
             sentences = text.split('。')
             chunks = []
@@ -194,21 +195,29 @@ class TextProcessor:
         try:
             text_chunks = chunk_text(text)
             proofread_chunks = []
+            failed_chunks = []
             total_chunks = len(text_chunks)
             
             print(f"テキストを{total_chunks}個のチャンクに分割しました")
             
+            # First pass - process all chunks
             for i, chunk in enumerate(text_chunks, 1):
-                print(f"チャンク {i}/{total_chunks} を処理中...")
+                retry_count = 0
+                delay = initial_delay
+                success = False
                 
-                generation_config = genai.types.GenerationConfig(
-                    temperature=0.3,
-                    top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=4096,
-                )
-                
-                chunk_prompt = f'''
+                while not success and retry_count < max_retries:
+                    try:
+                        print(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
+                        
+                        generation_config = genai.types.GenerationConfig(
+                            temperature=0.3,
+                            top_p=0.8,
+                            top_k=40,
+                            max_output_tokens=4096,
+                        )
+                        
+                        chunk_prompt = f'''
 # あなたの目的:
 ユーザーが入力したテキストを校閲します。
 
@@ -227,21 +236,70 @@ class TextProcessor:
 テキスト:
 {chunk}
 '''
-                try:
-                    response = self.model.generate_content(
-                        chunk_prompt,
-                        generation_config=generation_config
-                    )
-                    
-                    if not response or not response.text:
-                        raise ValueError(f"チャンク {i}/{total_chunks} の校閲結果が空です")
+                        response = self.model.generate_content(
+                            chunk_prompt,
+                            generation_config=generation_config
+                        )
                         
-                    proofread_chunks.append(response.text.strip())
-                    print(f"チャンク {i}/{total_chunks} の処理が完了しました")
+                        if response and response.text:
+                            proofread_chunks.append(response.text.strip())
+                            print(f"チャンク {i}/{total_chunks} の処理が完了しました")
+                            success = True
+                        else:
+                            raise ValueError(f"チャンク {i}/{total_chunks} の校閲結果が空です")
+                        
+                    except Exception as e:
+                        retry_count += 1
+                        if retry_count < max_retries:
+                            print(f"チャンク {i} の処理に失敗しました。{delay}秒後に再試行します...")
+                            time.sleep(delay)
+                            delay *= 2  # Exponential backoff
+                        else:
+                            print(f"チャンク {i} の処理が{max_retries}回失敗しました")
+                            failed_chunks.append((i-1, chunk))
+                            proofread_chunks.append(chunk)  # Keep original text for failed chunk
+                
+            # Try to process failed chunks with smaller size
+            if failed_chunks:
+                print(f"{len(failed_chunks)}個のチャンクの処理に失敗しました。小さいチャンクサイズで再試行します。")
+                for chunk_index, chunk in failed_chunks:
+                    smaller_chunks = chunk_text(chunk, chunk_size=1000)  # Try with smaller chunks
+                    processed_parts = []
                     
-                except Exception as e:
-                    print(f"チャンク {i}/{total_chunks} の処理中にエラー: {str(e)}")
-                    raise
+                    for j, small_chunk in enumerate(smaller_chunks, 1):
+                        retry_count = 0
+                        delay = initial_delay
+                        success = False
+                        
+                        while not success and retry_count < max_retries:
+                            try:
+                                response = self.model.generate_content(
+                                    chunk_prompt.replace(
+                                        f"{total_chunks}分割のうちの{chunk_index+1}番目",
+                                        f"{len(smaller_chunks)}分割のうちの{j}番目(再試行)"
+                                    ),
+                                    generation_config=generation_config
+                                )
+                                
+                                if response and response.text:
+                                    processed_parts.append(response.text.strip())
+                                    success = True
+                                else:
+                                    raise ValueError("空の応答を受け取りました")
+                                    
+                            except Exception as e:
+                                retry_count += 1
+                                if retry_count < max_retries:
+                                    print(f"再試行中... ({retry_count}/{max_retries})")
+                                    time.sleep(delay)
+                                    delay *= 2
+                                else:
+                                    print(f"小チャンク処理が失敗しました")
+                                    processed_parts.append(small_chunk)
+                    
+                    # Replace the original failed chunk with processed parts
+                    if processed_parts:
+                        proofread_chunks[chunk_index] = '\n'.join(processed_parts)
             
             # Join all proofread chunks with proper spacing
             final_text = '\n\n'.join(proofread_chunks)
