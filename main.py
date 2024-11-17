@@ -100,24 +100,18 @@ st.markdown('''
 st.markdown('''
 <div class="glass-container feature-container">
     <h4 class="section-header" style="margin-top: 0;">🎯 Advanced Content Analysis</h4>
-    <p class="feature-description">
-        AIを活用して動画コンテンツを分析・可視化し、知識を効率的に構造化します
-    </p>
     <div class="feature-grid">
         <div class="feature-card">
             <div class="feature-icon">📝</div>
-            <h5 class="feature-title">高精度文字起こし</h5>
-            <p class="feature-text">AIによる高精度な音声認識と文字起こし</p>
+            <h5 class="feature-title">文字起こし</h5>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🤖</div>
-            <h5 class="feature-title">インテリジェント要約</h5>
-            <p class="feature-text">重要ポイントを自動で抽出・整理</p>
+            <h5 class="feature-title">要約</h5>
         </div>
         <div class="feature-card">
             <div class="feature-icon">🔄</div>
-            <h5 class="feature-title">ダイナミックマップ</h5>
-            <p class="feature-text">コンテンツ構造をビジュアライズ</p>
+            <h5 class="feature-title">マップ化</h5>
         </div>
     </div>
 </div>
@@ -170,25 +164,35 @@ with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.curr
     if st.session_state.video_info:
         video_info = st.session_state.video_info
         
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.image(video_info['thumbnail_url'], use_container_width=True)
-        
-        with col2:
-            st.markdown(f'''
-            <div class="glass-container video-info">
-                <h2 class="video-title">{video_info['title']}</h2>
-                <div class="video-stats">
-                    <span class="stat-badge">👤 {video_info['channel_title']}</span>
-                    <span class="stat-badge">⏱️ {video_info['duration']}</span>
-                    <span class="stat-badge">👁️ {video_info['view_count']}回視聴</span>
+        # Improved video information display with grid layout
+        st.markdown(f'''
+        <div class="glass-container video-info">
+            <div class="video-grid">
+                <div class="video-thumbnail">
+                    <img src="{video_info['thumbnail_url']}" alt="Video thumbnail" style="width: 100%; border-radius: 8px;">
                 </div>
-                <p class="video-date">📅 投稿日: {video_info['published_at']}</p>
+                <div class="video-details">
+                    <h2 class="video-title">{video_info['title']}</h2>
+                    <div class="video-stats">
+                        <span class="stat-badge">👤 {video_info['channel_title']}</span>
+                        <span class="stat-badge">⏱️ {video_info['duration']}</span>
+                        <span class="stat-badge">👁️ {video_info['view_count']}回視聴</span>
+                    </div>
+                    <p class="video-date">📅 投稿日: {video_info['published_at']}</p>
+                </div>
+            </div>
+        </div>
+        ''', unsafe_allow_html=True)
+
+        # Transcript Processing with improved feedback
+        if 'transcript' not in st.session_state or not st.session_state.transcript:
+            st.markdown('''
+            <div class="process-step">
+                <div class="step-number">1</div>
+                <div class="step-content">文字起こしを生成します</div>
             </div>
             ''', unsafe_allow_html=True)
-
-        # Transcript Processing
-        if 'transcript' not in st.session_state or not st.session_state.transcript:
+            
             text_processor = TextProcessor()
             with st.spinner():
                 loading_dots = show_loading_dots("文字起こしを生成中...", key="transcript")
@@ -204,64 +208,66 @@ with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.curr
                     st.error(f"文字起こしの生成に失敗しました: {str(e)}")
                     st.stop()
 
-# Step 3: Content Analysis
+# Step 3: Content Analysis with improved organization
 with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.current_step == 3):
     if st.session_state.transcript:
-        # Original Transcript
-        st.markdown('<h5 class="subsection-header">📝 Original Transcript</h5>', unsafe_allow_html=True)
-        with st.container():
-            st.text_area("文字起こしテキスト", st.session_state.transcript, height=200, label_visibility="collapsed")
+        tabs = st.tabs(["📝 Transcript", "📊 Summary", "🔄 Mind Map"])
         
-        # AI Summary
-        if 'summary' not in st.session_state or not st.session_state.summary:
-            with st.spinner():
-                shimmer_loading = show_shimmer_loading("AI要約を生成中...", key="summary")
-                try:
-                    text_processor = TextProcessor()
-                    summary = text_processor.generate_summary(st.session_state.transcript)
-                    st.session_state.summary = summary
-                    time.sleep(0.5)
-                    shimmer_loading.empty()
-                    show_success_message("AI要約の生成が完了しました", key="summary_success")
-                except Exception as e:
-                    shimmer_loading.empty()
-                    st.error(f"AI要約の生成に失敗しました: {str(e)}")
-                    st.stop()
+        with tabs[0]:
+            st.markdown('<h5 class="subsection-header">Original Transcript</h5>', unsafe_allow_html=True)
+            with st.container():
+                st.text_area("文字起こしテキスト", st.session_state.transcript, height=200, label_visibility="collapsed")
         
-        if st.session_state.summary:
-            st.markdown('<h5 class="subsection-header">📊 AI Summary</h5>', unsafe_allow_html=True)
-            st.markdown(f'''
-            <div class="glass-container summary-container">
-                <div class="summary-text">{st.session_state.summary}</div>
-            </div>
-            ''', unsafe_allow_html=True)
-
-        # Mind Map Visualization
-        if 'mindmap' not in st.session_state or not st.session_state.mindmap:
-            st.markdown('<h5 class="subsection-header">🔄 Mind Map Visualization</h5>', unsafe_allow_html=True)
-            mindmap_gen = MindMapGenerator()
-            try:
+        with tabs[1]:
+            if 'summary' not in st.session_state or not st.session_state.summary:
                 with st.spinner():
-                    loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
-                    mindmap_data = mindmap_gen.generate_mindmap(st.session_state.transcript)
-                    fig = mindmap_gen.create_visualization(mindmap_data)
-                    fig.update_layout(
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        font=dict(color='white'),
-                    )
-                    st.session_state.mindmap = fig
-                    st.session_state.current_step = 4
-                    time.sleep(0.5)
-                    loading_container.empty()
-                    show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
-            except Exception as e:
-                loading_container.empty()
-                st.error(f"マインドマップの生成に失敗しました: {str(e)}")
-                st.stop()
+                    shimmer_loading = show_shimmer_loading("AI要約を生成中...", key="summary")
+                    try:
+                        text_processor = TextProcessor()
+                        summary = text_processor.generate_summary(st.session_state.transcript)
+                        st.session_state.summary = summary
+                        time.sleep(0.5)
+                        shimmer_loading.empty()
+                        show_success_message("AI要約の生成が完了しました", key="summary_success")
+                    except Exception as e:
+                        shimmer_loading.empty()
+                        st.error(f"AI要約の生成に失敗しました: {str(e)}")
+                        st.stop()
+            
+            if st.session_state.summary:
+                st.markdown('<h5 class="subsection-header">AI Summary</h5>', unsafe_allow_html=True)
+                st.markdown(f'''
+                <div class="glass-container summary-container">
+                    <div class="summary-text">{st.session_state.summary}</div>
+                </div>
+                ''', unsafe_allow_html=True)
         
-        if st.session_state.mindmap:
-            st.plotly_chart(st.session_state.mindmap, use_container_width=True)
+        with tabs[2]:
+            if 'mindmap' not in st.session_state or not st.session_state.mindmap:
+                st.markdown('<h5 class="subsection-header">Mind Map Visualization</h5>', unsafe_allow_html=True)
+                mindmap_gen = MindMapGenerator()
+                try:
+                    with st.spinner():
+                        loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
+                        mindmap_data = mindmap_gen.generate_mindmap(st.session_state.transcript)
+                        fig = mindmap_gen.create_visualization(mindmap_data)
+                        fig.update_layout(
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            font=dict(color='white'),
+                        )
+                        st.session_state.mindmap = fig
+                        st.session_state.current_step = 4
+                        time.sleep(0.5)
+                        loading_container.empty()
+                        show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
+                except Exception as e:
+                    loading_container.empty()
+                    st.error(f"マインドマップの生成に失敗しました: {str(e)}")
+                    st.stop()
+            
+            if st.session_state.mindmap:
+                st.plotly_chart(st.session_state.mindmap, use_container_width=True)
 
 # Step 4: Enhancement
 with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_step == 4):

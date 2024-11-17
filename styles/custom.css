@@ -632,3 +632,135 @@ div.stButton > button:hover {
     transition: all 0.3s ease-in-out !important;
     text-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
 }
+
+/* Video Grid Layout */
+.video-grid {
+    display: grid !important;
+    grid-template-columns: 300px 1fr !important;
+    gap: 2rem !important;
+    align-items: start !important;
+}
+
+.video-thumbnail {
+    width: 100% !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+}
+
+.video-details {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1rem !important;
+}
+
+.video-title {
+    font-size: 1.8rem !important;
+    font-weight: 700 !important;
+    color: white !important;
+    margin: 0 !important;
+    line-height: 1.4 !important;
+}
+
+.video-stats {
+    display: flex !important;
+    gap: 1rem !important;
+    flex-wrap: wrap !important;
+}
+
+.stat-badge {
+    background: rgba(255, 255, 255, 0.1) !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: 20px !important;
+    font-size: 0.9rem !important;
+    color: white !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    backdrop-filter: blur(5px) !important;
+}
+
+.video-date {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-size: 0.9rem !important;
+    margin: 0 !important;
+}
+
+/* Process Steps */
+.process-step {
+    display: flex !important;
+    align-items: center !important;
+    gap: 1rem !important;
+    margin: 1rem 0 !important;
+    padding: 1rem !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-radius: 12px !important;
+    backdrop-filter: blur(5px) !important;
+}
+
+.step-number {
+    width: 40px !important;
+    height: 40px !important;
+    background: linear-gradient(45deg, #4a90e2, #7fb3d5) !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-weight: bold !important;
+    color: white !important;
+}
+
+.step-content {
+    color: white !important;
+    font-size: 1.1rem !important;
+}
+
+/* Tabs Styling */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 1rem !important;
+    background-color: transparent !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    height: auto !important;
+    padding: 1rem 2rem !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-radius: 12px !important;
+    color: white !important;
+    font-weight: 500 !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    transition: all 0.3s ease !important;
+}
+
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background: rgba(74, 144, 226, 0.3) !important;
+    border-color: #4a90e2 !important;
+    color: white !important;
+}
+
+.stTabs [data-baseweb="tab-panel"] {
+    padding: 2rem !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 12px !important;
+    margin-top: 1rem !important;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .video-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .video-thumbnail {
+        max-width: 100% !important;
+    }
+    
+    .video-stats {
+        justify-content: center !important;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 0.75rem 1rem !important;
+        font-size: 0.9rem !important;
+    }
+}
