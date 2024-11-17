@@ -145,17 +145,17 @@ with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_s
 
     if youtube_url:
         try:
-            with st.spinner():
-                loading_spinner = show_loading_spinner("動画情報を取得中...", key="video_info")
-                yt_helper = YouTubeHelper()
-                video_info = yt_helper.get_video_info(youtube_url)
-                st.session_state.video_info = video_info
-                st.session_state.current_step = 2
-                time.sleep(0.5)
-                loading_spinner.empty()
-                show_success_message("動画情報の取得が完了しました", key="video_info_success")
-        except Exception as e:
+            loading_spinner = show_loading_spinner("動画情報を取得中...", key="video_info")
+            yt_helper = YouTubeHelper()
+            video_info = yt_helper.get_video_info(youtube_url)
+            st.session_state.video_info = video_info
+            st.session_state.current_step = 2
+            time.sleep(0.5)
             loading_spinner.empty()
+            show_success_message("動画情報の取得が完了しました", key="video_info_success")
+        except Exception as e:
+            if 'loading_spinner' in locals():
+                loading_spinner.empty()
             st.error(f"動画情報の取得に失敗しました: {str(e)}")
             st.stop()
 
@@ -164,7 +164,6 @@ with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.curr
     if st.session_state.video_info:
         video_info = st.session_state.video_info
         
-        # Improved video information display with grid layout
         st.markdown(f'''
         <div class="glass-container video-info">
             <div class="video-grid">
@@ -184,7 +183,6 @@ with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.curr
         </div>
         ''', unsafe_allow_html=True)
 
-        # Transcript Processing with improved feedback
         if 'transcript' not in st.session_state or not st.session_state.transcript:
             st.markdown('''
             <div class="process-step">
@@ -194,21 +192,21 @@ with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.curr
             ''', unsafe_allow_html=True)
             
             text_processor = TextProcessor()
-            with st.spinner():
-                loading_dots = show_loading_dots("文字起こしを生成中...", key="transcript")
-                try:
-                    transcript = text_processor.get_transcript(youtube_url)
-                    st.session_state.transcript = transcript
-                    st.session_state.current_step = 3
-                    time.sleep(0.5)
+            loading_dots = show_loading_dots("文字起こしを生成中...", key="transcript")
+            try:
+                transcript = text_processor.get_transcript(youtube_url)
+                st.session_state.transcript = transcript
+                st.session_state.current_step = 3
+                time.sleep(0.5)
+                loading_dots.empty()
+                show_success_message("文字起こしの生成が完了しました", key="transcript_success")
+            except Exception as e:
+                if 'loading_dots' in locals():
                     loading_dots.empty()
-                    show_success_message("文字起こしの生成が完了しました", key="transcript_success")
-                except Exception as e:
-                    loading_dots.empty()
-                    st.error(f"文字起こしの生成に失敗しました: {str(e)}")
-                    st.stop()
+                st.error(f"文字起こしの生成に失敗しました: {str(e)}")
+                st.stop()
 
-# Step 3: Content Analysis with improved organization
+# Step 3: Content Analysis
 with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.current_step == 3):
     if st.session_state.transcript:
         tabs = st.tabs(["📝 Transcript", "📊 Summary", "🔄 Mind Map"])
@@ -220,19 +218,19 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
         
         with tabs[1]:
             if 'summary' not in st.session_state or not st.session_state.summary:
-                with st.spinner():
-                    shimmer_loading = show_shimmer_loading("AI要約を生成中...", key="summary")
-                    try:
-                        text_processor = TextProcessor()
-                        summary = text_processor.generate_summary(st.session_state.transcript)
-                        st.session_state.summary = summary
-                        time.sleep(0.5)
+                shimmer_loading = show_shimmer_loading("AI要約を生成中...", key="summary")
+                try:
+                    text_processor = TextProcessor()
+                    summary = text_processor.generate_summary(st.session_state.transcript)
+                    st.session_state.summary = summary
+                    time.sleep(0.5)
+                    shimmer_loading.empty()
+                    show_success_message("AI要約の生成が完了しました", key="summary_success")
+                except Exception as e:
+                    if 'shimmer_loading' in locals():
                         shimmer_loading.empty()
-                        show_success_message("AI要約の生成が完了しました", key="summary_success")
-                    except Exception as e:
-                        shimmer_loading.empty()
-                        st.error(f"AI要約の生成に失敗しました: {str(e)}")
-                        st.stop()
+                    st.error(f"AI要約の生成に失敗しました: {str(e)}")
+                    st.stop()
             
             if st.session_state.summary:
                 st.markdown('<h5 class="subsection-header">AI Summary</h5>', unsafe_allow_html=True)
@@ -246,23 +244,23 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
             if 'mindmap' not in st.session_state or not st.session_state.mindmap:
                 st.markdown('<h5 class="subsection-header">Mind Map Visualization</h5>', unsafe_allow_html=True)
                 mindmap_gen = MindMapGenerator()
+                loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
                 try:
-                    with st.spinner():
-                        loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
-                        mindmap_data = mindmap_gen.generate_mindmap(st.session_state.transcript)
-                        fig = mindmap_gen.create_visualization(mindmap_data)
-                        fig.update_layout(
-                            plot_bgcolor='rgba(0,0,0,0)',
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            font=dict(color='white'),
-                        )
-                        st.session_state.mindmap = fig
-                        st.session_state.current_step = 4
-                        time.sleep(0.5)
-                        loading_container.empty()
-                        show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
-                except Exception as e:
+                    mindmap_data = mindmap_gen.generate_mindmap(st.session_state.transcript)
+                    fig = mindmap_gen.create_visualization(mindmap_data)
+                    fig.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        font=dict(color='white'),
+                    )
+                    st.session_state.mindmap = fig
+                    st.session_state.current_step = 4
+                    time.sleep(0.5)
                     loading_container.empty()
+                    show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
+                except Exception as e:
+                    if 'loading_container' in locals():
+                        loading_container.empty()
                     st.error(f"マインドマップの生成に失敗しました: {str(e)}")
                     st.stop()
             
@@ -284,7 +282,8 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                 progress_bar.empty()
                 show_success_message("テキストの校閲が完了しました", key="proofread_success")
             except Exception as e:
-                progress_bar.empty()
+                if 'progress_bar' in locals():
+                    progress_bar.empty()
                 st.error(f"テキストの校閲に失敗しました: {str(e)}")
 
 # Step 5: Export
@@ -306,10 +305,11 @@ with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step =
                 progress_container.empty()
                 show_success_message("PDFレポートの生成が完了しました", key="pdf_success")
             except Exception as e:
-                progress_container.empty()
+                if 'progress_container' in locals():
+                    progress_container.empty()
                 st.error(f"PDFレポートの生成に失敗しました: {str(e)}")
         
-        if st.session_state.pdf_data:
+        if st.session_state.pdf_data and st.session_state.video_info:
             st.download_button(
                 label="📥 Download PDF Report",
                 data=st.session_state.pdf_data,
