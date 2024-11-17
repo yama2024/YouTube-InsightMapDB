@@ -1,3 +1,4 @@
+import logging
 from youtube_transcript_api import YouTubeTranscriptApi
 import google.generativeai as genai
 from google.cloud import speech_v1p1beta1 as speech
@@ -8,6 +9,13 @@ import pytube
 import io
 import time
 
+# Set up logging with more detailed format
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 class TextProcessor:
     def __init__(self):
         api_key = os.environ.get('GEMINI_API_KEY')
@@ -16,20 +24,29 @@ class TextProcessor:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-pro')
 
-    def chunk_text(self, text, chunk_size=2000):
+    def chunk_text(self, text, chunk_size=4000):
+        """Split text into chunks while preserving sentence integrity"""
+        logger.debug(f"Starting text chunking with chunk_size: {chunk_size}")
+        logger.debug(f"Original text length: {len(text)}")
+        
         sentences = text.split('。')
         chunks = []
         current_chunk = []
         current_length = 0
+        total_processed = 0
         
         for sentence in sentences:
             if not sentence.strip():
                 continue
+            
             sentence = sentence + '。'
             sentence_length = len(sentence)
+            total_processed += sentence_length
             
             if current_length + sentence_length > chunk_size and current_chunk:
-                chunks.append(''.join(current_chunk))
+                chunk_text = ''.join(current_chunk)
+                chunks.append(chunk_text)
+                logger.debug(f"Created chunk of length: {len(chunk_text)}")
                 current_chunk = [sentence]
                 current_length = sentence_length
             else:
@@ -37,8 +54,124 @@ class TextProcessor:
                 current_length += sentence_length
         
         if current_chunk:
-            chunks.append(''.join(current_chunk))
+            chunk_text = ''.join(current_chunk)
+            chunks.append(chunk_text)
+            logger.debug(f"Created final chunk of length: {len(chunk_text)}")
+        
+        # Validate no text was lost
+        total_chunks_length = sum(len(chunk) for chunk in chunks)
+        logger.debug(f"Total processed text length: {total_processed}")
+        logger.debug(f"Total chunks length: {total_chunks_length}")
+        
+        if total_chunks_length < (total_processed * 0.95):  # Allow 5% difference for whitespace
+            logger.error("Text chunking validation failed: Significant text loss detected")
+            raise ValueError("Text chunking resulted in significant content loss")
+            
+        logger.info(f"Successfully created {len(chunks)} chunks")
         return chunks
+
+    def proofread_text(self, text, max_retries=5, initial_delay=1):
+        """Proofread and enhance text with improved validation and logging"""
+        try:
+            # Split text into chunks
+            text_chunks = self.chunk_text(text, chunk_size=4000)
+            total_chunks = len(text_chunks)
+            logger.info(f"テキストを{total_chunks}個のチャンクに分割しました")
+            
+            # Initialize result array with None values to maintain order
+            proofread_chunks = [None] * total_chunks
+            remaining_chunks = list(range(total_chunks))
+            
+            original_text_length = len(text)
+            logger.info(f"Original text length: {original_text_length}")
+            
+            while remaining_chunks:
+                for chunk_index in remaining_chunks[:]:
+                    i = chunk_index + 1
+                    chunk = text_chunks[chunk_index]
+                    retry_count = 0
+                    delay = initial_delay
+                    
+                    while retry_count < max_retries:
+                        try:
+                            logger.info(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
+                            logger.debug(f"Processing chunk of length: {len(chunk)}")
+                            
+                            generation_config = genai.types.GenerationConfig(
+                                temperature=0.3,
+                                top_p=0.8,
+                                top_k=40,
+                                max_output_tokens=8192,
+                            )
+                            
+                            chunk_prompt = f'''
+# あなたの目的:
+{chunk}のテキストを完全に漏れなく校閲します。
+
+文字起こしした{chunk}のテキストについて、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。最後まで処理が完了するまで{max_retries}回繰り返して、実行してください。
+
+# 追加のルール:
+1. 校閲した文章以外の出力は決して行ってはいけません。
+2. 校閲した文章のみを出力します。
+3. 改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
+4. 時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
+5. スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
+6. テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
+'''
+                            response = self.model.generate_content(
+                                chunk_prompt,
+                                generation_config=generation_config
+                            )
+                            
+                            if response and response.text:
+                                proofread_chunk = response.text.strip()
+                                logger.debug(f"Processed chunk length: {len(proofread_chunk)}")
+                                
+                                # Validate chunk processing
+                                if len(proofread_chunk) < (len(chunk) * 0.5):
+                                    raise ValueError(f"Processed chunk is too short: {len(proofread_chunk)} vs {len(chunk)}")
+                                
+                                proofread_chunks[chunk_index] = proofread_chunk
+                                remaining_chunks.remove(chunk_index)
+                                logger.info(f"チャンク {i}/{total_chunks} の処理が完了しました")
+                                break
+                            else:
+                                raise ValueError(f"チャンク {i}/{total_chunks} の校閲結果が空です")
+                                
+                        except Exception as e:
+                            retry_count += 1
+                            if retry_count < max_retries:
+                                logger.warning(f"チャンク {i} の処理に失敗しました。{delay}秒後に再試行します...")
+                                time.sleep(delay)
+                                delay *= 2  # Exponential backoff
+                            else:
+                                logger.error(f"チャンク {i} の処理が{max_retries}回失敗しました。元のテキストを使用します。")
+                                proofread_chunks[chunk_index] = chunk
+                                remaining_chunks.remove(chunk_index)
+                                break
+            
+            # Verify all chunks were processed
+            if None in proofread_chunks:
+                raise Exception("一部のチャンクが処理されていません")
+            
+            # Join all proofread chunks with proper spacing
+            final_text = '\n\n'.join(chunk.strip() for chunk in proofread_chunks if chunk)
+            
+            # Validate final text
+            final_text_length = len(final_text)
+            logger.info(f"Final text length: {final_text_length}")
+            
+            if final_text_length < (original_text_length * 0.5):
+                logger.error(f"Final text is too short: {final_text_length} vs {original_text_length}")
+                raise ValueError("校閲後のテキストが元のテキストと比べて極端に短くなっています")
+            
+            logger.info("すべてのチャンクの処理が完了しました")
+            return final_text
+                
+        except Exception as e:
+            error_msg = f"テキストの校閲に失敗しました: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
 
     def get_transcript(self, url):
         video_id = self._extract_video_id(url)
@@ -241,88 +374,6 @@ class TextProcessor:
                     error_msg = f"要約の生成に失敗しました: {last_error}"
                     print(f"最終エラー: {error_msg}")
                     raise Exception(error_msg)
-
-    def proofread_text(self, text, max_retries=5, initial_delay=1):
-        try:
-            # Split text into chunks
-            text_chunks = self.chunk_text(text, chunk_size=2000)
-            total_chunks = len(text_chunks)
-            print(f"テキストを{total_chunks}個のチャンクに分割しました")
-            
-            # Initialize result array with None values to maintain order
-            proofread_chunks = [None] * total_chunks
-            remaining_chunks = list(range(total_chunks))
-            
-            while remaining_chunks:
-                for chunk_index in remaining_chunks[:]:  # Create a copy for iteration
-                    i = chunk_index + 1  # For display purposes
-                    chunk = text_chunks[chunk_index]
-                    retry_count = 0
-                    delay = initial_delay
-                    
-                    while retry_count < max_retries:
-                        try:
-                            print(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
-                            
-                            generation_config = genai.types.GenerationConfig(
-                                temperature=0.3,
-                                top_p=0.8,
-                                top_k=40,
-                                max_output_tokens=4096,
-                            )
-                            
-                            chunk_prompt = f'''
-# あなたの目的:
-{chunk}のテキストを完全に漏れなく校閲します。
-
-文字起こしした{chunk}のテキストについて、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。最後まで処理が完了するまで{max_retries}回繰り返して、実行してください。
-
-# 追加のルール:
-1. 校閲した文章以外の出力は決して行ってはいけません。
-2. 校閲した文章のみを出力します。
-3. 改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
-4. 時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
-5. スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
-6. テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
-'''
-                            response = self.model.generate_content(
-                                chunk_prompt,
-                                generation_config=generation_config
-                            )
-                            
-                            if response and response.text:
-                                proofread_chunks[chunk_index] = response.text.strip()
-                                remaining_chunks.remove(chunk_index)
-                                print(f"チャンク {i}/{total_chunks} の処理が完了しました")
-                                break  # Success, move to next chunk
-                            else:
-                                raise ValueError(f"チャンク {i}/{total_chunks} の校閲結果が空です")
-                                
-                        except Exception as e:
-                            retry_count += 1
-                            if retry_count < max_retries:
-                                print(f"チャンク {i} の処理に失敗しました。{delay}秒後に再試行します...")
-                                time.sleep(delay)
-                                delay *= 2  # Exponential backoff
-                            else:
-                                print(f"チャンク {i} の処理が{max_retries}回失敗しました。元のテキストを使用します。")
-                                proofread_chunks[chunk_index] = chunk  # Use original text after all retries fail
-                                remaining_chunks.remove(chunk_index)
-                                break
-            
-            # Verify all chunks were processed
-            if None in proofread_chunks:
-                raise Exception("一部のチャンクが処理されていません")
-                
-            # Join all proofread chunks
-            final_text = '\n\n'.join(proofread_chunks)
-            print("すべてのチャンクの処理が完了しました")
-            return final_text
-                
-        except Exception as e:
-            error_msg = f"テキストの校閲に失敗しました: {str(e)}"
-            print(error_msg)
-            raise Exception(error_msg)
 
     def _extract_video_id(self, url):
         """URLからビデオIDを抽出"""

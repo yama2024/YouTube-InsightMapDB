@@ -100,6 +100,32 @@ def copy_text_block(text, label=""):
     </div>
     ''', unsafe_allow_html=True)
 
+# Initialize session state
+if 'current_step' not in st.session_state:
+    st.session_state.current_step = 1
+if 'steps_completed' not in st.session_state:
+    st.session_state.steps_completed = {
+        'video_info': False,
+        'transcript': False,
+        'summary': False,
+        'mindmap': False,
+        'proofread': False,
+        'pdf': False
+    }
+if 'video_info' not in st.session_state:
+    st.session_state.video_info = None
+if 'transcript' not in st.session_state:
+    st.session_state.transcript = None
+if 'summary' not in st.session_state:
+    st.session_state.summary = None
+if 'mindmap' not in st.session_state:
+    st.session_state.mindmap = None
+if 'pdf_data' not in st.session_state:
+    st.session_state.pdf_data = None
+
+def update_progress(step_name):
+    st.session_state.steps_completed[step_name] = True
+
 # Application Header
 st.markdown('''
 <div class="app-header">
@@ -129,32 +155,6 @@ st.markdown('''
 </div>
 ''', unsafe_allow_html=True)
 
-# Initialize session state
-if 'current_step' not in st.session_state:
-    st.session_state.current_step = 1
-if 'steps_completed' not in st.session_state:
-    st.session_state.steps_completed = {
-        'video_info': False,
-        'transcript': False,
-        'summary': False,
-        'mindmap': False,
-        'proofread': False,
-        'pdf': False
-    }
-if 'video_info' not in st.session_state:
-    st.session_state.video_info = None
-if 'transcript' not in st.session_state:
-    st.session_state.transcript = None
-if 'summary' not in st.session_state:
-    st.session_state.summary = None
-if 'mindmap' not in st.session_state:
-    st.session_state.mindmap = None
-if 'pdf_data' not in st.session_state:
-    st.session_state.pdf_data = None
-
-def update_progress(step_name):
-    st.session_state.steps_completed[step_name] = True
-
 # Step 1: Video Input
 with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_step == 1):
     st.markdown('''
@@ -179,8 +179,7 @@ with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_s
             loading_spinner.empty()
             show_success_message("動画情報の取得が完了しました", key="video_info_success")
         except Exception as e:
-            if 'loading_spinner' in locals():
-                loading_spinner.empty()
+            loading_spinner.empty()
             st.error(f"動画情報の取得に失敗しました: {str(e)}")
             st.stop()
 
@@ -227,8 +226,7 @@ with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.curr
                 loading_dots.empty()
                 show_success_message("文字起こしの生成が完了しました", key="transcript_success")
             except Exception as e:
-                if 'loading_dots' in locals():
-                    loading_dots.empty()
+                loading_dots.empty()
                 st.error(f"文字起こしの生成に失敗しました: {str(e)}")
                 st.stop()
 
@@ -253,8 +251,7 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
                     shimmer_loading.empty()
                     show_success_message("AI要約の生成が完了しました", key="summary_success")
                 except Exception as e:
-                    if 'shimmer_loading' in locals():
-                        shimmer_loading.empty()
+                    shimmer_loading.empty()
                     st.error(f"AI要約の生成に失敗しました: {str(e)}")
                     st.stop()
             
@@ -282,8 +279,7 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
                     loading_container.empty()
                     show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
                 except Exception as e:
-                    if 'loading_container' in locals():
-                        loading_container.empty()
+                    loading_container.empty()
                     st.error(f"マインドマップの生成に失敗しました: {str(e)}")
                     st.stop()
             
@@ -301,12 +297,41 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
         ''', unsafe_allow_html=True)
                 
         if 'proofread_transcript' not in st.session_state:
+            col1, col2 = st.columns(2)
+            original_length = len(st.session_state.transcript)
+            
+            with col1:
+                st.markdown("### Original Text")
+                st.markdown(f"Character count: {original_length}")
+                st.markdown('''
+                <div class="scrollable-text-container original">
+                    <div class="text-content">
+                ''', unsafe_allow_html=True)
+                st.markdown(st.session_state.transcript)
+                st.markdown('</div></div>', unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown("### Enhanced Text")
+                st.markdown("Processing not started")
+                st.markdown('''
+                <div class="scrollable-text-container enhanced" style="opacity: 0.5;">
+                    <div class="text-content">
+                        テキストの校閲を開始するには、「テキストを校閲」ボタンをクリックしてください。
+                    </div>
+                </div>
+                ''', unsafe_allow_html=True)
+            
             if st.button("🔄 テキストを校閲", use_container_width=True, key="proofread_button", 
                         help="AIによって文章を校閲・整形します"):
                 progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
                 try:
                     text_processor = TextProcessor()
                     proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
+                    
+                    # Validate the enhanced text
+                    enhanced_length = len(proofread_transcript)
+                    if enhanced_length < (original_length * 0.5):
+                        raise ValueError("校閲後のテキストが極端に短くなっています。処理を中断します。")
                     
                     st.markdown('''
                     <div class="glass-container">
@@ -315,12 +340,35 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        copy_text_block(st.session_state.transcript, "元のテキスト")
+                        st.markdown("### Original Text")
+                        st.markdown(f"Character count: {original_length}")
+                        st.markdown('''
+                        <div class="scrollable-text-container original">
+                            <div class="text-content">
+                        ''', unsafe_allow_html=True)
+                        st.markdown(st.session_state.transcript)
+                        st.markdown('</div></div>', unsafe_allow_html=True)
                     
                     with col2:
-                        copy_text_block(proofread_transcript, "校閲後のテキスト")
+                        st.markdown("### Enhanced Text")
+                        st.markdown(f"Character count: {enhanced_length}")
+                        st.markdown('''
+                        <div class="scrollable-text-container enhanced">
+                            <div class="text-content">
+                        ''', unsafe_allow_html=True)
+                        st.markdown(proofread_transcript)
+                        st.markdown('</div></div>', unsafe_allow_html=True)
                     
-                    st.markdown('</div></div>', unsafe_allow_html=True)
+                    # Add comparison stats
+                    length_change = ((enhanced_length - original_length) / original_length * 100)
+                    st.markdown(f'''
+                    <div class="comparison-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Length Change:</span>
+                            <span class="stat-value">{length_change:.1f}%</span>
+                        </div>
+                    </div>
+                    ''', unsafe_allow_html=True)
                     
                     st.session_state.proofread_transcript = proofread_transcript
                     st.session_state.current_step = 5
@@ -333,6 +381,11 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                         progress_bar.empty()
                     st.error(f"テキストの校閲に失敗しました: {str(e)}")
         else:
+            # Display comparison when proofread text exists
+            original_length = len(st.session_state.transcript)
+            enhanced_length = len(st.session_state.proofread_transcript)
+            length_change = ((enhanced_length - original_length) / original_length * 100)
+            
             st.markdown('''
             <div class="glass-container">
                 <div class="text-enhancement-results">
@@ -340,17 +393,39 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
             
             col1, col2 = st.columns(2)
             with col1:
-                copy_text_block(st.session_state.transcript, "元のテキスト")
+                st.markdown("### Original Text")
+                st.markdown(f"Character count: {original_length}")
+                st.markdown('''
+                <div class="scrollable-text-container original">
+                    <div class="text-content">
+                ''', unsafe_allow_html=True)
+                st.markdown(st.session_state.transcript)
+                st.markdown('</div></div>', unsafe_allow_html=True)
             
             with col2:
-                copy_text_block(st.session_state.proofread_transcript, "校閲後のテキスト")
+                st.markdown("### Enhanced Text")
+                st.markdown(f"Character count: {enhanced_length}")
+                st.markdown('''
+                <div class="scrollable-text-container enhanced">
+                    <div class="text-content">
+                ''', unsafe_allow_html=True)
+                st.markdown(st.session_state.proofread_transcript)
+                st.markdown('</div></div>', unsafe_allow_html=True)
             
-            st.markdown('</div></div>', unsafe_allow_html=True)
+            # Display comparison stats
+            st.markdown(f'''
+            <div class="comparison-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Length Change:</span>
+                    <span class="stat-value">{length_change:.1f}%</span>
+                </div>
+            </div>
+            ''', unsafe_allow_html=True)
             
             if st.button("🔄 校閲をやり直す", use_container_width=True, key="reproofread_button",
                         help="テキストの校閲をもう一度実行します"):
                 del st.session_state.proofread_transcript
-                st.rerun()
+                st.experimental_rerun()
 
 # Step 5: Export
 with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step == 5):
