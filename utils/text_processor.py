@@ -171,11 +171,12 @@ class TextProcessor:
         
         return None
 
-    def generate_summary(self, text, max_retries=3, initial_delay=1):
+    def generate_summary(self, text, max_retries=5, initial_delay=2):
         print("AI要約の生成を開始します...")
         
         retry_count = 0
         delay = initial_delay
+        last_error = None
         
         while retry_count < max_retries:
             try:
@@ -207,19 +208,19 @@ class TextProcessor:
                 テキスト:
                 {text}
                 '''
-            
+                
                 generation_config = genai.types.GenerationConfig(
                     temperature=0.3,
                     top_p=0.8,
                     top_k=40,
                     max_output_tokens=4096,
                 )
-            
+                
                 response = self.model.generate_content(
                     prompt,
                     generation_config=generation_config
                 )
-            
+                
                 if response and response.text:
                     print("要約が完了しました")
                     return response.text
@@ -227,14 +228,19 @@ class TextProcessor:
                     raise ValueError("要約の生成結果が空です")
                     
             except Exception as e:
+                last_error = str(e)
                 retry_count += 1
+                
                 if retry_count < max_retries:
                     print(f"要約の生成に失敗しました。{delay}秒後に再試行します... ({retry_count}/{max_retries})")
+                    print(f"エラー内容: {last_error}")
                     time.sleep(delay)
                     delay *= 2  # Exponential backoff
                 else:
                     print(f"要約の生成が{max_retries}回失敗しました")
-                    raise Exception(f"要約の生成に失敗しました: {str(e)}")
+                    error_msg = f"要約の生成に失敗しました: {last_error}"
+                    print(f"最終エラー: {error_msg}")
+                    raise Exception(error_msg)
 
     def proofread_text(self, text, max_retries=3, initial_delay=1):
         try:
@@ -318,7 +324,6 @@ class TextProcessor:
                         
                         while not success and retry_count < max_retries:
                             try:
-                                # Create generation config for smaller chunks
                                 generation_config = genai.types.GenerationConfig(
                                     temperature=0.3,
                                     top_p=0.8,
@@ -326,7 +331,6 @@ class TextProcessor:
                                     max_output_tokens=4096,
                                 )
                                 
-                                # Create prompt for smaller chunks
                                 chunk_prompt = f'''
 # あなたの目的:
 ユーザーが入力したテキストを校閲します。
@@ -353,31 +357,30 @@ class TextProcessor:
                                 
                                 if response and response.text:
                                     processed_parts.append(response.text.strip())
+                                    print(f"小さいチャンク {j}/{len(smaller_chunks)} の処理が完了しました")
                                     success = True
                                 else:
-                                    raise ValueError("空の応答を受け取りました")
-                                    
+                                    raise ValueError(f"小さいチャンク {j}/{len(smaller_chunks)} の校閲結果が空です")
+                            
                             except Exception as e:
                                 retry_count += 1
                                 if retry_count < max_retries:
-                                    print(f"再試行中... ({retry_count}/{max_retries})")
+                                    print(f"小さいチャンク {j} の処理に失敗しました。{delay}秒後に再試行します...")
                                     time.sleep(delay)
-                                    delay *= 2
+                                    delay *= 2  # Exponential backoff
                                 else:
-                                    print(f"小チャンク処理が失敗しました")
+                                    print(f"小さいチャンク {j} の処理が{max_retries}回失敗しました")
                                     processed_parts.append(small_chunk)
                     
-                    # Replace the original failed chunk with processed parts
-                    if processed_parts:
-                        proofread_chunks[chunk_index] = '\n'.join(processed_parts)
+                    # Replace the failed chunk with processed smaller chunks
+                    proofread_chunks[chunk_index] = '\n'.join(processed_parts)
             
-            # Join all proofread chunks with proper spacing
-            final_text = '\n\n'.join(proofread_chunks)
-            print("すべてのチャンクの処理が完了しました")
-            return final_text
-                
+            return '\n'.join(proofread_chunks)
+            
         except Exception as e:
-            raise Exception(f"テキストの校閲に失敗しました: {str(e)}")
+            error_msg = f"テキストの校閲中にエラーが発生しました: {str(e)}"
+            print(error_msg)
+            raise Exception(error_msg)
 
     def _extract_video_id(self, url):
         """URLからビデオIDを抽出"""
