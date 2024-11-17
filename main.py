@@ -290,10 +290,11 @@ if youtube_url:
                 st.error(f"テキストの校閲に失敗しました: {str(e)}")
                 st.stop()
 
-        # マインドマップ生成
+        # マインドマップ生成 - Move this section outside try block
         st.markdown('<h3 class="section-header">🔄 Mind Map</h3>', unsafe_allow_html=True)
-        mindmap_gen = MindMapGenerator()
 
+        # Initialize mindmap generator
+        mindmap_gen = MindMapGenerator()
         try:
             with st.spinner():
                 loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
