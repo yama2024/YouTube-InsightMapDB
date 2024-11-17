@@ -294,6 +294,20 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                 try:
                     text_processor = TextProcessor()
                     proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
+                    
+                    # Display results immediately after processing
+                    st.markdown("### Text Enhancement Results")
+                    st.markdown("校閲・整形された結果を表示します")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("**元のテキスト**")
+                        st.text_area("Original", st.session_state.transcript, height=300, disabled=True)
+                    
+                    with col2:
+                        st.markdown("**校閲後のテキスト**")
+                        st.text_area("Enhanced", proofread_transcript, height=300, disabled=True)
+                    
                     st.session_state.proofread_transcript = proofread_transcript
                     st.session_state.current_step = 5
                     update_progress('proofread')
@@ -305,29 +319,19 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                         progress_bar.empty()
                     st.error(f"テキストの校閲に失敗しました: {str(e)}")
         else:
-            # Display the comparison of original and enhanced text
-            st.markdown('''
-            <div class="glass-container">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div>
-                        <h6 style="color: white; margin-bottom: 0.5rem;">Original Text</h6>
-                        <div style="background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 8px;">
-                            {}
-                        </div>
-                    </div>
-                    <div>
-                        <h6 style="color: white; margin-bottom: 0.5rem;">Enhanced Text</h6>
-                        <div style="background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 8px;">
-                            {}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            '''.format(
-                st.session_state.transcript.replace('\n', '<br>'),
-                st.session_state.proofread_transcript.replace('\n', '<br>')
-            ), unsafe_allow_html=True)
-                    
+            # Display the existing proofread results
+            st.markdown("### Text Enhancement Results")
+            st.markdown("校閲・整形された結果を表示します")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**元のテキスト**")
+                st.text_area("Original", st.session_state.transcript, height=300, disabled=True)
+            
+            with col2:
+                st.markdown("**校閲後のテキスト**")
+                st.text_area("Enhanced", st.session_state.proofread_transcript, height=300, disabled=True)
+            
             # Add option to regenerate if needed
             if st.button("校閲をやり直す", use_container_width=True, key="reproofread_button"):
                 del st.session_state.proofread_transcript
