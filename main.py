@@ -5,7 +5,6 @@ from utils.mindmap_generator import MindMapGenerator
 from utils.pdf_generator import PDFGenerator
 import os
 import time
-import pyperclip
 
 # Page configuration
 st.set_page_config(
@@ -89,6 +88,19 @@ def show_success_message(message, key=None):
     ''', unsafe_allow_html=True)
     return placeholder
 
+def copy_text_block(text, label=""):
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        st.text_area(
+            label=label,
+            value=text,
+            height=300,
+            disabled=True
+        )
+    with col2:
+        st.code(text, language="text")
+        st.markdown("↑ テキストを選択してコピー")
+
 # Application Header
 st.markdown('''
 <div class="app-header">
@@ -140,15 +152,9 @@ if 'mindmap' not in st.session_state:
     st.session_state.mindmap = None
 if 'pdf_data' not in st.session_state:
     st.session_state.pdf_data = None
-if 'copy_success' not in st.session_state:
-    st.session_state.copy_success = {}
 
 def update_progress(step_name):
     st.session_state.steps_completed[step_name] = True
-
-def copy_to_clipboard(text, button_key):
-    pyperclip.copy(text)
-    st.session_state.copy_success[button_key] = True
 
 # Step 1: Video Input
 with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_step == 1):
@@ -234,17 +240,7 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
         
         with tabs[0]:
             st.markdown('<h5 class="subsection-header">Original Transcript</h5>', unsafe_allow_html=True)
-            col1, col2 = st.columns([5, 1])
-            with col1:
-                st.text_area("文字起こしテキスト", 
-                            value=st.session_state.transcript,
-                            height=200,
-                            key="transcript_text",
-                            disabled=True)
-            with col2:
-                if st.button("コピー", key="copy_transcript"):
-                    copy_to_clipboard(st.session_state.transcript, "copy_transcript")
-                    st.success("✓ コピーしました!")
+            copy_text_block(st.session_state.transcript, "文字起こしテキスト")
         
         with tabs[1]:
             if 'summary' not in st.session_state or not st.session_state.summary:
@@ -265,17 +261,7 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
             
             if st.session_state.summary:
                 st.markdown('<h5 class="subsection-header">AI Summary</h5>', unsafe_allow_html=True)
-                col1, col2 = st.columns([5, 1])
-                with col1:
-                    st.text_area("AI要約",
-                                value=st.session_state.summary,
-                                height=300,
-                                key="summary_text",
-                                disabled=True)
-                with col2:
-                    if st.button("コピー", key="copy_summary"):
-                        copy_to_clipboard(st.session_state.summary, "copy_summary")
-                        st.success("✓ コピーしました!")
+                copy_text_block(st.session_state.summary, "AI要約")
         
         with tabs[2]:
             if 'mindmap' not in st.session_state or not st.session_state.mindmap:
@@ -323,25 +309,11 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("**元のテキスト**")
-                        st.text_area("Original",
-                                    value=st.session_state.transcript,
-                                    height=300,
-                                    key="original_text",
-                                    disabled=True)
-                        if st.button("コピー", key="copy_original"):
-                            copy_to_clipboard(st.session_state.transcript, "copy_original")
-                            st.success("✓ コピーしました!")
+                        copy_text_block(st.session_state.transcript)
                     
                     with col2:
                         st.markdown("**校閲後のテキスト**")
-                        st.text_area("Enhanced",
-                                    value=proofread_transcript,
-                                    height=300,
-                                    key="enhanced_text",
-                                    disabled=True)
-                        if st.button("コピー", key="copy_enhanced"):
-                            copy_to_clipboard(proofread_transcript, "copy_enhanced")
-                            st.success("✓ コピーしました!")
+                        copy_text_block(proofread_transcript)
                     
                     st.session_state.proofread_transcript = proofread_transcript
                     st.session_state.current_step = 5
@@ -360,25 +332,11 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**元のテキスト**")
-                st.text_area("Original",
-                            value=st.session_state.transcript,
-                            height=300,
-                            key="original_text",
-                            disabled=True)
-                if st.button("コピー", key="copy_original"):
-                    copy_to_clipboard(st.session_state.transcript, "copy_original")
-                    st.success("✓ コピーしました!")
+                copy_text_block(st.session_state.transcript)
             
             with col2:
                 st.markdown("**校閲後のテキスト**")
-                st.text_area("Enhanced",
-                            value=st.session_state.proofread_transcript,
-                            height=300,
-                            key="enhanced_text",
-                            disabled=True)
-                if st.button("コピー", key="copy_enhanced"):
-                    copy_to_clipboard(st.session_state.proofread_transcript, "copy_enhanced")
-                    st.success("✓ コピーしました!")
+                copy_text_block(st.session_state.proofread_transcript)
             
             if st.button("校閲をやり直す", use_container_width=True, key="reproofread_button"):
                 del st.session_state.proofread_transcript
