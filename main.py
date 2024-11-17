@@ -321,12 +321,25 @@ if youtube_url:
         with st.spinner():
             progress_container = show_loading_dots("PDFレポートを生成中...", key="pdf")
             try:
+                # Ensure Text Enhancement is completed before PDF generation
+                if 'proofread_transcript' not in st.session_state:
+                    progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
+                    try:
+                        proofread_transcript = text_processor.proofread_text(transcript)
+                        st.session_state.proofread_transcript = proofread_transcript
+                        progress_bar.empty()
+                        show_success_message("テキストの校閲が完了しました", key="proofread_success")
+                    except Exception as e:
+                        progress_bar.empty()
+                        st.error(f"テキストの校閲に失敗しました: {str(e)}")
+                        st.stop()
+
                 pdf_gen = PDFGenerator()
                 pdf_data = pdf_gen.create_pdf(
                     video_info=video_info,
                     transcript=transcript,
                     summary=summary,
-                    proofread_text=st.session_state.get('proofread_transcript', '')  # Add proofread text
+                    proofread_text=st.session_state.get('proofread_transcript', '')
                 )
                 st.session_state.pdf_data = pdf_data
                 time.sleep(0.5)  # Smooth transition

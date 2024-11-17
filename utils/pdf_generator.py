@@ -114,6 +114,10 @@ class PDFGenerator:
             elements = []
             logger.info("PDFの生成を開始します")
 
+            # Validate required content
+            if not transcript or not summary:
+                raise ValueError("必須コンテンツ(文字起こしまたは要約)が不足しています")
+
             # タイトル
             title_style = ParagraphStyle(
                 'CustomTitle',
@@ -169,34 +173,25 @@ class PDFGenerator:
             # 文字起こし
             logger.info("文字起こしの追加を開始します")
             elements.append(Paragraph("文字起こし", self.styles['JapaneseHeading']))
-            # テキストを適切なサイズのチャンクに分割
             max_chars = 1000
-            chunks = [transcript[i:i+max_chars] for i in range(0, len(transcript), max_chars)]
-            for chunk in chunks:
-                text = self._encode_text(chunk)
-                elements.append(Paragraph(text, self.styles['JapaneseBody']))
-                elements.append(Spacer(1, 10))
+            transcript_chunks = [transcript[i:i+max_chars] for i in range(0, len(transcript), max_chars)]
+            for chunk in transcript_chunks:
+                elements.append(Paragraph(self._encode_text(chunk), self.styles['JapaneseBody']))
             elements.append(Spacer(1, 20))
 
             # 要約
             logger.info("要約の追加を開始します")
             elements.append(Paragraph("AI要約", self.styles['JapaneseHeading']))
-            summary_text = self._encode_text(summary)
-            elements.append(Paragraph(summary_text, self.styles['JapaneseBody']))
+            elements.append(Paragraph(self._encode_text(summary), self.styles['JapaneseBody']))
             elements.append(Spacer(1, 20))
 
             # 校閲済みテキスト
             if proofread_text:
                 logger.info("校閲済みテキストの追加を開始します")
                 elements.append(Paragraph("校閲済みテキスト", self.styles['JapaneseHeading']))
-                
-                # Split into chunks if needed
-                max_chars = 1000
-                chunks = [proofread_text[i:i+max_chars] for i in range(0, len(proofread_text), max_chars)]
-                for chunk in chunks:
-                    text = self._encode_text(chunk)
-                    elements.append(Paragraph(text, self.styles['JapaneseBody']))
-                    elements.append(Spacer(1, 10))
+                proofread_chunks = [proofread_text[i:i+max_chars] for i in range(0, len(proofread_text), max_chars)]
+                for chunk in proofread_chunks:
+                    elements.append(Paragraph(self._encode_text(chunk), self.styles['JapaneseBody']))
                 elements.append(Spacer(1, 20))
 
             # PDFの生成
@@ -206,7 +201,7 @@ class PDFGenerator:
             buffer.close()
             logger.info("PDFの生成が完了しました")
             return pdf_data
-            
+
         except Exception as e:
             error_msg = f"PDFの生成中にエラーが発生しました: {str(e)}"
             logger.error(error_msg)
