@@ -244,31 +244,34 @@ class TextProcessor:
 
     def proofread_text(self, text, max_retries=5, initial_delay=1):
         try:
+            # Split text into chunks
             text_chunks = self.chunk_text(text, chunk_size=2000)
-            proofread_chunks = []
-            failed_chunks = []
             total_chunks = len(text_chunks)
-            
             print(f"テキストを{total_chunks}個のチャンクに分割しました")
             
-            # Process all chunks
-            for i, chunk in enumerate(text_chunks, 1):
-                success = False
-                retry_count = 0
-                delay = initial_delay
-                
-                while not success and retry_count < max_retries:
-                    try:
-                        print(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
-                        
-                        generation_config = genai.types.GenerationConfig(
-                            temperature=0.3,
-                            top_p=0.8,
-                            top_k=40,
-                            max_output_tokens=4096,
-                        )
-                        
-                        chunk_prompt = f'''
+            # Initialize result array with None values to maintain order
+            proofread_chunks = [None] * total_chunks
+            remaining_chunks = list(range(total_chunks))
+            
+            while remaining_chunks:
+                for chunk_index in remaining_chunks[:]:  # Create a copy for iteration
+                    i = chunk_index + 1  # For display purposes
+                    chunk = text_chunks[chunk_index]
+                    retry_count = 0
+                    delay = initial_delay
+                    
+                    while retry_count < max_retries:
+                        try:
+                            print(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
+                            
+                            generation_config = genai.types.GenerationConfig(
+                                temperature=0.3,
+                                top_p=0.8,
+                                top_k=40,
+                                max_output_tokens=4096,
+                            )
+                            
+                            chunk_prompt = f'''
 # あなたの目的:
 ユーザーが入力したテキストを校閲します。
 
@@ -287,36 +290,40 @@ class TextProcessor:
 テキスト:
 {chunk}
 '''
-                        response = self.model.generate_content(
-                            chunk_prompt,
-                            generation_config=generation_config
-                        )
-                        
-                        if response and response.text:
-                            proofread_chunks.append(response.text.strip())
-                            print(f"チャンク {i}/{total_chunks} の処理が完了しました")
-                            success = True
-                        else:
-                            raise ValueError(f"チャンク {i}/{total_chunks} の校閲結果が空です")
-                    
-                    except Exception as e:
-                        retry_count += 1
-                        if retry_count < max_retries:
-                            print(f"チャンク {i} の処理に失敗しました。{delay}秒後に再試行します...")
-                            time.sleep(delay)
-                            delay *= 2  # Exponential backoff
-                        else:
-                            print(f"チャンク {i} の処理が{max_retries}回失敗しました")
-                            failed_chunks.append((i-1, chunk))
-                
-                if not success:
-                    proofread_chunks.append(chunk)  # Keep original text if all retries failed
+                            response = self.model.generate_content(
+                                chunk_prompt,
+                                generation_config=generation_config
+                            )
+                            
+                            if response and response.text:
+                                proofread_chunks[chunk_index] = response.text.strip()
+                                remaining_chunks.remove(chunk_index)
+                                print(f"チャンク {i}/{total_chunks} の処理が完了しました")
+                                break  # Success, move to next chunk
+                            else:
+                                raise ValueError(f"チャンク {i}/{total_chunks} の校閲結果が空です")
+                                
+                        except Exception as e:
+                            retry_count += 1
+                            if retry_count < max_retries:
+                                print(f"チャンク {i} の処理に失敗しました。{delay}秒後に再試行します...")
+                                time.sleep(delay)
+                                delay *= 2  # Exponential backoff
+                            else:
+                                print(f"チャンク {i} の処理が{max_retries}回失敗しました。元のテキストを使用します。")
+                                proofread_chunks[chunk_index] = chunk  # Use original text after all retries fail
+                                remaining_chunks.remove(chunk_index)
+                                break
             
+            # Verify all chunks were processed
+            if None in proofread_chunks:
+                raise Exception("一部のチャンクが処理されていません")
+                
             # Join all proofread chunks
             final_text = '\n\n'.join(proofread_chunks)
             print("すべてのチャンクの処理が完了しました")
             return final_text
-            
+                
         except Exception as e:
             error_msg = f"テキストの校閲に失敗しました: {str(e)}"
             print(error_msg)
