@@ -16,6 +16,30 @@ class TextProcessor:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-pro')
 
+    def chunk_text(self, text, chunk_size=2000):
+        sentences = text.split('。')
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for sentence in sentences:
+            if not sentence.strip():
+                continue
+            sentence = sentence + '。'
+            sentence_length = len(sentence)
+            
+            if current_length + sentence_length > chunk_size and current_chunk:
+                chunks.append(''.join(current_chunk))
+                current_chunk = [sentence]
+                current_length = sentence_length
+            else:
+                current_chunk.append(sentence)
+                current_length += sentence_length
+        
+        if current_chunk:
+            chunks.append(''.join(current_chunk))
+        return chunks
+
     def get_transcript(self, url):
         video_id = self._extract_video_id(url)
         if not video_id:
@@ -168,32 +192,8 @@ class TextProcessor:
             raise Exception("要約の生成に失敗しました")
 
     def proofread_text(self, text, max_retries=3, initial_delay=1):
-        def chunk_text(text, chunk_size=2000):
-            sentences = text.split('。')
-            chunks = []
-            current_chunk = []
-            current_length = 0
-            
-            for sentence in sentences:
-                if not sentence.strip():
-                    continue
-                sentence = sentence + '。'
-                sentence_length = len(sentence)
-                
-                if current_length + sentence_length > chunk_size and current_chunk:
-                    chunks.append(''.join(current_chunk))
-                    current_chunk = [sentence]
-                    current_length = sentence_length
-                else:
-                    current_chunk.append(sentence)
-                    current_length += sentence_length
-            
-            if current_chunk:
-                chunks.append(''.join(current_chunk))
-            return chunks
-
         try:
-            text_chunks = chunk_text(text)
+            text_chunks = self.chunk_text(text)
             proofread_chunks = []
             failed_chunks = []
             total_chunks = len(text_chunks)
@@ -263,7 +263,7 @@ class TextProcessor:
             if failed_chunks:
                 print(f"{len(failed_chunks)}個のチャンクの処理に失敗しました。小さいチャンクサイズで再試行します。")
                 for chunk_index, chunk in failed_chunks:
-                    smaller_chunks = chunk_text(chunk, chunk_size=1000)  # Try with smaller chunks
+                    smaller_chunks = self.chunk_text(chunk, chunk_size=1000)  # Try with smaller chunks
                     processed_parts = []
                     
                     for j, small_chunk in enumerate(smaller_chunks, 1):
@@ -273,11 +273,36 @@ class TextProcessor:
                         
                         while not success and retry_count < max_retries:
                             try:
+                                # Create generation config for smaller chunks
+                                generation_config = genai.types.GenerationConfig(
+                                    temperature=0.3,
+                                    top_p=0.8,
+                                    top_k=40,
+                                    max_output_tokens=4096,
+                                )
+
+                                # Create prompt for smaller chunks
+                                chunk_prompt = f'''
+# あなたの目的:
+ユーザーが入力したテキストを校閲します。
+
+文字起こししたYouTubeの動画について、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。
+これは{len(smaller_chunks)}分割のうちの{j}番目(再試行)の部分です。
+文章の一貫性を保つため、前後の文脈を意識して校閲してください。
+
+# ルール:
+1.校閲した文章以外の出力は決して行ってはいけません。
+2.校閲した文章のみを出力します。
+3.改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
+4.時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
+5.スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
+6.テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
+
+テキスト:
+{small_chunk}
+'''
                                 response = self.model.generate_content(
-                                    chunk_prompt.replace(
-                                        f"{total_chunks}分割のうちの{chunk_index+1}番目",
-                                        f"{len(smaller_chunks)}分割のうちの{j}番目(再試行)"
-                                    ),
+                                    chunk_prompt,
                                     generation_config=generation_config
                                 )
                                 
