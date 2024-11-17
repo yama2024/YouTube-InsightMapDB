@@ -295,55 +295,39 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
             <p class="section-description">AIによる文章の校閲・整形を行います</p>
         </div>
         ''', unsafe_allow_html=True)
-                
-        if 'proofread_transcript' not in st.session_state:
-            # Add button before text displays with proper spacing
-            st.markdown('<div style="margin: 1.5rem 0;">', unsafe_allow_html=True)
-            if st.button("🔄 テキストを校閲", use_container_width=True, key="proofread_button", 
-                        help="AIによって文章を校閲・整形します"):
-                progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
-                try:
-                    text_processor = TextProcessor()
-                    proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
-                    
-                    # Validate the enhanced text
-                    original_length = len(st.session_state.transcript)
-                    enhanced_length = len(proofread_transcript)
-                    if enhanced_length < (original_length * 0.5):
-                        raise ValueError("校閲後のテキストが極端に短くなっています。処理を中断します。")
-                    
-                    st.session_state.proofread_transcript = proofread_transcript
-                    st.session_state.current_step = 5
-                    update_progress('proofread')
-                    time.sleep(0.5)
-                    progress_bar.empty()
-                    show_success_message("テキストの校閲が完了しました", key="proofread_success")
-                except Exception as e:
-                    progress_bar.empty() if 'progress_bar' in locals() else None
-                    st.error(f"テキストの校閲に失敗しました: {str(e)}")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Text display sections with enhanced styling
+
+        # Display text sections with enhanced styling
+        st.markdown('''
+        <div class="glass-container">
+            <div class="text-enhancement-results">
+        ''', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        original_length = len(st.session_state.transcript)
+        
+        with col1:
+            st.markdown("### Original Text")
+            st.markdown(f"Character count: {original_length}")
             st.markdown('''
-            <div class="glass-container">
-                <div class="text-enhancement-results">
+            <div class="scrollable-text-container original">
+                <div class="text-content">
             ''', unsafe_allow_html=True)
-            
-            col1, col2 = st.columns(2)
-            original_length = len(st.session_state.transcript)
-            
-            with col1:
-                st.markdown("### Original Text")
-                st.markdown(f"Character count: {original_length}")
+            st.markdown(st.session_state.transcript)
+            st.markdown('</div></div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("### Enhanced Text")
+            if 'proofread_transcript' in st.session_state:
+                enhanced_length = len(st.session_state.proofread_transcript)
+                length_change = ((enhanced_length - original_length) / original_length * 100)
+                st.markdown(f"Character count: {enhanced_length} ({length_change:.1f}% change)")
                 st.markdown('''
-                <div class="scrollable-text-container original">
+                <div class="scrollable-text-container enhanced">
                     <div class="text-content">
                 ''', unsafe_allow_html=True)
-                st.markdown(st.session_state.transcript)
+                st.markdown(st.session_state.proofread_transcript)
                 st.markdown('</div></div>', unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown("### Enhanced Text")
+            else:
                 st.markdown("Processing not started")
                 st.markdown('''
                 <div class="scrollable-text-container enhanced" style="opacity: 0.5;">
@@ -352,59 +336,96 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                     </div>
                 </div>
                 ''', unsafe_allow_html=True)
-            
-            st.markdown('</div></div>', unsafe_allow_html=True)
+        
+        st.markdown('</div></div>', unsafe_allow_html=True)
+        
+        # Add proofread/re-proofread button with proper spacing
+        st.markdown('<div style="margin: 1.5rem 0;">', unsafe_allow_html=True)
+        if 'proofread_transcript' not in st.session_state:
+            if st.button("🔄 テキストを校閲", use_container_width=True, key="proofread_button",
+                        help="AIによって文章を校閲・整形します"):
+                progress_bar = show_progress_bar("テキストを校閲中...")
+                try:
+                    text_processor = TextProcessor()
+                    proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
+                    
+                    # Validate the enhanced text
+                    enhanced_length = len(proofread_transcript)
+                    if enhanced_length < (original_length * 0.5):
+                        raise ValueError("校閲後のテキストが極端に短くなっています。処理を中断します。")
+                    
+                    st.session_state.proofread_transcript = proofread_transcript
+                    st.session_state.current_step = 5
+                    update_progress('proofread')
+                    if 'progress_bar' in locals():
+                        progress_bar.empty()
+                    show_success_message("テキストの校閲が完了しました")
+                    st.rerun()
+                except Exception as e:
+                    if 'progress_bar' in locals():
+                        progress_bar.empty()
+                    st.error(f"テキストの校閲に失敗しました: {str(e)}")
         else:
-            # Display results when text is already proofread
-            st.markdown('''
-            <div class="glass-container">
-                <div class="text-enhancement-results">
-            ''', unsafe_allow_html=True)
-            
-            col1, col2 = st.columns(2)
-            original_length = len(st.session_state.transcript)
-            enhanced_length = len(st.session_state.proofread_transcript)
-            length_change = ((enhanced_length - original_length) / original_length * 100)
-            
-            with col1:
-                st.markdown("### Original Text")
-                st.markdown(f"Character count: {original_length}")
-                st.markdown('''
-                <div class="scrollable-text-container original">
-                    <div class="text-content">
-                ''', unsafe_allow_html=True)
-                st.markdown(st.session_state.transcript)
-                st.markdown('</div></div>', unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown("### Enhanced Text")
-                st.markdown(f"Character count: {enhanced_length}")
-                st.markdown('''
-                <div class="scrollable-text-container enhanced">
-                    <div class="text-content">
-                ''', unsafe_allow_html=True)
-                st.markdown(st.session_state.proofread_transcript)
-                st.markdown('</div></div>', unsafe_allow_html=True)
-            
-            # Display comparison stats
-            st.markdown(f'''
-            <div class="comparison-stats">
-                <div class="stat-item">
-                    <span class="stat-label">Length Change:</span>
-                    <span class="stat-value">{length_change:.1f}%</span>
-                </div>
-            </div>
-            ''', unsafe_allow_html=True)
-            
-            # Add re-proofread button with proper spacing
-            st.markdown('<div style="margin: 1.5rem 0;">', unsafe_allow_html=True)
             if st.button("🔄 校閲をやり直す", use_container_width=True, key="reproofread_button",
                         help="テキストの校閲をもう一度実行します"):
                 del st.session_state.proofread_transcript
-                st.experimental_rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Remove redundant code
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Display existing enhanced text if available
+        # if 'proofread_transcript' in st.session_state:
+        #     st.markdown('''
+        #     <div class="glass-container">
+        #         <div class="text-enhancement-results">
+        #     ''', unsafe_allow_html=True)
             
-            st.markdown('</div></div>', unsafe_allow_html=True)
+        #     col1, col2 = st.columns(2)
+        #     original_length = len(st.session_state.transcript)
+        #     enhanced_length = len(st.session_state.proofread_transcript)
+        #     length_change = ((enhanced_length - original_length) / original_length * 100)
+            
+        #     with col1:
+        #         st.markdown("### Original Text")
+        #         st.markdown(f"Character count: {original_length}")
+        #         st.markdown('''
+        #         <div class="scrollable-text-container original">
+        #             <div class="text-content">
+        #         ''', unsafe_allow_html=True)
+        #         st.markdown(st.session_state.transcript)
+        #         st.markdown('</div></div>', unsafe_allow_html=True)
+            
+        #     with col2:
+        #         st.markdown("### Enhanced Text")
+        #         st.markdown(f"Character count: {enhanced_length}")
+        #         st.markdown('''
+        #         <div class="scrollable-text-container enhanced">
+        #             <div class="text-content">
+        #         ''', unsafe_allow_html=True)
+        #         st.markdown(st.session_state.proofread_transcript)
+        #         st.markdown('</div></div>', unsafe_allow_html=True)
+            
+        #     # Add comparison stats
+        #     st.markdown(f'''
+        #     <div class="comparison-stats">
+        #         <div class="stat-item">
+        #             <span class="stat-label">Length Change:</span>
+        #             <span class="stat-value">{length_change:.1f}%</span>
+        #         </div>
+        #     </div>
+        #     ''', unsafe_allow_html=True)
+            
+        #     st.markdown('</div></div>', unsafe_allow_html=True)
+            
+        #     # Add re-proofread button
+        #     st.markdown('<div style="margin: 1.5rem 0;">', unsafe_allow_html=True)
+        #     if st.button("🔄 校閲をやり直す", use_container_width=True, key="reproofread_button",
+        #                 help="テキストの校閲をもう一度実行します"):
+        #         del st.session_state.proofread_transcript
+        #         st.rerun() 
+        #     st.markdown('</div>', unsafe_allow_html=True)
 
 # Step 5: Export
 with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step == 5):
