@@ -89,17 +89,16 @@ def show_success_message(message, key=None):
     return placeholder
 
 def copy_text_block(text, label=""):
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        st.text_area(
-            label=label,
-            value=text,
-            height=300,
-            disabled=True
-        )
-    with col2:
-        st.code(text, language="text")
-        st.markdown("↑ テキストを選択してコピー")
+    st.markdown(f'''
+    <div class="text-display-container">
+        <div class="text-area-header">
+            {label if label else ""}
+        </div>
+        <div class="text-content">
+            {text}
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
 
 # Application Header
 st.markdown('''
