@@ -140,11 +140,16 @@ if 'video_info' not in st.session_state:
 if 'processing_state' not in st.session_state:
     st.session_state.processing_state = None
 
-# URL入力セクション
-st.markdown('<h3 class="section-header">🎥 Analyze Your Video</h3>', unsafe_allow_html=True)
+# Input Section
+st.markdown('''
+<div class="section-divider">
+    <h3 class="section-header">📥 Input Section</h3>
+    <p class="section-description">分析したいYouTube動画のURLを入力してください</p>
+</div>
+''', unsafe_allow_html=True)
 
 youtube_url = st.text_input(
-    "YouTube URLを入力",
+    "YouTube URL",
     placeholder="https://www.youtube.com/watch?v=...",
     help="分析したいYouTube動画のURLを入力してください"
 )
@@ -158,20 +163,26 @@ if youtube_url:
                 yt_helper = YouTubeHelper()
                 video_info = yt_helper.get_video_info(youtube_url)
                 st.session_state.video_info = video_info
-                time.sleep(0.5)  # Smooth transition
+                time.sleep(0.5)
                 loading_spinner.empty()
                 show_success_message("動画情報の取得が完了しました", key="video_info_success")
             except Exception as e:
                 loading_spinner.empty()
                 st.error(f"動画情報の取得に失敗しました: {str(e)}")
                 st.stop()
+
+        # Content Overview Section
+        st.markdown('''
+        <div class="section-divider">
+            <h3 class="section-header">📊 Content Overview</h3>
+            <p class="section-description">動画の基本情報と文字起こしの確認</p>
+        </div>
+        ''', unsafe_allow_html=True)
         
-        # 動画情報セクション
-        st.markdown('<h3 class="section-header">📺 Video Information</h3>', unsafe_allow_html=True)
-        
+        # Video Information
         col1, col2 = st.columns([1, 2])
         with col1:
-            st.image(video_info['thumbnail_url'], use_container_width=True)
+            st.image(video_info['thumbnail_url'], use_column_width=True)
         
         with col2:
             st.markdown(f'''
@@ -188,37 +199,41 @@ if youtube_url:
             </div>
             ''', unsafe_allow_html=True)
 
-        # テキスト処理
+        # Transcript Processing
         text_processor = TextProcessor()
         with st.spinner():
             loading_dots = show_loading_dots("文字起こしを生成中...", key="transcript")
             try:
                 transcript = text_processor.get_transcript(youtube_url)
-                time.sleep(0.5)  # Smooth transition
+                time.sleep(0.5)
                 loading_dots.empty()
                 show_success_message("文字起こしの生成が完了しました", key="transcript_success")
             except Exception as e:
                 loading_dots.empty()
                 st.error(f"文字起こしの生成に失敗しました: {str(e)}")
                 st.stop()
-        
-        st.markdown('<h3 class="section-header">📝 Transcript</h3>', unsafe_allow_html=True)
 
-        # Original transcript display
-        st.markdown('<h5 class="subsection-header">元の文字起こし</h5>', unsafe_allow_html=True)
+        st.markdown('<h5 class="subsection-header">📝 Original Transcript</h5>', unsafe_allow_html=True)
         col1, col2 = st.columns([4, 1])
         with col1:
             st.text_area("文字起こしテキスト", transcript, height=200, label_visibility="collapsed")
         with col2:
             st.button("📋 コピー", key="copy_original", use_container_width=True)
 
-        # AI要約セクション
-        st.markdown('<h3 class="section-header">📊 AI Summary</h3>', unsafe_allow_html=True)
+        # Analysis Section
+        st.markdown('''
+        <div class="section-divider">
+            <h3 class="section-header">🔍 Analysis Section</h3>
+            <p class="section-description">AIによる要約とマインドマップの生成</p>
+        </div>
+        ''', unsafe_allow_html=True)
+
+        # AI Summary
         with st.spinner():
             shimmer_loading = show_shimmer_loading("AI要約を生成中...", key="summary")
             try:
                 summary = text_processor.generate_summary(transcript)
-                time.sleep(0.5)  # Smooth transition
+                time.sleep(0.5)
                 shimmer_loading.empty()
                 show_success_message("AI要約の生成が完了しました", key="summary_success")
             except Exception as e:
@@ -226,6 +241,7 @@ if youtube_url:
                 st.error(f"AI要約の生成に失敗しました: {str(e)}")
                 st.stop()
         
+        st.markdown('<h5 class="subsection-header">📊 AI Summary</h5>', unsafe_allow_html=True)
         col1, col2 = st.columns([4, 1])
         with col1:
             st.markdown(f'''
@@ -238,18 +254,46 @@ if youtube_url:
         with col2:
             st.button("📋 コピー", key="copy_summary", use_container_width=True)
 
-        # Add proofread button after summary
-        st.markdown('<h3 class="section-header">✨ Text Enhancement</h3>', unsafe_allow_html=True)
+        # Mind Map
+        st.markdown('<h5 class="subsection-header">🔄 Mind Map Visualization</h5>', unsafe_allow_html=True)
+        mindmap_gen = MindMapGenerator()
+        try:
+            with st.spinner():
+                loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
+                mindmap_data = mindmap_gen.generate_mindmap(transcript)
+                fig = mindmap_gen.create_visualization(mindmap_data)
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='white'),
+                )
+                time.sleep(0.5)
+                loading_container.empty()
+                show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
+                st.plotly_chart(fig, use_container_width=True)
+                mindmap_svg = fig.to_image(format="svg")
+        except Exception as e:
+            loading_container.empty()
+            st.error(f"マインドマップの生成に失敗しました: {str(e)}")
+            st.stop()
+
+        # Enhancement Section
+        st.markdown('''
+        <div class="section-divider">
+            <h3 class="section-header">✨ Enhancement Section</h3>
+            <p class="section-description">テキストの校閲と整形</p>
+        </div>
+        ''', unsafe_allow_html=True)
+
         if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
             progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
             try:
                 proofread_transcript = text_processor.proofread_text(transcript)
                 st.session_state.proofread_transcript = proofread_transcript
-                time.sleep(0.5)  # Smooth transition
+                time.sleep(0.5)
                 progress_bar.empty()
                 show_success_message("テキストの校閲が完了しました", key="proofread_success")
                 
-                # Split text if needed
                 if len(proofread_transcript) <= 2000:
                     st.markdown('<h5 class="subsection-header">校閲済みテキスト</h5>', unsafe_allow_html=True)
                     col1, col2 = st.columns([4, 1])
@@ -290,38 +334,17 @@ if youtube_url:
                 st.error(f"テキストの校閲に失敗しました: {str(e)}")
                 st.stop()
 
-        # マインドマップ生成 - Move this section outside try block
-        st.markdown('<h3 class="section-header">🔄 Mind Map</h3>', unsafe_allow_html=True)
-
-        # Initialize mindmap generator
-        mindmap_gen = MindMapGenerator()
-        try:
-            with st.spinner():
-                loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
-                mindmap_data = mindmap_gen.generate_mindmap(transcript)
-                fig = mindmap_gen.create_visualization(mindmap_data)
-                fig.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color='white'),
-                )
-                time.sleep(0.5)  # Smooth transition
-                loading_container.empty()
-                show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
-                st.plotly_chart(fig, use_container_width=True)
-                mindmap_svg = fig.to_image(format="svg")
-        except Exception as e:
-            loading_container.empty()
-            st.error(f"マインドマップの生成に失敗しました: {str(e)}")
-            st.stop()
-
-        # PDFレポート生成
-        st.markdown('<h3 class="section-header">📑 Analysis Report</h3>', unsafe_allow_html=True)
+        # Final Output Section
+        st.markdown('''
+        <div class="section-divider">
+            <h3 class="section-header">📑 Final Output</h3>
+            <p class="section-description">分析レポートの生成とダウンロード</p>
+        </div>
+        ''', unsafe_allow_html=True)
         
         with st.spinner():
             progress_container = show_loading_dots("PDFレポートを生成中...", key="pdf")
             try:
-                # Ensure Text Enhancement is completed before PDF generation
                 if 'proofread_transcript' not in st.session_state:
                     progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
                     try:
@@ -342,7 +365,7 @@ if youtube_url:
                     proofread_text=st.session_state.get('proofread_transcript', '')
                 )
                 st.session_state.pdf_data = pdf_data
-                time.sleep(0.5)  # Smooth transition
+                time.sleep(0.5)
                 progress_container.empty()
                 show_success_message("PDFレポートの生成が完了しました", key="pdf_success")
                 
