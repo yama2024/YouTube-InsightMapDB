@@ -86,19 +86,9 @@ youtube_url = st.text_input(
 if youtube_url:
     try:
         # YouTube情報の取得
-        with st.spinner("動画情報を取得中..."):
-            st.markdown('''
-            <div class="loading-container">
-                <div class="loading-dots">
-                    <span></span><span></span><span></span>
-                </div>
-                <p class="loading-text">動画情報を取得しています</p>
-                <div class="progress-bar"></div>
-            </div>
-            ''', unsafe_allow_html=True)
-            yt_helper = YouTubeHelper()
-            video_info = yt_helper.get_video_info(youtube_url)
-            st.session_state.video_info = video_info
+        yt_helper = YouTubeHelper()
+        video_info = yt_helper.get_video_info(youtube_url)
+        st.session_state.video_info = video_info
         
         # 動画情報セクション
         st.markdown('<h3 class="section-header">📺 Video Information</h3>', unsafe_allow_html=True)
@@ -125,13 +115,6 @@ if youtube_url:
         # テキスト処理
         text_processor = TextProcessor()
         with st.spinner("文字起こしを生成中..."):
-            st.markdown('''
-            <div class="loading-container">
-                <div class="loading-spinner"></div>
-                <p class="loading-text">文字起こしを生成しています</p>
-                <div class="progress-bar"></div>
-            </div>
-            ''', unsafe_allow_html=True)
             transcript = text_processor.get_transcript(youtube_url)
             st.markdown('<h3 class="section-header">📝 Transcript</h3>', unsafe_allow_html=True)
 
@@ -145,17 +128,7 @@ if youtube_url:
 
             # AI要約セクション
             st.markdown('<h3 class="section-header">📊 AI Summary</h3>', unsafe_allow_html=True)
-            with st.spinner("要約を生成中..."):
-                st.markdown('''
-                <div class="loading-container">
-                    <div class="loading-dots">
-                        <span></span><span></span><span></span>
-                    </div>
-                    <p class="loading-text">AIが要約を生成しています</p>
-                    <div class="shimmer"></div>
-                </div>
-                ''', unsafe_allow_html=True)
-                summary = text_processor.generate_summary(transcript)
+            summary = text_processor.generate_summary(transcript)
             
             col1, col2 = st.columns([4, 1])
             with col1:
@@ -174,13 +147,6 @@ if youtube_url:
             if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
                 try:
                     with st.spinner("テキストを校閲中..."):
-                        st.markdown('''
-                        <div class="loading-container">
-                            <div class="loading-spinner"></div>
-                            <p class="loading-text">テキストを校閲・整形しています</p>
-                            <div class="shimmer"></div>
-                        </div>
-                        ''', unsafe_allow_html=True)
                         proofread_transcript = text_processor.proofread_text(transcript)
                         st.session_state.proofread_transcript = proofread_transcript
                         
@@ -244,13 +210,6 @@ if youtube_url:
         # マインドマップ生成
         mindmap_gen = MindMapGenerator()
         with st.spinner("マインドマップを生成中..."):
-            st.markdown('''
-            <div class="loading-container">
-                <div class="loading-spinner"></div>
-                <p class="loading-text">マインドマップを生成しています</p>
-                <div class="progress-bar"></div>
-            </div>
-            ''', unsafe_allow_html=True)
             mindmap_data = mindmap_gen.generate_mindmap(transcript)
             st.markdown('<h3 class="section-header">🔄 Mind Map</h3>', unsafe_allow_html=True)
             
@@ -267,15 +226,6 @@ if youtube_url:
         st.markdown('<h3 class="section-header">📑 Analysis Report</h3>', unsafe_allow_html=True)
         
         with st.spinner("PDFレポートを生成中..."):
-            st.markdown('''
-            <div class="loading-container">
-                <div class="loading-dots">
-                    <span></span><span></span><span></span>
-                </div>
-                <p class="loading-text">PDFレポートを生成しています</p>
-                <div class="shimmer"></div>
-            </div>
-            ''', unsafe_allow_html=True)
             try:
                 pdf_gen = PDFGenerator()
                 pdf_data = pdf_gen.create_pdf(
