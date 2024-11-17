@@ -4,9 +4,14 @@
 /* グローバルスタイル */
 div.stApp {
     font-family: 'Noto Sans JP', sans-serif !important;
-    background: linear-gradient(-45deg, #1a365d, #4a90e2, #7fb3d5) !important;
+    background: linear-gradient(-45deg, 
+        #0a2847,  /* Darker blue */
+        #1a365d,  /* Main blue */
+        #4a90e2,  /* Bright blue */
+        #7fb3d5   /* Light blue */
+    ) !important;
     background-size: 400% 400% !important;
-    animation: gradientBG 15s ease infinite !important;
+    animation: gradientBG 20s ease infinite !important;
     min-height: 100vh !important;
     color: white !important;
 }
@@ -72,14 +77,16 @@ div.stApp {
 
 /* Enhanced Glass Container */
 .glass-container {
-    background: rgba(255, 255, 255, 0.08) !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(25px) !important;
+    -webkit-backdrop-filter: blur(25px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
     border-radius: 24px !important;
     padding: 3rem !important;
     margin: 2rem 0 !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: 
+        0 8px 32px rgba(0, 0, 0, 0.2),
+        inset 0 0 32px rgba(255, 255, 255, 0.05) !important;
     transition: all 0.4s ease !important;
     position: relative !important;
     overflow: hidden !important;
@@ -87,8 +94,10 @@ div.stApp {
 
 .glass-container:hover {
     transform: translateY(-5px) !important;
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.25) !important;
-    background: rgba(255, 255, 255, 0.12) !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    box-shadow: 
+        0 12px 48px rgba(0, 0, 0, 0.3),
+        inset 0 0 48px rgba(255, 255, 255, 0.1) !important;
 }
 
 /* Enhanced Feature Cards */
@@ -137,7 +146,23 @@ div.stApp {
     transition: opacity 0.4s ease;
 }
 
+.feature-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #4a90e2, #7fb3d5);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+}
+
 .feature-card:hover::before {
+    opacity: 1;
+}
+
+.feature-card:hover::after {
     opacity: 1;
 }
 
