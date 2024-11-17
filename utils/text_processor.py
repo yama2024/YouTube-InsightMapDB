@@ -105,26 +105,18 @@ class TextProcessor:
                             )
                             
                             chunk_prompt = f'''
-# 指示
-以下のテキストを校閲・整形してください。
+# あなたの目的:
+{chunk}のテキストを完全に漏れなく校閲します。
 
-# 必須要件
-1. 元の文章の意味を完全に保持すること
-2. 以下の修正を行うこと:
-   - 文法的な誤りの修正
-   - 読点・句点の適切な配置
-   - 不自然な改行の修正
-   - フィラーワード（えー、あの、まぁ等）の削除
-   - 重複した表現の整理
-   - 時間表記（00:00形式）の削除
+文字起こしした{chunk}のテキストについて、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。最後まで処理が完了するまで{max_retries}回繰り返して、実行してください。
 
-# 出力形式
-- 校閲後のテキストのみを出力
-- 各文の終わりに句点「。」を付ける
-- 適切な位置で改行を入れる
-
-# 処理するテキスト:
-{chunk}
+# 追加のルール:
+1. 校閲した文章以外の出力は決して行ってはいけません。
+2. 校閲した文章のみを出力します。
+3. 改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
+4. 時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
+5. スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
+6. テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
 '''
                             response = self.model.generate_content(
                                 chunk_prompt,
@@ -135,10 +127,9 @@ class TextProcessor:
                                 proofread_chunk = response.text.strip()
                                 logger.debug(f"Processed chunk length: {len(proofread_chunk)}")
                                 
-                                # Validate chunk length
-                                chunk_length_ratio = len(proofread_chunk) / len(chunk)
-                                if chunk_length_ratio < 0.5 or chunk_length_ratio > 1.5:
-                                    raise ValueError(f"Processed chunk length ratio ({chunk_length_ratio:.2f}) is outside acceptable range")
+                                # Validate chunk processing
+                                if len(proofread_chunk) < (len(chunk) * 0.5):
+                                    raise ValueError(f"Processed chunk is too short: {len(proofread_chunk)} vs {len(chunk)}")
                                 
                                 proofread_chunks[chunk_index] = proofread_chunk
                                 remaining_chunks.remove(chunk_index)
@@ -170,11 +161,9 @@ class TextProcessor:
             final_text_length = len(final_text)
             logger.info(f"Final text length: {final_text_length}")
             
-            # Validate overall text length ratio
-            length_ratio = final_text_length / original_text_length
-            if length_ratio < 0.5 or length_ratio > 1.5:
-                logger.error(f"Final text length ratio ({length_ratio:.2f}) is outside acceptable range")
-                raise ValueError("校閲後のテキストの長さが許容範囲外です")
+            if final_text_length < (original_text_length * 0.5):
+                logger.error(f"Final text is too short: {final_text_length} vs {original_text_length}")
+                raise ValueError("校閲後のテキストが元のテキストと比べて極端に短くなっています")
             
             logger.info("すべてのチャンクの処理が完了しました")
             return final_text
