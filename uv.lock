@@ -1219,6 +1219,7 @@ dependencies = [
     { name = "pytube" },
     { name = "reportlab" },
     { name = "requests" },
+    { name = "stqdm" },
     { name = "streamlit" },
     { name = "svglib" },
     { name = "weasyprint" },
@@ -1241,6 +1242,7 @@ requires-dist = [
     { name = "pytube", specifier = ">=15.0.0" },
     { name = "reportlab", specifier = ">=4.0.7" },
     { name = "requests", specifier = ">=2.31.0" },
+    { name = "stqdm", specifier = ">=0.0.5" },
     { name = "streamlit", specifier = ">=1.40.1" },
     { name = "svglib", specifier = ">=1.5.1" },
     { name = "weasyprint", specifier = ">=62.3" },
@@ -1363,6 +1365,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/88/04/b5bf6d21dc4041000ccba7eb17dd3055feb237e7ffc2c20d3fae3af62baa/smmap-5.0.1.tar.gz", hash = "sha256:dceeb6c0028fdb6734471eb07c0cd2aae706ccaecab45965ee83f11c8d3b1f62", size = 22291 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/a5/10f97f73544edcdef54409f1d839f6049a0d79df68adbc1ceb24d1aaca42/smmap-5.0.1-py3-none-any.whl", hash = "sha256:e6d8668fa5f93e706934a62d7b4db19c8d9eb8cf2adbb75ef1b675aa332b69da", size = 24282 },
+]
+
+[[package]]
+name = "stqdm"
+version = "0.0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6b/f4/770b463dd67fb3bd0204bd3d35423c838e58a5f78f97bf98730b9b1cb991/stqdm-0.0.5.tar.gz", hash = "sha256:1bed78e60068da3afc7c6d87a5388006036633aa2fe2e19fa7db46483ef1227e", size = 7406 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/e3/63cf2a221dc4c5894c2e42a7916ddcde8e5846f9551c2e9ed83024934fa3/stqdm-0.0.5-py3-none-any.whl", hash = "sha256:3177858c1ce5244821f13cc7cbd88a6dc8f154ef1bd12d2fa3342f2a9caf8843", size = 11123 },
 ]
 
 [[package]]

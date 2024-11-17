@@ -4,6 +4,7 @@ from utils.text_processor import TextProcessor
 from utils.mindmap_generator import MindMapGenerator
 from utils.pdf_generator import PDFGenerator
 import os
+import time
 
 # ページ設定
 st.set_page_config(
@@ -25,16 +26,20 @@ def load_css():
 load_css()
 
 # Loading animation helpers
-def show_loading_container(message):
-    return st.markdown(f'''
-        <div class="loading-container">
-            <div class="loading-spinner"></div>
-            <p class="loading-text">{message}</p>
-        </div>
-    ''', unsafe_allow_html=True)
+def show_loading_spinner(message):
+    with st.spinner(message):
+        placeholder = st.empty()
+        placeholder.markdown(f'''
+            <div class="loading-container">
+                <div class="loading-spinner"></div>
+                <p class="loading-text">{message}</p>
+            </div>
+        ''', unsafe_allow_html=True)
+        return placeholder
 
 def show_loading_dots(message):
-    return st.markdown(f'''
+    placeholder = st.empty()
+    placeholder.markdown(f'''
         <div class="loading-container">
             <div class="loading-dots">
                 <span></span>
@@ -44,21 +49,35 @@ def show_loading_dots(message):
             <p class="loading-text">{message}</p>
         </div>
     ''', unsafe_allow_html=True)
+    return placeholder
 
-def show_progress_bar(message):
-    return st.markdown(f'''
+def show_progress_bar(message, progress_value=None):
+    placeholder = st.empty()
+    if progress_value is not None:
+        progress_style = f'width: {progress_value * 100}%'
+    else:
+        progress_style = ''
+    
+    placeholder.markdown(f'''
         <div class="loading-container">
-            <div class="progress-bar"></div>
+            <div class="progress-bar">
+                <div class="progress-bar-fill" style="{progress_style}"></div>
+            </div>
             <p class="loading-text">{message}</p>
         </div>
     ''', unsafe_allow_html=True)
+    return placeholder
 
 def show_shimmer_loading(message):
-    return st.markdown(f'''
+    placeholder = st.empty()
+    placeholder.markdown(f'''
         <div class="loading-container shimmer">
-            <p class="loading-text">{message}</p>
+            <div class="shimmer-wrapper">
+                <div class="shimmer-text">{message}</div>
+            </div>
         </div>
     ''', unsafe_allow_html=True)
+    return placeholder
 
 # アプリヘッダー
 st.markdown('''
@@ -122,11 +141,12 @@ youtube_url = st.text_input(
 if youtube_url:
     try:
         # YouTube情報の取得
-        loading_placeholder = show_loading_container("動画情報を取得中...")
-        yt_helper = YouTubeHelper()
-        video_info = yt_helper.get_video_info(youtube_url)
-        st.session_state.video_info = video_info
-        loading_placeholder.empty()
+        with st.spinner("動画情報を取得中..."):
+            loading_spinner = show_loading_spinner("動画情報を取得中...")
+            yt_helper = YouTubeHelper()
+            video_info = yt_helper.get_video_info(youtube_url)
+            st.session_state.video_info = video_info
+            loading_spinner.empty()
         
         # 動画情報セクション
         st.markdown('<h3 class="section-header">📺 Video Information</h3>', unsafe_allow_html=True)
@@ -152,9 +172,10 @@ if youtube_url:
 
         # テキスト処理
         text_processor = TextProcessor()
-        loading_dots = show_loading_dots("文字起こしを生成中...")
-        transcript = text_processor.get_transcript(youtube_url)
-        loading_dots.empty()
+        with st.spinner("文字起こしを生成中..."):
+            loading_dots = show_loading_dots("文字起こしを生成中...")
+            transcript = text_processor.get_transcript(youtube_url)
+            loading_dots.empty()
         
         st.markdown('<h3 class="section-header">📝 Transcript</h3>', unsafe_allow_html=True)
 
@@ -168,9 +189,10 @@ if youtube_url:
 
         # AI要約セクション
         st.markdown('<h3 class="section-header">📊 AI Summary</h3>', unsafe_allow_html=True)
-        shimmer_loading = show_shimmer_loading("AI要約を生成中...")
-        summary = text_processor.generate_summary(transcript)
-        shimmer_loading.empty()
+        with st.spinner("AI要約を生成中..."):
+            shimmer_loading = show_shimmer_loading("AI要約を生成中...")
+            summary = text_processor.generate_summary(transcript)
+            shimmer_loading.empty()
         
         col1, col2 = st.columns([4, 1])
         with col1:
@@ -188,10 +210,11 @@ if youtube_url:
         st.markdown('<h3 class="section-header">✨ Text Enhancement</h3>', unsafe_allow_html=True)
         if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
             try:
-                loading_spinner = show_loading_container("テキストを校閲中...")
-                proofread_transcript = text_processor.proofread_text(transcript)
-                st.session_state.proofread_transcript = proofread_transcript
-                loading_spinner.empty()
+                with st.spinner("テキストを校閲中..."):
+                    progress_bar = show_progress_bar("テキストを校閲中...")
+                    proofread_transcript = text_processor.proofread_text(transcript)
+                    st.session_state.proofread_transcript = proofread_transcript
+                    progress_bar.empty()
                 
                 # Determine if text needs to be split (more than 2000 characters as threshold)
                 if len(proofread_transcript) <= 2000:
@@ -208,35 +231,16 @@ if youtube_url:
                     with col2:
                         st.button("📋 コピー", key="copy_proofread", use_container_width=True)
                 else:
-                    # Split text into chunks of roughly equal size
-                    total_length = len(proofread_transcript)
-                    chunk_size = total_length // 3 if total_length > 4000 else total_length // 2
+                    # Split text into chunks and show progress
+                    chunks = text_processor.split_text_into_chunks(proofread_transcript)
+                    total_chunks = len(chunks)
                     
-                    chunks = []
-                    current_chunk = []
-                    current_length = 0
-                    
-                    # Split at sentence boundaries
-                    for sentence in proofread_transcript.split('。'):
-                        if not sentence.strip():
-                            continue
-                        sentence = sentence + '。'
-                        
-                        if current_length + len(sentence) > chunk_size and current_chunk:
-                            chunks.append(''.join(current_chunk))
-                            current_chunk = [sentence]
-                            current_length = len(sentence)
-                        else:
-                            current_chunk.append(sentence)
-                            current_length += len(sentence)
-                    
-                    if current_chunk:
-                        chunks.append(''.join(current_chunk))
-                    
-                    # Display each chunk with progress
                     for i, chunk in enumerate(chunks, 1):
-                        progress_message = f"チャンク {i}/{len(chunks)} を処理中..."
-                        show_progress_bar(progress_message)
+                        progress_value = i / total_chunks
+                        progress_bar = show_progress_bar(
+                            f"チャンク {i}/{total_chunks} を処理中...",
+                            progress_value
+                        )
                         st.markdown(f'<h5 class="subsection-header">校閲済みテキスト_{i}</h5>', unsafe_allow_html=True)
                         col1, col2 = st.columns([4, 1])
                         with col1:
@@ -248,69 +252,74 @@ if youtube_url:
                             )
                         with col2:
                             st.button("📋 コピー", key=f"copy_proofread_{i}", use_container_width=True)
+                        progress_bar.empty()
                             
             except Exception as e:
                 st.error(f"校閲中にエラーが発生しました: {str(e)}")
 
         # マインドマップ生成
-        mindmap_gen = MindMapGenerator()
-        loading_container = st.markdown('''
-        <div class="loading-container">
-            <div class="loading-spinner"></div>
-            <div class="progress-bar"></div>
-            <p class="loading-text">マインドマップを生成中...</p>
-        </div>
-        ''', unsafe_allow_html=True)
-        
-        mindmap_data = mindmap_gen.generate_mindmap(transcript)
         st.markdown('<h3 class="section-header">🔄 Mind Map</h3>', unsafe_allow_html=True)
+        mindmap_gen = MindMapGenerator()
         
-        fig = mindmap_gen.create_visualization(mindmap_data)
-        fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-        )
-        loading_container.empty()
-        st.plotly_chart(fig, use_container_width=True)
-        mindmap_svg = fig.to_image(format="svg")
+        with st.spinner("マインドマップを生成中..."):
+            loading_container = st.empty()
+            loading_container.markdown('''
+            <div class="loading-container">
+                <div class="loading-spinner"></div>
+                <div class="progress-bar"></div>
+                <p class="loading-text">マインドマップを生成中...</p>
+            </div>
+            ''', unsafe_allow_html=True)
+            
+            mindmap_data = mindmap_gen.generate_mindmap(transcript)
+            fig = mindmap_gen.create_visualization(mindmap_data)
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='white'),
+            )
+            loading_container.empty()
+            st.plotly_chart(fig, use_container_width=True)
+            mindmap_svg = fig.to_image(format="svg")
 
         # PDFレポート生成
         st.markdown('<h3 class="section-header">📑 Analysis Report</h3>', unsafe_allow_html=True)
         
-        progress_container = st.markdown('''
-        <div class="loading-container">
-            <div class="progress-bar"></div>
-            <p class="loading-text">PDFレポートを生成中...</p>
-            <div class="loading-dots">
-                <span></span>
-                <span></span>
-                <span></span>
+        with st.spinner("PDFレポートを生成中..."):
+            progress_container = st.empty()
+            progress_container.markdown('''
+            <div class="loading-container">
+                <div class="progress-bar"></div>
+                <p class="loading-text">PDFレポートを生成中...</p>
+                <div class="loading-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
             </div>
-        </div>
-        ''', unsafe_allow_html=True)
-        
-        try:
-            pdf_gen = PDFGenerator()
-            pdf_data = pdf_gen.create_pdf(
-                video_info=video_info,
-                transcript=transcript,
-                summary=summary,
-                mindmap_image=mindmap_svg
-            )
-            st.session_state.pdf_data = pdf_data
-            progress_container.empty()
+            ''', unsafe_allow_html=True)
             
-            st.download_button(
-                label="📥 Download PDF Report",
-                data=pdf_data,
-                file_name=f"{video_info['title']}_分析レポート.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
-            
-        except Exception as e:
-            st.error(f"PDFレポートの生成中にエラーが発生しました: {str(e)}")
+            try:
+                pdf_gen = PDFGenerator()
+                pdf_data = pdf_gen.create_pdf(
+                    video_info=video_info,
+                    transcript=transcript,
+                    summary=summary,
+                    mindmap_image=mindmap_svg
+                )
+                st.session_state.pdf_data = pdf_data
+                progress_container.empty()
+                
+                st.download_button(
+                    label="📥 Download PDF Report",
+                    data=pdf_data,
+                    file_name=f"{video_info['title']}_分析レポート.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+                
+            except Exception as e:
+                st.error(f"PDFレポートの生成中にエラーが発生しました: {str(e)}")
 
     except Exception as e:
         st.error(f"エラーが発生しました: {str(e)}")
