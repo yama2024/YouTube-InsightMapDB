@@ -263,45 +263,45 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
         if st.session_state.mindmap:
             st.plotly_chart(st.session_state.mindmap, use_container_width=True)
 
-# Step 4: Enhancement & Export
-with st.expander("Step 4: Enhancement & Export 📑", expanded=st.session_state.current_step == 4):
+# Step 4: Enhancement
+with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_step == 4):
     if st.session_state.transcript and st.session_state.summary:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown('<h5 class="subsection-header">✨ Text Enhancement</h5>', unsafe_allow_html=True)
-            if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
-                progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
-                try:
-                    text_processor = TextProcessor()
-                    proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
-                    st.session_state.proofread_transcript = proofread_transcript
-                    time.sleep(0.5)
-                    progress_bar.empty()
-                    show_success_message("テキストの校閲が完了しました", key="proofread_success")
-                except Exception as e:
-                    progress_bar.empty()
-                    st.error(f"テキストの校閲に失敗しました: {str(e)}")
-        
-        with col2:
-            st.markdown('<h5 class="subsection-header">📥 Export Report</h5>', unsafe_allow_html=True)
-            if st.button("PDFレポートを生成", use_container_width=True, key="generate_pdf"):
-                progress_container = show_loading_dots("PDFレポートを生成中...", key="pdf")
-                try:
-                    pdf_gen = PDFGenerator()
-                    pdf_data = pdf_gen.create_pdf(
-                        video_info=st.session_state.video_info,
-                        transcript=st.session_state.transcript,
-                        summary=st.session_state.summary,
-                        proofread_text=st.session_state.get('proofread_transcript', '')
-                    )
-                    st.session_state.pdf_data = pdf_data
-                    time.sleep(0.5)
-                    progress_container.empty()
-                    show_success_message("PDFレポートの生成が完了しました", key="pdf_success")
-                except Exception as e:
-                    progress_container.empty()
-                    st.error(f"PDFレポートの生成に失敗しました: {str(e)}")
+        st.markdown('<h5 class="subsection-header">✨ Text Enhancement</h5>', unsafe_allow_html=True)
+        if st.button("校閲して整形する", use_container_width=True, key="proofread_button"):
+            progress_bar = show_progress_bar("テキストを校閲中...", key="proofread")
+            try:
+                text_processor = TextProcessor()
+                proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
+                st.session_state.proofread_transcript = proofread_transcript
+                st.session_state.current_step = 5
+                time.sleep(0.5)
+                progress_bar.empty()
+                show_success_message("テキストの校閲が完了しました", key="proofread_success")
+            except Exception as e:
+                progress_bar.empty()
+                st.error(f"テキストの校閲に失敗しました: {str(e)}")
+
+# Step 5: Export
+with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step == 5):
+    if st.session_state.transcript and st.session_state.summary:
+        st.markdown('<h5 class="subsection-header">📥 Export Report</h5>', unsafe_allow_html=True)
+        if st.button("PDFレポートを生成", use_container_width=True, key="generate_pdf"):
+            progress_container = show_loading_dots("PDFレポートを生成中...", key="pdf")
+            try:
+                pdf_gen = PDFGenerator()
+                pdf_data = pdf_gen.create_pdf(
+                    video_info=st.session_state.video_info,
+                    transcript=st.session_state.transcript,
+                    summary=st.session_state.summary,
+                    proofread_text=st.session_state.get('proofread_transcript', '')
+                )
+                st.session_state.pdf_data = pdf_data
+                time.sleep(0.5)
+                progress_container.empty()
+                show_success_message("PDFレポートの生成が完了しました", key="pdf_success")
+            except Exception as e:
+                progress_container.empty()
+                st.error(f"PDFレポートの生成に失敗しました: {str(e)}")
         
         if st.session_state.pdf_data:
             st.download_button(
@@ -313,12 +313,12 @@ with st.expander("Step 4: Enhancement & Export 📑", expanded=st.session_state.
             )
 
 # Progress Indicator
-progress_percentage = (st.session_state.current_step / 4) * 100
+progress_percentage = (st.session_state.current_step / 5) * 100
 st.markdown(f'''
 <div class="progress-indicator">
     <div class="progress-bar">
         <div class="progress-fill" style="width: {progress_percentage}%"></div>
     </div>
-    <p class="progress-text">Step {st.session_state.current_step} of 4</p>
+    <p class="progress-text">Step {st.session_state.current_step} of 5</p>
 </div>
 ''', unsafe_allow_html=True)
