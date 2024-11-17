@@ -1,5 +1,6 @@
 {pkgs}: {
   deps = [
+    pkgs.libffi
     pkgs.gtk3
     pkgs.librsvg
     pkgs.cairo
