@@ -353,6 +353,7 @@ div.stButton > button:hover {
     border-radius: 50% !important;
     animation: spin 1s linear infinite !important;
     margin-bottom: 1rem !important;
+    transition: all 0.3s ease-in-out !important;
 }
 
 @keyframes spin {
@@ -373,6 +374,7 @@ div.stButton > button:hover {
     background: #4a90e2 !important;
     border-radius: 50% !important;
     animation: bounce 1.4s infinite ease-in-out both !important;
+    transition: all 0.3s ease-in-out !important;
 }
 
 .loading-dots span:nth-child(1) { animation-delay: -0.32s !important; }
@@ -414,6 +416,7 @@ div.stButton > button:hover {
     border-radius: 8px !important;
     padding: 1rem !important;
     width: 100% !important;
+    transition: all 0.3s ease-in-out !important;
 }
 
 .shimmer-wrapper::before {
@@ -446,6 +449,8 @@ div.stButton > button:hover {
     font-weight: 500 !important;
     letter-spacing: 0.5px !important;
     animation: pulse 2s infinite !important;
+    transition: all 0.3s ease-in-out !important;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
 }
 
 @keyframes pulse {
@@ -569,4 +574,69 @@ div.stButton > button:hover {
     text-align: center !important;
     opacity: 0.9 !important;
     animation: pulse 2s infinite !important;
+}
+
+/* Success Message Container */
+.success-message {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 1rem !important;
+    background: rgba(46, 204, 113, 0.1) !important;
+    backdrop-filter: blur(10px) !important;
+    border-radius: 15px !important;
+    margin: 1rem 0 !important;
+    border: 1px solid rgba(46, 204, 113, 0.2) !important;
+    animation: fadeIn 0.5s ease-out !important;
+}
+
+.success-icon {
+    font-size: 1.5rem !important;
+    color: #2ecc71 !important;
+    margin-right: 1rem !important;
+    animation: scaleIn 0.5s ease-out !important;
+}
+
+.success-text {
+    color: #2ecc71 !important;
+    font-size: 1.1rem !important;
+    margin: 0 !important;
+    font-weight: 500 !important;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+    from { transform: scale(0); }
+    to { transform: scale(1); }
+}
+
+/* Enhanced Loading Animations */
+.loading-container {
+    transition: all 0.3s ease-in-out !important;
+}
+
+.loading-spinner {
+    transition: all 0.3s ease-in-out !important;
+}
+
+.loading-dots span {
+    transition: all 0.3s ease-in-out !important;
+}
+
+.progress-bar-fill {
+    transition: width 0.3s ease-in-out !important;
+}
+
+.shimmer-wrapper {
+    transition: all 0.3s ease-in-out !important;
+}
+
+/* Loading Text Enhancement */
+.loading-text {
+    transition: all 0.3s ease-in-out !important;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
 }

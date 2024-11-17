@@ -171,25 +171,51 @@ class TextProcessor:
         
         return None
 
-    def generate_summary(self, text):
-        """テキストの要約を生成"""
+    def generate_summary(self, text, max_retries=3, initial_delay=1):
         print("AI要約の生成を開始します...")
-        prompt = f"""
-        以下のテキストを要約してください。要約は以下の点に注意して生成してください：
-        - 主要なポイントを3-5個抽出
-        - 文章は簡潔に
-        - 箇条書きで表示
         
-        テキスト:
-        {text}
-        """
+        retry_count = 0
+        delay = initial_delay
         
-        try:
-            response = self.model.generate_content(prompt)
-            print("要約が完了しました")
-            return response.text
-        except Exception as e:
-            raise Exception("要約の生成に失敗しました")
+        while retry_count < max_retries:
+            try:
+                prompt = f'''
+                以下のテキストを要約してください。要約は以下の点に注意して生成してください：
+                - 主要なポイントを3-5個抽出
+                - 文章は簡潔に
+                - 箇条書きで表示
+                
+                テキスト:
+                {text}
+                '''
+                
+                generation_config = genai.types.GenerationConfig(
+                    temperature=0.3,
+                    top_p=0.8,
+                    top_k=40,
+                    max_output_tokens=4096,
+                )
+                
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config=generation_config
+                )
+                
+                if response and response.text:
+                    print("要約が完了しました")
+                    return response.text
+                else:
+                    raise ValueError("要約の生成結果が空です")
+                    
+            except Exception as e:
+                retry_count += 1
+                if retry_count < max_retries:
+                    print(f"要約の生成に失敗しました。{delay}秒後に再試行します... ({retry_count}/{max_retries})")
+                    time.sleep(delay)
+                    delay *= 2  # Exponential backoff
+                else:
+                    print(f"要約の生成が{max_retries}回失敗しました")
+                    raise Exception(f"要約の生成に失敗しました: {str(e)}")
 
     def proofread_text(self, text, max_retries=3, initial_delay=1):
         try:
@@ -280,7 +306,7 @@ class TextProcessor:
                                     top_k=40,
                                     max_output_tokens=4096,
                                 )
-
+                                
                                 # Create prompt for smaller chunks
                                 chunk_prompt = f'''
 # あなたの目的:
