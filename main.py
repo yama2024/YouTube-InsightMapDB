@@ -326,7 +326,7 @@ if youtube_url:
                     video_info=video_info,
                     transcript=transcript,
                     summary=summary,
-                    mindmap_image=mindmap_svg
+                    proofread_text=st.session_state.get('proofread_transcript', '')  # Add proofread text
                 )
                 st.session_state.pdf_data = pdf_data
                 time.sleep(0.5)  # Smooth transition

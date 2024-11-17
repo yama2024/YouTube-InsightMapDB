@@ -6,7 +6,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Tabl
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.fonts import addMapping
-from svglib.svglib import svg2rlg
 import os
 import io
 import requests
@@ -98,7 +97,7 @@ class PDFGenerator:
             spaceAfter=20
         ))
 
-    def create_pdf(self, video_info, transcript, summary, mindmap_image=None):
+    def create_pdf(self, video_info, transcript, summary, proofread_text=''):
         """分析結果のPDFを生成"""
         try:
             buffer = io.BytesIO()
@@ -186,23 +185,19 @@ class PDFGenerator:
             elements.append(Paragraph(summary_text, self.styles['JapaneseBody']))
             elements.append(Spacer(1, 20))
 
-            # マインドマップ
-            if mindmap_image:
-                try:
-                    logger.info("マインドマップの追加を開始します")
-                    elements.append(Paragraph("マインドマップ", self.styles['JapaneseHeading']))
-                    mindmap_buffer = io.BytesIO(mindmap_image)
-                    mindmap_buffer.seek(0)
-                    drawing = svg2rlg(mindmap_buffer)
-                    
-                    if drawing:
-                        scale_factor = min(0.7, (A4[0] - 2*72) / drawing.width)
-                        drawing.scale(scale_factor, scale_factor)
-                        elements.append(drawing)
-                        elements.append(Spacer(1, 20))
-                        logger.info("マインドマップを追加しました")
-                except Exception as e:
-                    logger.error(f"マインドマップの追加に失敗しました: {str(e)}")
+            # 校閲済みテキスト
+            if proofread_text:
+                logger.info("校閲済みテキストの追加を開始します")
+                elements.append(Paragraph("校閲済みテキスト", self.styles['JapaneseHeading']))
+                
+                # Split into chunks if needed
+                max_chars = 1000
+                chunks = [proofread_text[i:i+max_chars] for i in range(0, len(proofread_text), max_chars)]
+                for chunk in chunks:
+                    text = self._encode_text(chunk)
+                    elements.append(Paragraph(text, self.styles['JapaneseBody']))
+                    elements.append(Spacer(1, 10))
+                elements.append(Spacer(1, 20))
 
             # PDFの生成
             logger.info("PDFのビルドを開始します")
