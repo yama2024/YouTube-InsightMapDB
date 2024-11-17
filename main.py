@@ -23,6 +23,25 @@ def load_css():
     else:
         st.error("CSS file not found!")
 
+# Add JavaScript for clipboard operations
+st.markdown("""
+<script>
+async function copyToClipboard(textId, buttonId) {
+    const text = document.getElementById(textId).value;
+    try {
+        await navigator.clipboard.writeText(text);
+        const button = document.getElementById(buttonId);
+        button.innerHTML = "✓ コピー完了";
+        setTimeout(() => {
+            button.innerHTML = "コピーする";
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+    }
+}
+</script>
+""", unsafe_allow_html=True)
+
 load_css()
 
 # Loading animation helpers
@@ -227,8 +246,16 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
         
         with tabs[0]:
             st.markdown('<h5 class="subsection-header">Original Transcript</h5>', unsafe_allow_html=True)
-            with st.container():
-                st.text_area("文字起こしテキスト", st.session_state.transcript, height=200, label_visibility="collapsed")
+            col1, col2 = st.columns([5, 1])
+            with col1:
+                st.markdown(f"""
+                <div class="glass-container">
+                    <textarea id="transcript-text" style="width: 100%; height: 200px; background: transparent; border: none; color: white;" readonly>{st.session_state.transcript}</textarea>
+                    <button id="copy-transcript" class="copy-button" onclick="copyToClipboard('transcript-text', 'copy-transcript')">
+                        コピーする
+                    </button>
+                </div>
+                """, unsafe_allow_html=True)
         
         with tabs[1]:
             if 'summary' not in st.session_state or not st.session_state.summary:
@@ -249,11 +276,14 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
             
             if st.session_state.summary:
                 st.markdown('<h5 class="subsection-header">AI Summary</h5>', unsafe_allow_html=True)
-                st.markdown(f'''
+                st.markdown(f"""
                 <div class="glass-container summary-container">
-                    <div class="summary-text">{st.session_state.summary}</div>
+                    <div class="summary-text" id="summary-text">{st.session_state.summary}</div>
+                    <button id="copy-summary" class="copy-button" onclick="copyToClipboard('summary-text', 'copy-summary')">
+                        コピーする
+                    </button>
                 </div>
-                ''', unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
         
         with tabs[2]:
             if 'mindmap' not in st.session_state or not st.session_state.mindmap:
@@ -295,18 +325,31 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                     text_processor = TextProcessor()
                     proofread_transcript = text_processor.proofread_text(st.session_state.transcript)
                     
-                    # Display results immediately after processing
                     st.markdown("### Text Enhancement Results")
                     st.markdown("校閲・整形された結果を表示します")
                     
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("**元のテキスト**")
-                        st.text_area("Original", st.session_state.transcript, height=300, disabled=True)
+                        st.markdown(f"""
+                        <div class="glass-container">
+                            <textarea id="original-text" style="width: 100%; height: 300px; background: transparent; border: none; color: white;" readonly>{st.session_state.transcript}</textarea>
+                            <button id="copy-original" class="copy-button" onclick="copyToClipboard('original-text', 'copy-original')">
+                                コピーする
+                            </button>
+                        </div>
+                        """, unsafe_allow_html=True)
                     
                     with col2:
                         st.markdown("**校閲後のテキスト**")
-                        st.text_area("Enhanced", proofread_transcript, height=300, disabled=True)
+                        st.markdown(f"""
+                        <div class="glass-container">
+                            <textarea id="enhanced-text" style="width: 100%; height: 300px; background: transparent; border: none; color: white;" readonly>{proofread_transcript}</textarea>
+                            <button id="copy-enhanced" class="copy-button" onclick="copyToClipboard('enhanced-text', 'copy-enhanced')">
+                                コピーする
+                            </button>
+                        </div>
+                        """, unsafe_allow_html=True)
                     
                     st.session_state.proofread_transcript = proofread_transcript
                     st.session_state.current_step = 5
@@ -319,23 +362,35 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
                         progress_bar.empty()
                     st.error(f"テキストの校閲に失敗しました: {str(e)}")
         else:
-            # Display the existing proofread results
             st.markdown("### Text Enhancement Results")
             st.markdown("校閲・整形された結果を表示します")
             
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown("**元のテキスト**")
-                st.text_area("Original", st.session_state.transcript, height=300, disabled=True)
+                st.markdown(f"""
+                <div class="glass-container">
+                    <textarea id="original-text" style="width: 100%; height: 300px; background: transparent; border: none; color: white;" readonly>{st.session_state.transcript}</textarea>
+                    <button id="copy-original" class="copy-button" onclick="copyToClipboard('original-text', 'copy-original')">
+                        コピーする
+                    </button>
+                </div>
+                """, unsafe_allow_html=True)
             
             with col2:
                 st.markdown("**校閲後のテキスト**")
-                st.text_area("Enhanced", st.session_state.proofread_transcript, height=300, disabled=True)
+                st.markdown(f"""
+                <div class="glass-container">
+                    <textarea id="enhanced-text" style="width: 100%; height: 300px; background: transparent; border: none; color: white;" readonly>{st.session_state.proofread_transcript}</textarea>
+                    <button id="copy-enhanced" class="copy-button" onclick="copyToClipboard('enhanced-text', 'copy-enhanced')">
+                        コピーする
+                    </button>
+                </div>
+                """, unsafe_allow_html=True)
             
-            # Add option to regenerate if needed
             if st.button("校閲をやり直す", use_container_width=True, key="reproofread_button"):
                 del st.session_state.proofread_transcript
-                st.experimental_rerun()
+                st.rerun()
 
 # Step 5: Export
 with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step == 5):
