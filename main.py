@@ -232,7 +232,32 @@ if youtube_url:
                         st.button("📋 コピー", key="copy_proofread", use_container_width=True)
                 else:
                     # Split text into chunks and show progress
-                    chunks = text_processor.split_text_into_chunks(proofread_transcript)
+                    def split_text_into_chunks(text, chunk_size=2000):
+                        sentences = text.split('。')
+                        chunks = []
+                        current_chunk = []
+                        current_length = 0
+                        
+                        for sentence in sentences:
+                            if not sentence.strip():
+                                continue
+                            sentence = sentence + '。'
+                            sentence_length = len(sentence)
+                            
+                            if current_length + sentence_length > chunk_size and current_chunk:
+                                chunks.append(''.join(current_chunk))
+                                current_chunk = [sentence]
+                                current_length = sentence_length
+                            else:
+                                current_chunk.append(sentence)
+                                current_length += sentence_length
+                        
+                        if current_chunk:
+                            chunks.append(''.join(current_chunk))
+                        return chunks
+
+                    # Use the function
+                    chunks = split_text_into_chunks(proofread_transcript)
                     total_chunks = len(chunks)
                     
                     for i, chunk in enumerate(chunks, 1):
