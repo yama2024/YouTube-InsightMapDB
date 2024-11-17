@@ -13,31 +13,31 @@
 }
 
 /* Theme Classes */
-.theme-ocean {
+[data-theme="ocean"] {
     --primary-gradient-1: #1a365d;
     --primary-gradient-2: #4a90e2;
     --primary-gradient-3: #7fb3d5;
 }
 
-.theme-sunset {
+[data-theme="sunset"] {
     --primary-gradient-1: #662d60;
     --primary-gradient-2: #e94e77;
     --primary-gradient-3: #f9a26c;
 }
 
-.theme-forest {
+[data-theme="forest"] {
     --primary-gradient-1: #1b4332;
     --primary-gradient-2: #40916c;
     --primary-gradient-3: #95d5b2;
 }
 
-.theme-midnight {
+[data-theme="midnight"] {
     --primary-gradient-1: #0f172a;
     --primary-gradient-2: #334155;
     --primary-gradient-3: #64748b;
 }
 
-.theme-lavender {
+[data-theme="lavender"] {
     --primary-gradient-1: #4c1d95;
     --primary-gradient-2: #7c3aed;
     --primary-gradient-3: #c4b5fd;
@@ -46,17 +46,8 @@
 /* グローバルスタイル */
 div.stApp {
     font-family: 'Noto Sans JP', sans-serif !important;
-    background: linear-gradient(-45deg, var(--primary-gradient-1), var(--primary-gradient-2), var(--primary-gradient-3)) !important;
-    background-size: 400% 400% !important;
-    animation: gradientBG 15s ease infinite !important;
     min-height: 100vh !important;
     color: var(--text-primary) !important;
-}
-
-@keyframes gradientBG {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
 }
 
 /* アプリヘッダー */
@@ -347,29 +338,19 @@ div.stButton > button:hover {
     }
 }
 
-/* Theme Selector Styles */
-.theme-selector {
-    position: fixed;
-    top: 1rem;
-    right: 1rem;
-    z-index: 1000;
-    background: var(--glass-bg);
-    backdrop-filter: blur(10px);
-    border-radius: 12px;
-    padding: 0.5rem;
-    border: 1px solid var(--glass-border);
+/* Animations */
+@keyframes gradientBG {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
 
-.theme-selector select {
-    background: transparent;
-    border: none;
-    color: var(--text-primary);
-    padding: 0.5rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-}
-
-.theme-selector select option {
-    background: var(--primary-gradient-1);
-    color: var(--text-primary);
+/* グローバルスタイル */
+div.stApp {
+    font-family: 'Noto Sans JP', sans-serif !important;
+    background: linear-gradient(-45deg, var(--primary-gradient-1), var(--primary-gradient-2), var(--primary-gradient-3)) !important;
+    background-size: 400% 400% !important;
+    animation: gradientBG 15s ease infinite !important;
+    min-height: 100vh !important;
+    color: var(--text-primary) !important;
 }
