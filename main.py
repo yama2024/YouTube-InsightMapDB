@@ -155,8 +155,28 @@ st.markdown('''
 </div>
 ''', unsafe_allow_html=True)
 
+def get_step_status(step_number):
+    if st.session_state.current_step > step_number:
+        return "completed"
+    elif st.session_state.current_step == step_number:
+        return "active"
+    return ""
+
+def render_step_header(step_number, title, emoji, description=""):
+    status = get_step_status(step_number)
+    st.markdown(f'''
+    <div class="step-header {status}">
+        <div class="step-number">{step_number}</div>
+        <div class="step-content">
+            <h3 class="step-title">{emoji} {title}</h3>
+            {f'<p class="step-description">{description}</p>' if description else ''}
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+
 # Step 1: Video Input
-with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_step == 1):
+with st.expander("Step 1: Video Input", expanded=st.session_state.current_step == 1):
+    render_step_header(1, "Video Input", "🎥", "分析したいYouTube動画のURLを入力してください")
     st.markdown('''
     <div class="section-description">分析したいYouTube動画のURLを入力してください</div>
     ''', unsafe_allow_html=True)
@@ -184,7 +204,8 @@ with st.expander("Step 1: Video Input 🎥", expanded=st.session_state.current_s
             st.stop()
 
 # Step 2: Content Overview
-with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.current_step == 2):
+with st.expander("Step 2: Content Overview", expanded=st.session_state.current_step == 2):
+    render_step_header(2, "Content Overview", "📊", "動画の基本情報と文字起こしを表示します")
     if st.session_state.video_info:
         video_info = st.session_state.video_info
         
@@ -231,7 +252,8 @@ with st.expander("Step 2: Content Overview 📊", expanded=st.session_state.curr
                 st.stop()
 
 # Step 3: Content Analysis
-with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.current_step == 3):
+with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_step == 3):
+    render_step_header(3, "Content Analysis", "🔍", "文字起こし、要約、マインドマップを生成します")
     if st.session_state.transcript:
         tabs = st.tabs(["📝 Transcript", "📊 Summary", "🔄 Mind Map"])
         
@@ -287,7 +309,8 @@ with st.expander("Step 3: Content Analysis 🔍", expanded=st.session_state.curr
                 st.plotly_chart(st.session_state.mindmap, use_container_width=True)
 
 # Step 4: Enhancement
-with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_step == 4):
+with st.expander("Step 4: Enhancement", expanded=st.session_state.current_step == 4):
+    render_step_header(4, "Enhancement", "✨", "AIによる文章の校閲・整形を行います")
     if st.session_state.transcript and st.session_state.summary:
         st.markdown('''
         <div class="glass-container">
@@ -428,7 +451,8 @@ with st.expander("Step 4: Enhancement ✨", expanded=st.session_state.current_st
         #     st.markdown('</div>', unsafe_allow_html=True)
 
 # Step 5: Export
-with st.expander("Step 5: Export 📑", expanded=st.session_state.current_step == 5):
+with st.expander("Step 5: Export", expanded=st.session_state.current_step == 5):
+    render_step_header(5, "Export", "📑", "分析結果をPDFレポートとして出力します")
     if st.session_state.transcript and st.session_state.summary:
         st.markdown('<h5 class="subsection-header">📥 Export Report</h5>', unsafe_allow_html=True)
         if st.button("PDFレポートを生成", use_container_width=True, key="generate_pdf"):
