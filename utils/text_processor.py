@@ -180,27 +180,46 @@ class TextProcessor:
         while retry_count < max_retries:
             try:
                 prompt = f'''
-                以下のテキストを要約してください。要約は以下の点に注意して生成してください：
-                - 主要なポイントを3-5個抽出
-                - 文章は簡潔に
-                - 箇条書きで表示
-                
+                YouTube動画の文字起こしテキストを元に、内容をわかりやすく簡潔にまとめたリッチなデザインの要約を生成してください。
+
+                # 必須条件
+                - 文字起こしのテキスト内容を正確に反映しつつ、重要なポイントを抽出してください。
+                - 要約は視覚的にわかりやすく、以下のフォーマットで出力してください。
+                  - **タイトル**: 動画全体を表す簡潔なタイトル
+                  - **サブタイトル**: タイトルを補足する簡単な説明
+                  - **箇条書き**: 重要なポイントを3～5個の箇条書きで列挙
+                  - **結論**: 動画の主要なメッセージまたは結論
+
+                # 出力フォーマット
+                以下の形式で要約を作成してください：
+
+                タイトル: [動画全体の内容を要約したタイトル]
+                サブタイトル: [タイトルの補足説明や要点]
+                ポイント:
+                [重要ポイント1]
+                [重要ポイント2]
+                [重要ポイント3]
+                [重要ポイント4] (必要に応じて)
+                [重要ポイント5] (必要に応じて)
+                結論:
+                [動画全体の主要なメッセージや結論]
+
                 テキスト:
                 {text}
                 '''
-                
+            
                 generation_config = genai.types.GenerationConfig(
                     temperature=0.3,
                     top_p=0.8,
                     top_k=40,
                     max_output_tokens=4096,
                 )
-                
+            
                 response = self.model.generate_content(
                     prompt,
                     generation_config=generation_config
                 )
-                
+            
                 if response and response.text:
                     print("要約が完了しました")
                     return response.text
