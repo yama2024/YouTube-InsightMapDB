@@ -165,9 +165,11 @@ def get_step_status(step_number):
 def render_step_header(step_number, title, emoji, description=""):
     """Render an enhanced step header with improved typography and visibility"""
     status = get_step_status(step_number)
+    completion_mark = "✓" if status == "completed" else ""
+    
     st.markdown(f'''
     <div class="step-header {status}">
-        <div class="step-number">{step_number}</div>
+        <div class="step-number">{step_number if status != "completed" else completion_mark}</div>
         <div class="step-content">
             <div class="step-title">{emoji} {title}</div>
             {f'<div class="step-description">{description}</div>' if description else ''}
