@@ -7,6 +7,7 @@ dependencies = [
     "cairosvg>=2.7.1",
     "fonttools>=4.55.0",
     "google-api-python-client>=2.153.0",
+    "google-cloud-speech>=2.21.0",
     "google-generativeai>=0.8.3",
     "isodate>=0.7.2",
     "kaleido==0.2.1",

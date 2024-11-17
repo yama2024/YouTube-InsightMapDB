@@ -1,9 +1,11 @@
 from youtube_transcript_api import YouTubeTranscriptApi
 import google.generativeai as genai
+from google.cloud import speech_v1p1beta1 as speech
 import re
 import os
 import tempfile
 import pytube
+import io
 
 class TextProcessor:
     def __init__(self):
@@ -27,7 +29,7 @@ class TextProcessor:
             except Exception as e:
                 print(f"字幕の取得に失敗しました: {str(e)}")
             
-            # If subtitles not available, use Gemini for transcription
+            # If subtitles not available, use Speech-to-Text
             try:
                 # Download audio
                 yt = pytube.YouTube(url)
@@ -38,28 +40,62 @@ class TextProcessor:
                     audio_path = os.path.join(temp_dir, "audio.mp4")
                     audio_stream.download(filename=audio_path)
                     
-                    # Use Gemini for transcription
-                    with open(audio_path, "rb") as audio_file:
-                        prompt = f'''
-                        このYouTube動画の音声を文字起こししてください。
-                        できるだけ正確に、文章として自然な形で出力してください。
-                        フィラー（えー、あの、など）は除外してください。
-                        タイムスタンプは除外してください。
-                        句読点を適切に使用してください。
-                        '''
-                        response = self.model.generate_content([
-                            {
-                                "parts": [
-                                    {"text": prompt},
-                                    {"audio": audio_file}
-                                ]
-                            }
-                        ])
-                        
-                        if response and response.text:
-                            return response.text
-                        else:
-                            raise Exception("音声認識に失敗しました")
+                    # Initialize Speech client
+                    client = speech.SpeechClient()
+                    
+                    # Load the audio file
+                    with io.open(audio_path, "rb") as audio_file:
+                        content = audio_file.read()
+                    
+                    # Configure audio and recognition settings
+                    audio = speech.RecognitionAudio(content=content)
+                    config = speech.RecognitionConfig(
+                        encoding=speech.RecognitionConfig.AudioEncoding.MP3,
+                        sample_rate_hertz=16000,
+                        language_code="ja-JP",
+                        enable_automatic_punctuation=True,
+                        model="video",
+                        use_enhanced=True,
+                        audio_channel_count=2
+                    )
+                    
+                    # Perform the transcription
+                    operation = client.long_running_recognize(config=config, audio=audio)
+                    print("音声認識を開始しました...")
+                    response = operation.result()
+                    
+                    # Combine all transcripts
+                    transcript = ""
+                    for result in response.results:
+                        transcript += result.alternatives[0].transcript + "\n"
+                    
+                    if not transcript:
+                        raise Exception("音声認識に失敗しました")
+                    
+                    # Use Gemini to enhance the transcript
+                    enhanced_prompt = f'''
+                    以下の文字起こしテキストを自然な日本語に整形してください：
+                    - 文章を適切に区切る
+                    - 句読点を追加
+                    - フィラーワードを削除
+                    - 重複した表現を整理
+                    - 文脈を保持
+                    
+                    テキスト：
+                    {transcript}
+                    '''
+                    
+                    response = self.model.generate_content(
+                        enhanced_prompt,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.3,
+                            top_p=0.8,
+                            top_k=40,
+                            max_output_tokens=8192,
+                        )
+                    )
+                    
+                    return response.text if response.text else transcript
                     
             except Exception as e:
                 raise Exception(f"音声認識による文字起こしに失敗しました: {str(e)}")
