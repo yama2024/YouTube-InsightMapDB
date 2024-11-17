@@ -2,6 +2,8 @@ from youtube_transcript_api import YouTubeTranscriptApi
 import google.generativeai as genai
 import re
 import os
+import tempfile
+import pytube
 
 class TextProcessor:
     def __init__(self):
@@ -17,36 +19,76 @@ class TextProcessor:
             raise Exception("無効なYouTube URLです")
         
         try:
-            # Try multiple language options in sequence
-            languages_to_try = [
-                ['ja'],           # Japanese
-                ['ja-JP'],        # Japanese auto-generated
-                ['en'],           # English
-                ['en-US'],        # English auto-generated
-                None             # Any available language
-            ]
+            # First try getting subtitles
+            try:
+                transcript = self._get_subtitles(video_id)
+                if transcript:
+                    return transcript
+            except Exception as e:
+                print(f"字幕の取得に失敗しました: {str(e)}")
             
-            transcript = None
-            for lang in languages_to_try:
-                try:
-                    if lang:
-                        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=lang)
-                    else:
-                        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-                    transcript = ' '.join([entry['text'] for entry in transcript_list])
-                    break
-                except Exception:
-                    continue
-                    
-            if not transcript:
-                raise Exception("この動画には字幕が設定されていません。\n字幕が設定されている動画を選択してください。")
+            # If subtitles not available, use Gemini for transcription
+            try:
+                # Download audio
+                yt = pytube.YouTube(url)
+                audio_stream = yt.streams.filter(only_audio=True).first()
                 
-            return transcript
-            
+                # Create temp directory and save audio
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    audio_path = os.path.join(temp_dir, "audio.mp4")
+                    audio_stream.download(filename=audio_path)
+                    
+                    # Use Gemini for transcription
+                    with open(audio_path, "rb") as audio_file:
+                        prompt = f'''
+                        このYouTube動画の音声を文字起こししてください。
+                        できるだけ正確に、文章として自然な形で出力してください。
+                        フィラー（えー、あの、など）は除外してください。
+                        タイムスタンプは除外してください。
+                        句読点を適切に使用してください。
+                        '''
+                        response = self.model.generate_content([
+                            {
+                                "parts": [
+                                    {"text": prompt},
+                                    {"audio": audio_file}
+                                ]
+                            }
+                        ])
+                        
+                        if response and response.text:
+                            return response.text
+                        else:
+                            raise Exception("音声認識に失敗しました")
+                    
+            except Exception as e:
+                raise Exception(f"音声認識による文字起こしに失敗しました: {str(e)}")
+                
         except Exception as e:
             error_msg = f"文字起こしの取得に失敗しました: {str(e)}"
-            print(error_msg)  # For debugging
+            print(error_msg)
             raise Exception(error_msg)
+
+    def _get_subtitles(self, video_id):
+        languages_to_try = [
+            ['ja'],
+            ['ja-JP'],
+            ['en'],
+            ['en-US'],
+            None
+        ]
+        
+        for lang in languages_to_try:
+            try:
+                if lang:
+                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=lang)
+                else:
+                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+                return ' '.join([entry['text'] for entry in transcript_list])
+            except Exception:
+                continue
+        
+        return None
 
     def generate_summary(self, text):
         """テキストの要約を生成"""
