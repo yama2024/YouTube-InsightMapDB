@@ -11,25 +11,31 @@ from streamlit_mermaid import st_mermaid
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 try:
     # Page configuration
-    st.set_page_config(page_title="YouTube InsightMap",
-                       page_icon="🎯",
-                       layout="wide",
-                       initial_sidebar_state="collapsed")
+    st.set_page_config(
+        page_title="YouTube InsightMap",
+        page_icon="🎯",
+        layout="wide",
+        initial_sidebar_state="collapsed"
+    )
 
     # Load CSS
     def load_css():
         try:
-            css_path = os.path.join(os.path.dirname(__file__), 'styles',
-                                    'custom.css')
+            css_path = os.path.join(
+                os.path.dirname(__file__), 'styles', 'custom.css'
+            )
             if os.path.exists(css_path):
                 with open(css_path) as f:
-                    st.markdown(f'<style>{f.read()}</style>',
-                                unsafe_allow_html=True)
+                    st.markdown(
+                        f'<style>{f.read()}</style>',
+                        unsafe_allow_html=True
+                    )
             else:
                 logger.error("CSS file not found!")
         except Exception as e:
@@ -172,7 +178,8 @@ try:
             youtube_url = st.text_input(
                 "YouTube URL",
                 placeholder="https://www.youtube.com/watch?v=...",
-                help="分析したいYouTube動画のURLを入力してください")
+                help="分析したいYouTube動画のURLを入力してください"
+            )
 
             if youtube_url:
                 try:
@@ -414,42 +421,75 @@ try:
                                    help="全ての分析結果をPDFレポートとして出力します"):
                             try:
                                 with st.spinner("PDFレポートを生成中..."):
+                                    # Progress placeholder
+                                    progress_placeholder = st.empty()
+                                    status_text = st.empty()
+                                    
+                                    def update_pdf_progress(stage, message):
+                                        """Update PDF generation progress"""
+                                        progress = {
+                                            'init': 0.2,
+                                            'content': 0.4,
+                                            'layout': 0.6,
+                                            'build': 0.8,
+                                            'complete': 1.0
+                                        }
+                                        with progress_placeholder:
+                                            st.progress(progress.get(stage, 0))
+                                        status_text.info(message)
+
+                                    # Initialize PDF generator with progress callback
+                                    update_pdf_progress('init', '📑 PDFジェネレーターを初期化中...')
                                     pdf_generator = PDFGenerator()
                                     
-                                    # Prepare the data for PDF generation
-                                    enhanced_text = st.session_state.enhanced_text if st.session_state.steps_completed.get('proofread', False) else None
-                                    
-                                    if 'video_info' not in st.session_state or not st.session_state.video_info:
-                                        raise ValueError("動画情報が見つかりません")
-                                        
+                                    update_pdf_progress('content', '📝 コンテンツを準備中...')
                                     pdf_data = pdf_generator.create_pdf(
                                         video_info=st.session_state.video_info,
                                         transcript=st.session_state.transcript,
                                         summary=st.session_state.summary,
-                                        proofread_text=enhanced_text
+                                        proofread_text=st.session_state.get('enhanced_text', '')
                                     )
                                     
-                                    # Store PDF data in session state
-                                    st.session_state.pdf_data = pdf_data
+                                    if pdf_data:
+                                        update_pdf_progress('complete', '✨ PDFの生成が完了しました！')
+                                        # Clear progress indicators
+                                        progress_placeholder.empty()
+                                        status_text.empty()
+                                        
+                                        # Show download button
+                                        st.download_button(
+                                            "📥 PDFレポートをダウンロード",
+                                            data=pdf_data,
+                                            file_name="youtube_analysis.pdf",
+                                            mime="application/pdf"
+                                        )
+                                        
+                                        # Update completion status
+                                        update_step_progress('pdf', True)
+                                        st.success("PDFレポートが正常に生成されました！")
                                     
-                                    # Provide download button
-                                    st.download_button(
-                                        label="📥 PDFレポートをダウンロード",
-                                        data=pdf_data,
-                                        file_name=f"{st.session_state.video_info.get('title', 'youtube_analysis')}_analysis.pdf",
-                                        mime="application/pdf"
-                                    )
-                                    
-                                    st.success("PDFレポートが正常に生成されました！")
-                                    update_step_progress('pdf', True)
+                            except TimeoutError:
+                                progress_placeholder.empty()
+                                status_text.empty()
+                                st.error("PDFの生成がタイムアウトしました。もう一度お試しください。")
+                                logger.error("PDF generation timeout")
                             except Exception as e:
-                                st.error(f"PDFの生成中にエラーが発生しました: {str(e)}")
-                                logger.error(f"Error generating PDF: {str(e)}")
+                                progress_placeholder.empty()
+                                status_text.empty()
+                                st.error(f"PDFの生成に失敗しました: {str(e)}")
+                                logger.error(f"PDF generation error: {str(e)}")
+                            finally:
+                                # Ensure progress indicators are cleared
+                                try:
+                                    progress_placeholder.empty()
+                                    status_text.empty()
+                                except:
+                                    pass
 
     except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
+        st.error(f"アプリケーションエラー: {str(e)}")
         logger.error(f"Application error: {str(e)}")
 
 except Exception as e:
-    st.error(f"Application initialization error: {str(e)}")
+    st.error(f"アプリケーション初期化エラー: {str(e)}")
     logger.error(f"Initialization error: {str(e)}")
