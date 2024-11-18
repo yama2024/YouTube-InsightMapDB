@@ -10,7 +10,6 @@ import os
 import io
 import requests
 import logging
-import re
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
@@ -23,40 +22,32 @@ class PDFGenerator:
 
     def _setup_fonts(self):
         try:
-            # Google Fonts APIから直接フォントをダウンロード
-            font_url = "https://fonts.googleapis.com/css2?family=Noto+Sans+JP&display=swap"
-            response = requests.get(font_url)
-            if response.status_code == 200:
-                # フォントファイルのURLを抽出
-                font_file_url = re.search(r'src: url\((.*?)\)', response.text)
-                if font_file_url:
-                    font_response = requests.get(font_file_url.group(1))
-                    if font_response.status_code == 200:
-                        font_path = "/tmp/NotoSansJP-Regular.ttf"
-                        with open(font_path, "wb") as f:
-                            f.write(font_response.content)
-                        
-                        # フォントを登録
-                        pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
-                        addMapping('NotoSansJP', 0, 0, 'NotoSansJP')
-                        self.use_fallback_fonts = False
-                        logger.info("日本語フォントを正常に設定しました")
-                        return
+            # Use system-installed Noto CJK fonts
+            font_paths = [
+                "/nix/store/*/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"
+            ]
             
-            # 代替方法：直接Noto Sans JPのwoffファイルを使用
-            alt_font_url = "https://fonts.gstatic.com/s/notosansjp/v52/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj75s.woff2"
-            response = requests.get(alt_font_url)
-            if response.status_code == 200:
-                font_path = "/tmp/NotoSansJP-Regular.ttf"
-                with open(font_path, "wb") as f:
-                    f.write(response.content)
-                
-                pdfmetrics.registerFont(TTFont('NotoSansJP', font_path))
-                addMapping('NotoSansJP', 0, 0, 'NotoSansJP')
-                self.use_fallback_fonts = False
-                logger.info("代替方法で日本語フォントを設定しました")
-            else:
-                raise Exception("フォントのダウンロードに失敗しました")
+            font_found = False
+            for font_path in font_paths:
+                try:
+                    import glob
+                    matching_fonts = glob.glob(font_path)
+                    if matching_fonts:
+                        pdfmetrics.registerFont(TTFont('NotoSansCJK', matching_fonts[0]))
+                        addMapping('NotoSansCJK', 0, 0, 'NotoSansCJK')
+                        font_found = True
+                        logger.info(f"日本語フォントを正常に設定しました: {matching_fonts[0]}")
+                        break
+                except Exception as e:
+                    logger.debug(f"Font path {font_path} not available: {str(e)}")
+                    continue
+            
+            self.use_fallback_fonts = not font_found
+            if self.use_fallback_fonts:
+                logger.warning("日本語フォントが見つからないため、代替フォントを使用します")
+            
         except Exception as e:
             logger.error(f"フォントの設定中にエラーが発生しました: {str(e)}")
             self.use_fallback_fonts = True
@@ -73,7 +64,7 @@ class PDFGenerator:
         self.styles = getSampleStyleSheet()
         
         # 基本フォント設定
-        base_font = 'NotoSansJP' if not self.use_fallback_fonts else 'Helvetica'
+        base_font = 'NotoSansCJK' if not self.use_fallback_fonts else 'Helvetica'
         logger.info(f"使用するフォント: {base_font}")
         
         # 本文スタイル
@@ -122,7 +113,7 @@ class PDFGenerator:
             title_style = ParagraphStyle(
                 'CustomTitle',
                 parent=self.styles['Title'],
-                fontName='NotoSansJP' if not self.use_fallback_fonts else 'Helvetica',
+                fontName='NotoSansCJK' if not self.use_fallback_fonts else 'Helvetica',
                 fontSize=24,
                 spaceAfter=30,
                 alignment=1,
@@ -148,7 +139,7 @@ class PDFGenerator:
                 ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
                 ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, -1), 'NotoSansJP' if not self.use_fallback_fonts else 'Helvetica'),
+                ('FONTNAME', (0, 0), (-1, -1), 'NotoSansCJK' if not self.use_fallback_fonts else 'Helvetica'),
                 ('FONTSIZE', (0, 0), (-1, -1), 10),
                 ('PADDING', (0, 0), (-1, -1), 6),
             ]))

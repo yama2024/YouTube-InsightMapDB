@@ -60,6 +60,38 @@ class TextProcessor:
             }
         }
 
+    @cached(lambda self: self.processed_text_cache)
+    def proofread_text(self, text: str) -> str:
+        """Proofread and enhance text readability with AI assistance"""
+        if not text:
+            return ""
+            
+        try:
+            prompt = f"""以下のテキストを校正し、読みやすく整形してください：
+            
+            1. 文章を自然な日本語に修正
+            2. 句読点を適切に配置
+            3. 段落を適切に分割
+            4. 冗長な表現を簡潔に
+            5. 文法的な誤りを修正
+            
+            入力テキスト：
+            {text}
+            """
+            
+            response = self.model.generate_content(prompt)
+            enhanced_text = response.text if response.text else text
+            
+            # Apply additional formatting
+            enhanced_text = self._clean_text(enhanced_text)
+            enhanced_text = self._improve_sentence_structure(enhanced_text)
+            
+            return enhanced_text
+            
+        except Exception as e:
+            logger.error(f"Text proofreading error: {str(e)}")
+            return text
+
     @cached(lambda self: self.subtitle_cache)
     def _get_subtitles_with_priority(self, video_id: str) -> Optional[str]:
         """Get subtitles with enhanced error handling and caching"""
