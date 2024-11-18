@@ -335,63 +335,26 @@ try:
                                         update_step_progress('proofread')
                                         
                                         # Display enhanced text with improved formatting
-                                        st.markdown("#### 整形後のテキスト")
-                                        st.markdown('<div class="glass-container enhanced-text">', unsafe_allow_html=True)
+                                        st.markdown("#### 整形済みテキスト")
                                         st.markdown(enhanced_text.replace('\n', '  \n'))
-                                        st.markdown('</div>', unsafe_allow_html=True)
                                         
-                                        # Add text comparison
-                                        with st.expander("テキスト分析の詳細", expanded=True):
-                                            comp_cols = st.columns(2)
-                                            with comp_cols[0]:
-                                                st.metric(
-                                                    "元の文字数",
-                                                    f"{len(st.session_state.transcript):,}字"
-                                                )
-                                            with comp_cols[1]:
-                                                st.metric(
-                                                    "整形後の文字数",
-                                                    f"{len(enhanced_text):,}字",
-                                                    delta=len(enhanced_text) - len(st.session_state.transcript)
-                                                )
-                                    
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                    
+                                        # Download button for enhanced text
+                                        st.download_button(
+                                            "📥 整形済みテキストをダウンロード",
+                                            data=enhanced_text,
+                                            file_name="enhanced_text.txt",
+                                            mime="text/plain"
+                                        )
+                                    else:
+                                        st.error("テキストの整形中にエラーが発生しました")
                             except Exception as e:
-                                st.error(f"テキスト整形中にエラーが発生しました: {str(e)}")
+                                st.error(f"テキストの整形中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error in text enhancement: {str(e)}")
 
-                # Add PDF Export functionality
-                if st.session_state.transcript and st.session_state.summary:
-                    st.markdown("---")
-                    st.markdown("### Export Options")
-                    
-                    if st.button("📑 Export to PDF"):
-                        try:
-                            pdf_gen = PDFGenerator()
-                            enhanced_text = st.session_state.get('enhanced_text', '')
-                            pdf_data = pdf_gen.create_pdf(
-                                video_info=st.session_state.video_info,
-                                transcript=st.session_state.transcript,
-                                summary=st.session_state.summary,
-                                proofread_text=enhanced_text
-                            )
-                            
-                            st.download_button(
-                                label="📥 Download PDF Report",
-                                data=pdf_data,
-                                file_name="youtube_analysis.pdf",
-                                mime="application/pdf"
-                            )
-                            update_step_progress('pdf')
-                        except Exception as e:
-                            st.error(f"PDFの生成に失敗しました: {str(e)}")
-                            logger.error(f"Error in PDF generation: {str(e)}")
-
     except Exception as e:
-        logger.error(f"Application error: {str(e)}")
         st.error(f"アプリケーションエラー: {str(e)}")
+        logger.error(f"Application error: {str(e)}")
 
 except Exception as e:
-    logger.error(f"Application error: {str(e)}")
     st.error(f"アプリケーションエラー: {str(e)}")
+    logger.error(f"Application error: {str(e)}")
