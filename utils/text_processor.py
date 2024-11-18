@@ -4,352 +4,205 @@ import google.generativeai as genai
 import re
 import os
 import time
-import random
-from typing import List, Optional, Dict, Any, Tuple, Callable
+from typing import List, Optional, Dict, Any, Tuple
+from retrying import retry
 from cachetools import TTLCache, cached
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential_jitter,
-    wait_exponential,
-    retry_if_exception_type,
-    before_sleep_log,
-    RetryError,
-    after_log
-)
 
-# Enhanced logging setup with more detailed format
+# Enhanced logging setup
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-class APIError(Exception):
-    """Base class for API related errors"""
-    pass
-
-class ConnectionError(APIError):
-    """Error when connection to API fails"""
-    pass
-
-class TimeoutError(APIError):
-    """Error when API request times out"""
-    pass
-
-class QuotaExceededError(APIError):
-    """Error when API quota is exceeded"""
-    pass
-
-class InvalidInputError(APIError):
-    """Error when input is invalid"""
-    pass
-
-class PartialResultError(APIError):
-    """Error when only partial results are available"""
-    def __init__(self, partial_result: str, message: str):
-        self.partial_result = partial_result
-        self.message = message
-        super().__init__(message)
-
 class TextProcessor:
     def __init__(self):
-        self.api_calls = 0
-        self.api_errors = 0
-        self.performance_metrics = {
-            'total_processing_time': 0.0,
-            'successful_calls': 0.0,
-            'failed_calls': 0.0,
-            'retry_count': 0.0
-        }
-        
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
-            raise ValueError("Gemini API キーが環境変数に設定されていません")
-        
+            raise ValueError("Gemini API key is not set in environment variables")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
-        # Initialize caches with monitoring
-        self.subtitle_cache = TTLCache(maxsize=100, ttl=3600)
-        self.processed_text_cache = TTLCache(maxsize=100, ttl=1800)
+        # Initialize caches
+        self.subtitle_cache = TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL
+        self.processed_text_cache = TTLCache(maxsize=100, ttl=1800)  # 30 minutes TTL
         
-        # Japanese error messages
-        self.error_messages = {
-            'timeout': "応答待ちがタイムアウトしました。処理に時間がかかっているため、後でもう一度お試しください。",
-            'quota': "API利用制限に達しました。しばらく待ってから再度お試しください。",
-            'connection': "ネットワーク接続エラーが発生しました。インターネット接続を確認してください。",
-            'invalid_input': "入力データが無効です。テキストを確認して再試行してください。",
-            'partial_result': "一部の結果のみ生成できました。完全な結果を得るには再試行が必要です。",
-            'unknown': "予期せぬエラーが発生しました。システム管理者に連絡してください。"
+        # Enhanced noise patterns for Japanese text
+        self.noise_patterns = {
+            'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',
+            'speaker_tags': r'\[[^\]]*\]|\([^)]*\)',
+            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー|そうですね|ちょっと)\b',
+            'repeated_chars': r'([^\W\d_])\1{3,}',
+            'multiple_spaces': r'[\s　]{2,}',
+            'empty_lines': r'\n\s*\n',
+            'punctuation': r'([。．！？])\1+',
+            'noise_symbols': r'[♪♫♬♩†‡◊◆◇■□▲△▼▽○●◎]',
+            'parentheses': r'（[^）]*）|\([^)]*\)',
+            'unnecessary_symbols': r'[＊∗※#＃★☆►▷◁◀→←↑↓]',
+            'commercial_markers': r'(?:CM|広告|スポンサー)(?:\s*\d*)?',
+            'system_messages': r'(?:システム|エラー|通知)(?:：|:).*?(?:\n|$)',
+            'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音)\]'
+        }
+        
+        # Japanese text normalization
+        self.jp_normalization = {
+            'spaces': {
+                '　': ' ',
+                '\u3000': ' ',
+                '\xa0': ' '
+            },
+            'punctuation': {
+                '．': '。',
+                '…': '。',
+                '.': '。',
+                '｡': '。',
+                '､': '、'
+            }
         }
 
-        # Initialize performance monitoring
-        self.start_monitoring()
-
-    def start_monitoring(self):
-        """Initialize performance monitoring"""
-        self.performance_metrics = {
-            'start_time': time.time(),
-            'api_calls': 0.0,
-            'successful_calls': 0.0,
-            'failed_calls': 0.0,
-            'retry_attempts': 0.0,
-            'total_processing_time': 0.0,
-            'average_response_time': 0.0
-        }
-
-    def update_metrics(self, success: bool, processing_time: float, retries: int = 0):
-        """Update performance metrics"""
-        self.performance_metrics['api_calls'] += 1.0
-        if success:
-            self.performance_metrics['successful_calls'] += 1.0
-        else:
-            self.performance_metrics['failed_calls'] += 1.0
-        
-        self.performance_metrics['retry_attempts'] += retries
-        self.performance_metrics['total_processing_time'] += processing_time
-        self.performance_metrics['average_response_time'] = (
-            self.performance_metrics['total_processing_time'] / 
-            max(self.performance_metrics['api_calls'], 1.0)
-        )
-
-    def log_performance_metrics(self):
-        """Log current performance metrics"""
-        metrics = self.performance_metrics
-        logger.info(f"""Performance Metrics:
-        Total API Calls: {metrics['api_calls']}
-        Success Rate: {(metrics['successful_calls'] / max(metrics['api_calls'], 1.0)) * 100:.2f}%
-        Average Response Time: {metrics['average_response_time']:.2f}s
-        Retry Attempts: {metrics['retry_attempts']}
-        """)
-
-    @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1.5, min=4, max=60),
-        retry=(
-            retry_if_exception_type(ConnectionError) |
-            retry_if_exception_type(TimeoutError) |
-            retry_if_exception_type(APIError)
-        ),
-        before_sleep=before_sleep_log(logger, logging.INFO),
-        after=after_log(logger, logging.INFO)
-    )
-    def generate_summary(self, text: str, progress_callback: Optional[Callable] = None) -> str:
-        """Generate AI summary with enhanced error handling and monitoring"""
-        if not text:
-            raise InvalidInputError("入力テキストが空です")
-        
-        start_time = time.time()
-        retry_count = 0
-        
-        try:
-            if progress_callback:
-                progress_callback(0.1, "🔍 テキスト解析の準備中...")
-            
-            # Log input statistics
-            logger.info(f"入力テキスト文字数: {len(text)}")
-            
-            prompt = f"""
-# 目的:
-入力テキストの包括的な要約を生成します。
-
-# 要約の構造:
-1. 概要（全体の要点）
-2. 主要なポイント（箇条書き）
-3. 詳細な分析（重要なトピックごと）
-4. 結論
-
-# フォーマット規則:
-- Markdown形式で出力
-- 適切な見出しレベル
-- 重要ポイントの強調
-- 効果的な箇条書き
-
-入力テキスト:
-{text}
-"""
-            
-            if progress_callback:
-                progress_callback(0.2, "🤖 AI分析を開始...")
-            
-            try:
-                # Set timeout and validate response
-                generation_start = time.time()
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.3,
-                        top_p=0.8,
-                        top_k=40,
-                        max_output_tokens=8192,
-                    ),
-                )
-                
-                generation_time = time.time() - generation_start
-                logger.info(f"AI生成完了 (生成時間: {generation_time:.2f}秒)")
-                
-                if not response.text:
-                    raise APIError("AIモデルからの応答が空です")
-                
-                if progress_callback:
-                    progress_callback(0.6, "📝 要約を最適化中...")
-                
-                # Process and validate the response
-                summary = response.text
-                if len(summary) < len(text) * 0.1:
-                    logger.warning("生成された要約が短すぎます")
-                    raise PartialResultError(
-                        summary,
-                        "要約が不完全です。より詳細な要約を生成するには再試行が必要です。"
-                    )
-                
-                # Post-processing with detailed progress
-                if progress_callback:
-                    progress_callback(0.7, "✨ テキストを整形中...")
-                
-                try:
-                    summary = self._clean_text(summary)
-                    if progress_callback:
-                        progress_callback(0.8, "📊 文章構造を最適化中...")
-                    
-                    summary = self._improve_sentence_structure(summary)
-                    if progress_callback:
-                        progress_callback(0.9, "🔍 最終チェック中...")
-                    
-                except Exception as e:
-                    logger.warning(f"後処理中の警告: {str(e)}")
-                    if len(summary) > 0:
-                        logger.info("部分的な結果を使用して続行します")
-                    else:
-                        raise APIError("テキスト処理中にエラーが発生しました")
-                
-                # Update performance metrics
-                processing_time = time.time() - start_time
-                self.update_metrics(True, processing_time, retry_count)
-                self.log_performance_metrics()
-                
-                if progress_callback:
-                    progress_callback(1.0, "✅ 要約が完了しました")
-                
-                return summary
-                
-            except Exception as e:
-                self.api_errors += 1
-                error_msg = str(e).lower()
-                retry_count += 1
-                
-                if "timeout" in error_msg:
-                    raise TimeoutError(self.error_messages['timeout'])
-                elif "quota" in error_msg:
-                    raise QuotaExceededError(self.error_messages['quota'])
-                elif "connection" in error_msg:
-                    raise ConnectionError(self.error_messages['connection'])
-                else:
-                    raise APIError(f"AI生成エラー: {self._get_user_friendly_error_message(str(e))}")
-                
-        except RetryError as e:
-            logger.error(f"リトライ後も要約生成に失敗: {str(e)}")
-            if progress_callback:
-                progress_callback(1.0, "❌ 要約生成に失敗しました")
-            
-            # Update failure metrics
-            processing_time = time.time() - start_time
-            self.update_metrics(False, processing_time, retry_count)
-            self.log_performance_metrics()
-            
-            raise APIError("""
-要約の生成に失敗しました。以下をお試しください：
-1. しばらく待ってから再度実行
-2. テキストを短く区切って処理
-3. インターネット接続を確認
-4. 別のテキストで試行
-""")
-            
-        except Exception as e:
-            logger.error(f"致命的なエラー: {str(e)}")
-            if progress_callback:
-                progress_callback(1.0, "❌ システムエラーが発生しました")
-            
-            # Update failure metrics
-            processing_time = time.time() - start_time
-            self.update_metrics(False, processing_time, retry_count)
-            self.log_performance_metrics()
-            
-            raise APIError(f"システムエラー: {self._get_user_friendly_error_message(str(e))}")
-
-    def _clean_text(self, text: str) -> str:
-        """Clean and normalize text with enhanced error handling"""
+    def _clean_text(self, text: str, progress_callback=None) -> str:
+        """Enhanced text cleaning with progress tracking"""
         if not text:
             return ""
         
         try:
-            # Remove noise and normalize text
-            text = re.sub(r'\s+', ' ', text)
-            text = text.strip()
+            total_steps = len(self.jp_normalization) + len(self.noise_patterns) + 1
+            current_step = 0
             
-            # Improve formatting
-            text = re.sub(r'([。！？])\s*(?=[^」』）])', r'\1\n', text)
-            text = re.sub(r'([。！？])\s*\n\s*([^「『（])', r'\1\n\n\2', text)
+            # Normalize Japanese text
+            for category, replacements in self.jp_normalization.items():
+                for old, new in replacements.items():
+                    text = text.replace(old, new)
+                current_step += 1
+                if progress_callback:
+                    progress_callback(current_step / total_steps, f"正規化処理中: {category}")
+            
+            # Remove noise patterns
+            for pattern_name, pattern in self.noise_patterns.items():
+                text = re.sub(pattern, '', text)
+                current_step += 1
+                if progress_callback:
+                    progress_callback(current_step / total_steps, f"ノイズ除去中: {pattern_name}")
+            
+            # Improve sentence structure
+            text = self._improve_sentence_structure(text)
+            current_step += 1
+            if progress_callback:
+                progress_callback(1.0, "文章構造の最適化完了")
             
             return text
+            
         except Exception as e:
-            logger.error(f"テキストクリーニングエラー: {str(e)}")
+            logger.error(f"テキストのクリーニング中にエラーが発生しました: {str(e)}")
             return text
 
-    def _get_user_friendly_error_message(self, error_msg: str) -> str:
-        """Convert technical errors to user-friendly Japanese messages"""
-        error_msg = error_msg.lower()
-        
-        # Additional context-specific error patterns
-        if "memory" in error_msg:
-            return "処理メモリが不足しています。テキストを短く区切って再試行してください。"
-        elif "rate limit" in error_msg:
-            return "API制限に達しました。しばらく待ってから再試行してください。"
-        elif "invalid request" in error_msg:
-            return "リクエストが無効です。入力テキストを確認して再試行してください。"
-        
-        # Default error categories
-        for key, message in self.error_messages.items():
-            if key in error_msg:
-                return message
-        
-        return self.error_messages['unknown']
+    def proofread_text(self, text: str, progress_callback=None) -> str:
+        """Proofread and enhance text readability with progress tracking"""
+        if not text:
+            return ""
+            
+        try:
+            if progress_callback:
+                progress_callback(0.1, "🔍 テキスト解析を開始")
+            
+            # Initial text cleaning with detailed progress
+            cleaning_steps = {
+                0.15: "📝 フィラーワードを除去中...",
+                0.20: "🔤 文字の正規化を実行中...",
+                0.25: "📊 タイムスタンプを処理中...",
+                0.30: "✨ 不要な記号を削除中..."
+            }
+            
+            for progress, message in cleaning_steps.items():
+                if progress_callback:
+                    progress_callback(progress, message)
+                time.sleep(0.3)  # Visual feedback
+            
+            text = self._clean_text(text, lambda p, m: progress_callback(0.3 + p * 0.2, m) if progress_callback else None)
+            
+            if progress_callback:
+                progress_callback(0.5, "🤖 AIモデルによる文章校正を準備中...")
+            
+            # AI Processing steps
+            prompt = f"""
+# あなたの目的:
+「Original Transcript」のテキストを全文校閲します。
+
+文字起こししたYouTubeの動画について、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。
+あなたが文脈として不自然と感じた文章は全て誤字脱字が含まれており、正確に修正する必要があります。
+ステップバイステップで思考しながら校閲を行い、正確に修正して文章を出力してください。
+
+# ルール:
+1.校閲した文章以外の出力は決して行ってはいけません。
+2.校閲した文章のみを出力します。
+3.改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
+4.時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
+5.スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
+6.テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
+
+入力テキスト：
+{text}
+"""
+            
+            if progress_callback:
+                progress_callback(0.6, "🧠 AIによる文章解析中...")
+                time.sleep(0.3)
+                progress_callback(0.7, "📝 文章の校正を実行中...")
+            
+            response = self.model.generate_content(prompt)
+            if not response.text:
+                logger.error("AIモデルからの応答が空でした")
+                if progress_callback:
+                    progress_callback(1.0, "❌ エラー: AIモデルからの応答が空です")
+                return text
+            
+            if progress_callback:
+                progress_callback(0.8, "🎨 文章の最終調整中...")
+            
+            enhanced_text = response.text
+            enhanced_text = self._clean_text(enhanced_text)
+            
+            if progress_callback:
+                progress_callback(0.9, "📊 文章構造を最適化中...")
+            
+            enhanced_text = self._improve_sentence_structure(enhanced_text)
+            enhanced_text = re.sub(r'([。])', r'\1\n', enhanced_text)
+            enhanced_text = re.sub(r'\n{3,}', '\n\n', enhanced_text)
+            enhanced_text = enhanced_text.strip()
+            
+            if progress_callback:
+                progress_callback(1.0, "✨ 校正処理が完了しました!")
+            
+            return enhanced_text
+            
+        except Exception as e:
+            logger.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
+            if progress_callback:
+                progress_callback(1.0, f"❌ エラー: {str(e)}")
+            return text
 
     def _improve_sentence_structure(self, text: str) -> str:
-        """Improve Japanese text structure with error handling"""
+        """Improve Japanese sentence structure and readability"""
         try:
-            # Normalize line breaks
-            text = re.sub(r'\r\n|\r|\n', '\n', text)
-            
-            # Improve readability
+            # Fix sentence endings
             text = re.sub(r'([。！？])\s*(?=[^」』）])', r'\1\n', text)
+            
+            # Improve paragraph breaks
             text = re.sub(r'([。！？])\s*\n\s*([^「『（])', r'\1\n\n\2', text)
             
-            # Fix Japanese punctuation spacing
+            # Fix spacing around Japanese punctuation
             text = re.sub(r'\s+([。、！？」』）])', r'\1', text)
             text = re.sub(r'([「『（])\s+', r'\1', text)
             
-            # Improve list formatting
+            # Clean up list items
             text = re.sub(r'^[-・]\s*', '• ', text, flags=re.MULTILINE)
             
             return text
-            
         except Exception as e:
-            logger.error(f"文章構造の改善中にエラー: {str(e)}")
+            logger.error(f"文章構造の改善中にエラーが発生しました: {str(e)}")
             return text
 
-    @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1.5, min=4, max=60),
-        retry=(
-            retry_if_exception_type(ConnectionError) |
-            retry_if_exception_type(TimeoutError) |
-            retry_if_exception_type(Exception)
-        ),
-        before_sleep=before_sleep_log(logger, logging.INFO),
-        after=after_log(logger, logging.INFO)
-    )
+    @retry(stop_max_attempt_number=3, wait_fixed=2000)
     def get_transcript(self, url: str) -> str:
         """Get transcript with improved error handling and retries"""
         video_id = self._extract_video_id(url)
@@ -500,3 +353,31 @@ class TextProcessor:
             error_msg = f"字幕の取得に失敗しました: {str(e)}"
             logger.error(error_msg)
             return None
+
+    def generate_summary(self, text: str) -> str:
+        """Generate summary with improved error handling"""
+        if not text:
+            return ""
+            
+        try:
+            prompt = f"""以下のテキストを要約してください。重要なポイントを箇条書きで示し、
+            その後に簡潔な要約を作成してください：
+
+            {text}
+
+            出力形式：
+            ■ 主なポイント：
+            • ポイント1
+            • ポイント2
+            • ポイント3
+
+            ■ 要約：
+            [簡潔な要約文]
+            """
+            
+            response = self.model.generate_content(prompt)
+            return response.text if response.text else "要約を生成できませんでした。"
+            
+        except Exception as e:
+            logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
+            return "要約の生成中にエラーが発生しました。"
