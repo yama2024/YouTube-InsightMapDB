@@ -22,12 +22,31 @@ class MindMapGenerator:
         
         # Remove special characters and emojis, keep basic punctuation and Japanese characters
         cleaned_text = re.sub(r'[^\w\s\u3000-\u9fff\u4e00-\u9faf\.,\-_()]', '', text)
+        # Break long text into multiple lines for better readability
+        if len(cleaned_text) > 30:
+            words = cleaned_text.split()
+            lines = []
+            current_line = []
+            current_length = 0
+            
+            for word in words:
+                if current_length + len(word) > 30:
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
+                    current_length = len(word)
+                else:
+                    current_line.append(word)
+                    current_length += len(word) + 1
+                    
+            if current_line:
+                lines.append(' '.join(current_line))
+            cleaned_text = '<br/>' + '<br/>'.join(lines)
+        
         return cleaned_text.strip()
 
     def _format_mindmap_syntax(self, syntax):
-        """Format and validate mindmap syntax for Mermaid v10.2.4"""
+        """Format and validate mindmap syntax with enhanced visualization"""
         try:
-            # Basic validation
             if not syntax or not isinstance(syntax, str):
                 logger.error("Invalid syntax input")
                 return self._generate_fallback_mindmap()
@@ -36,68 +55,76 @@ class MindMapGenerator:
             lines = [line.rstrip() for line in syntax.strip().split('\n') if line.strip()]
             formatted_lines = []
 
-            # Ensure mindmap starts correctly
-            if not lines or lines[0].strip() != 'mindmap':
-                formatted_lines.append('mindmap')
-            else:
-                formatted_lines.append('mindmap')
-                lines = lines[1:]
+            # Add mindmap and style definitions
+            formatted_lines.extend([
+                'mindmap',
+                '  %% Node styles',
+                '  classDef root fill:#ff9,stroke:#333,stroke-width:2px',
+                '  classDef topic fill:#fef,stroke:#333,stroke-width:1px',
+                '  classDef subtopic fill:#eff,stroke:#333,stroke-width:1px'
+            ])
 
             # Process each line
             current_indent = 0
-            for line in lines:
-                # Calculate proper indentation
+            for line in lines[1:]:  # Skip 'mindmap' line
+                # Calculate indentation
                 indent_match = re.match(r'^(\s*)', line)
-                if indent_match:
-                    current_indent = len(indent_match.group(1)) // 2
-                    if current_indent > 3:  # Limit to 3 levels
-                        current_indent = 3
+                current_indent = len(indent_match.group(1)) // 2 if indent_match else 0
                 clean_line = line.lstrip()
 
-                # Validate node text
+                # Validate and format node text
                 clean_line = self._validate_node_text(clean_line)
                 
-                # Format the line with proper indentation
+                # Add style classes based on level
+                if current_indent == 0:
+                    if not clean_line.endswith(':::root'):
+                        clean_line = f"{clean_line}:::root"
+                elif current_indent == 1:
+                    if not clean_line.endswith(':::topic'):
+                        clean_line = f"{clean_line}:::topic"
+                else:
+                    if not clean_line.endswith(':::subtopic'):
+                        clean_line = f"{clean_line}:::subtopic"
+                
+                # Format line with proper indentation
                 formatted_line = '  ' * current_indent + clean_line
                 formatted_lines.append(formatted_line)
 
-            # Join and validate final syntax
-            result = '\n'.join(formatted_lines)
-            
-            # Validate structure
-            if len(formatted_lines) < 2:
-                logger.warning("Mindmap has too few nodes")
-                return self._generate_fallback_mindmap()
-
-            return result
+            return '\n'.join(formatted_lines)
 
         except Exception as e:
             logger.error(f"Syntax formatting error: {str(e)}")
             return self._generate_fallback_mindmap()
 
     def _generate_mindmap_internal(self, text):
-        """Internal method for mindmap generation"""
+        """Internal method for mindmap generation with improved structure"""
         prompt = f"""
-以下のテキストからシンプルなMermaid形式のマインドマップを生成してください：
+以下のテキストから構造化されたMermaid形式のマインドマップを生成してください：
 
 入力テキスト:
 {text}
 
+要件:
+1. 階層構造を明確に表現
+2. メインテーマは太字で強調
+3. 関連するトピックをグループ化
+4. サブトピックは簡潔に記述
+
 フォーマット:
 mindmap
-  root(メインテーマ)
-    トピック1
-      サブトピック1
-      サブトピック2
-    トピック2
-      サブトピック3
+  root(("メインテーマ")):::root
+    トピック1:::topic
+      サブトピック1:::subtopic
+      サブトピック2:::subtopic
+    トピック2:::topic
+      サブトピック3:::subtopic
 
 ルール:
 1. 最初の行は必ず 'mindmap'
 2. インデントは2スペース
-3. 特殊文字は使用しない
-4. スタイル定義は含めない
-5. シンプルな階層構造を維持
+3. 階層は最大3レベルまで
+4. 長いテキストは<br/>で改行
+5. スタイルクラスを適切に使用
 """
 
         try:
@@ -130,14 +157,18 @@ mindmap
             raise Exception(f"Mindmap generation failed: {str(e)}")
 
     def _generate_fallback_mindmap(self):
-        """Generate a simple fallback mindmap"""
+        """Generate a simple fallback mindmap with styling"""
         return """mindmap
-  root(コンテンツ概要)
-    トピック1
-      サブトピック1
-      サブトピック2
-    トピック2
-      サブトピック3"""
+  %% Node styles
+  classDef root fill:#ff9,stroke:#333,stroke-width:2px
+  classDef topic fill:#fef,stroke:#333,stroke-width:1px
+  classDef subtopic fill:#eff,stroke:#333,stroke-width:1px
+  root(("コンテンツ概要")):::root
+    トピック1:::topic
+      サブトピック1:::subtopic
+      サブトピック2:::subtopic
+    トピック2:::topic
+      サブトピック3:::subtopic"""
 
     def generate_mindmap(self, text):
         """Generate mindmap from text"""
