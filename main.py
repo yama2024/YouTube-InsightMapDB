@@ -84,6 +84,11 @@ try:
         except Exception as e:
             logger.error(f"Error updating step progress: {str(e)}")
 
+    def check_features_completed():
+        """Check if all required features are completed before PDF export"""
+        required_features = ['video_info', 'transcript', 'summary', 'mindmap']
+        return all(st.session_state.steps_completed[feature] for feature in required_features)
+
     # Application Header
     st.markdown('''
     <div class="app-header">
@@ -223,7 +228,7 @@ try:
                                "文字起こし、要約、マインドマップを生成します")
             if st.session_state.transcript:
                 tabs = st.tabs([
-                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Enhancement"
+                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Enhancement", "📄 Export PDF"
                 ])
 
                 with tabs[0]:
@@ -371,6 +376,52 @@ try:
                             except Exception as e:
                                 st.error(f"テキスト整形中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error in text enhancement: {str(e)}")
+
+                with tabs[4]:
+                    st.markdown("### PDF Export")
+                    
+                    features_completed = check_features_completed()
+                    
+                    if not features_completed:
+                        missing_features = [
+                            feature for feature, completed in st.session_state.steps_completed.items()
+                            if not completed and feature in ['video_info', 'transcript', 'summary', 'mindmap']
+                        ]
+                        st.warning(f"以下の機能を完了してからPDFをエクスポートしてください: {', '.join(missing_features)}")
+                    else:
+                        st.success("全ての必要な機能が完了しています。PDFをエクスポートできます。")
+                        
+                        if st.button("📄 Generate PDF Report", disabled=not features_completed):
+                            try:
+                                with st.spinner("PDFレポートを生成中..."):
+                                    pdf_generator = PDFGenerator()
+                                    
+                                    # Prepare the data for PDF generation
+                                    proofread_text = st.session_state.enhanced_text if st.session_state.steps_completed.get('proofread', False) else ''
+                                    
+                                    pdf_data = pdf_generator.create_pdf(
+                                        video_info=st.session_state.video_info,
+                                        transcript=st.session_state.transcript,
+                                        summary=st.session_state.summary,
+                                        proofread_text=proofread_text
+                                    )
+                                    
+                                    # Store PDF data in session state
+                                    st.session_state.pdf_data = pdf_data
+                                    
+                                    # Offer download button
+                                    st.download_button(
+                                        label="📥 Download PDF Report",
+                                        data=pdf_data,
+                                        file_name="youtube_analysis_report.pdf",
+                                        mime="application/pdf"
+                                    )
+                                    
+                                    update_step_progress('pdf', True)
+                                    st.success("PDFレポートが正常に生成されました！")
+                            except Exception as e:
+                                st.error(f"PDFの生成中にエラーが発生しました: {str(e)}")
+                                logger.error(f"PDF generation error: {str(e)}")
 
     except Exception as e:
         st.error(f"初期化エラー: {str(e)}")
