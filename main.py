@@ -300,9 +300,22 @@ with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_s
             
             if st.session_state.mindmap:
                 try:
-                    st_mermaid(st.session_state.mindmap, height="600px")
+                    # Debug output for mindmap syntax
+                    st.markdown("### Debug: Generated Mermaid Syntax")
+                    st.code(st.session_state.mindmap, language="mermaid")
+                    
+                    # Render mindmap with enhanced error handling
+                    try:
+                        st_mermaid(st.session_state.mindmap, height="600px")
+                    except Exception as render_error:
+                        st.error(f"マインドマップのレンダリングに失敗しました: {str(render_error)}")
+                        st.info("マインドマップの構文を確認して、もう一度生成してください。")
+                        if st.button("🔄 マインドマップを再生成", use_container_width=True):
+                            st.session_state.mindmap = None
+                            st.rerun()
                 except Exception as e:
-                    st.error(f"マインドマップの表示に失敗しました: {str(e)}")
+                    st.error(f"マインドマップの処理中にエラーが発生しました: {str(e)}")
+                    st.stop()
 
 # Step 4: Enhancement
 with st.expander("Step 4: Enhancement", expanded=st.session_state.current_step == 4):

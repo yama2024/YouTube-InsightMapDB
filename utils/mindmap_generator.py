@@ -33,22 +33,28 @@ class MindMapGenerator:
                 raise Exception(f"マインドマップの生成中にエラーが発生しました。しばらく待ってから再度お試しください。: {error_str}")
 
     def _generate_mindmap_internal(self, text):
-        """Internal method for mindmap generation in Mermaid format"""
+        """Internal method for mindmap generation in Mermaid mindmap format"""
         prompt = f"""
         以下のテキストから階層的なマインドマップをMermaid形式で生成してください。
         以下の形式で出力してください：
 
         ```mermaid
-        graph TD
-            A[中心テーマ]
-            B[メインブランチ1]
-            C[メインブランチ2]
-            A --> B
-            A --> C
-            B --> B1[サブブランチ1]
-            B --> B2[サブブランチ2]
-            C --> C1[サブブランチ1]
+        mindmap
+          root((中心テーマ))
+            トピック1
+              サブトピック1
+              サブトピック2
+            トピック2
+              サブトピック3
+              サブトピック4
         ```
+
+        注意点:
+        - mindmap形式を使用すること
+        - 中心テーマは((テーマ名))の形式で記述
+        - インデントは2スペースで階層を表現
+        - 最大3階層まで
+        - 日本語で出力すること
 
         テキスト:
         {text}
@@ -69,8 +75,12 @@ class MindMapGenerator:
             mermaid_syntax = mermaid_syntax.strip()
             
             # Validate the Mermaid syntax
-            if not mermaid_syntax.startswith('graph TD'):
+            if not mermaid_syntax.startswith('mindmap'):
                 raise ValueError("生成されたMermaid構文が不正です")
+            
+            # Debug output
+            logger.info("Generated Mermaid syntax:")
+            logger.info(mermaid_syntax)
             
             return mermaid_syntax
                 
