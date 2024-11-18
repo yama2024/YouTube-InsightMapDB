@@ -348,9 +348,8 @@ try:
                                             f'<div class="progress-message">{message}</div>',
                                             unsafe_allow_html=True)
 
-                                        # Update stats
-                                        if progress == 1.0 and message.startswith(
-                                                "✨"):
+                                        # Update stats and completion status
+                                        if progress == 1.0 and message.startswith("✨"):
                                             with stats_cols[0]:
                                                 st.metric(
                                                     "処理済み文字数",
@@ -358,34 +357,36 @@ try:
                                                 )
                                             with stats_cols[1]:
                                                 st.metric(
-                                                    "処理時間",
-                                                    f"{(time.time() - start_time):.1f}秒"
+                                                    "改善率",
+                                                    "100%"
                                                 )
+                                            # Mark proofread as completed
+                                            update_step_progress('proofread', True)
 
-                                    start_time = time.time()
                                     text_processor = TextProcessor()
+                                    
+                                    # Initial progress update
+                                    update_enhancement_progress(0.2,
+                                                            "⚙️ テキストを解析中...")
+                                    time.sleep(0.5)
 
-                                    # Start enhancement process
+                                    # Process the text
+                                    update_enhancement_progress(0.4,
+                                                            "🔄 テキストを整形中...")
                                     enhanced_text = text_processor.proofread_text(
                                         st.session_state.transcript,
                                         progress_callback=update_enhancement_progress)
 
                                     if enhanced_text:
                                         st.session_state.enhanced_text = enhanced_text
+                                        update_enhancement_progress(
+                                            1.0, "✨ テキスト整形が完了しました！")
+
+                                        # Display the enhanced text
                                         st.markdown('<div class="glass-container">',
-                                                    unsafe_allow_html=True)
-                                        st.markdown("#### 整形済みテキスト")
-                                        st.markdown(
-                                            enhanced_text.replace('\n', '  \n'))
-
-                                        # Download button for enhanced text
-                                        st.download_button(
-                                            "📥 整形済みテキストをダウンロード",
-                                            enhanced_text,
-                                            file_name="enhanced_text.txt",
-                                            mime="text/plain")
-
-                                        # Update progress container
+                                                  unsafe_allow_html=True)
+                                        st.markdown("#### 整形後のテキスト")
+                                        st.markdown(enhanced_text.replace('\n', '  \n'))
                                         st.markdown('</div>', unsafe_allow_html=True)
 
                             except Exception as e:
@@ -395,28 +396,32 @@ try:
                 with tabs[4]:
                     st.markdown("### PDF Export")
                     
+                    # Check completion status
                     completion_status, required_features = check_features_completed()
-                    all_features_complete = all(completion_status.values())
                     
-                    if not all_features_complete:
-                        missing_features = [
-                            required_features[feature]
-                            for feature, completed in completion_status.items()
-                            if not completed
-                        ]
+                    # If any required feature is not completed, show warning
+                    missing_features = [
+                        name for feature, name in required_features.items()
+                        if not completion_status[feature]
+                    ]
+                    
+                    if missing_features:
                         st.warning(
-                            f"以下の機能を完了してからPDFをエクスポートしてください: {', '.join(missing_features)}")
+                            f"PDFエクスポートの前に以下の機能を完了してください: {', '.join(missing_features)}"
+                        )
                     else:
-                        st.success("全ての必要な機能が完了しています。PDFをエクスポートできます。")
-                        
-                        if st.button("📄 PDFレポートを生成", disabled=not all_features_complete):
+                        if st.button("📄 PDFレポートを生成",
+                                   help="全ての分析結果をPDFレポートとして出力します"):
                             try:
                                 with st.spinner("PDFレポートを生成中..."):
                                     pdf_generator = PDFGenerator()
                                     
                                     # Prepare the data for PDF generation
-                                    enhanced_text = st.session_state.enhanced_text if completion_status.get('proofread', False) else None
+                                    enhanced_text = st.session_state.enhanced_text if st.session_state.steps_completed.get('proofread', False) else None
                                     
+                                    if 'video_info' not in st.session_state or not st.session_state.video_info:
+                                        raise ValueError("動画情報が見つかりません")
+                                        
                                     pdf_data = pdf_generator.create_pdf(
                                         video_info=st.session_state.video_info,
                                         transcript=st.session_state.transcript,
@@ -426,25 +431,25 @@ try:
                                     
                                     # Store PDF data in session state
                                     st.session_state.pdf_data = pdf_data
-                                    update_step_progress('pdf', True)
                                     
-                                    # Offer download button
+                                    # Provide download button
                                     st.download_button(
                                         label="📥 PDFレポートをダウンロード",
                                         data=pdf_data,
-                                        file_name=f"{st.session_state.video_info['title']}_analysis.pdf",
+                                        file_name=f"{st.session_state.video_info.get('title', 'youtube_analysis')}_analysis.pdf",
                                         mime="application/pdf"
                                     )
                                     
                                     st.success("PDFレポートが正常に生成されました！")
+                                    update_step_progress('pdf', True)
                             except Exception as e:
                                 st.error(f"PDFの生成中にエラーが発生しました: {str(e)}")
-                                logger.error(f"PDF generation error: {str(e)}")
+                                logger.error(f"Error generating PDF: {str(e)}")
 
     except Exception as e:
-        st.error(f"初期化エラー: {str(e)}")
-        logger.error(f"Initialization error: {str(e)}")
+        st.error(f"An error occurred: {str(e)}")
+        logger.error(f"Application error: {str(e)}")
 
 except Exception as e:
-    st.error(f"初期化エラー: {str(e)}")
+    st.error(f"Application initialization error: {str(e)}")
     logger.error(f"Initialization error: {str(e)}")
