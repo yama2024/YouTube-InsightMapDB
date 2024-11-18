@@ -650,3 +650,42 @@ div.stApp {
         transform: translateY(0);
     }
 }
+
+/* AI Summary Styles */
+.stMarkdown h3:contains('AI Summary') {
+    font-size: 2rem !important;
+    font-weight: 700 !important;
+    color: #90caf9 !important;
+    margin: 1.5rem 0 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.stMarkdown p {
+    font-size: 1.1rem !important;
+    line-height: 1.8 !important;
+    color: rgba(255, 255, 255, 0.95) !important;
+    margin: 1rem 0 !important;
+}
+
+.stMarkdown h1 {
+    color: #90caf9 !important;
+    font-size: 1.8rem !important;
+    margin: 2rem 0 1rem !important;
+}
+
+.stMarkdown h2 {
+    color: #64b5f6 !important;
+    font-size: 1.5rem !important;
+    margin: 1.5rem 0 1rem !important;
+}
+
+.stMarkdown ul {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 8px !important;
+    padding: 1.5rem 2rem !important;
+}
+
+.stMarkdown li {
+    color: rgba(255, 255, 255, 0.9) !important;
+    margin: 0.8rem 0 !important;
+}

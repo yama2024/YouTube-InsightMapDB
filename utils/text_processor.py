@@ -8,7 +8,7 @@ import tempfile
 import pytube
 import io
 import time
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 # Set up logging with more detailed format
 logging.basicConfig(
@@ -23,52 +23,66 @@ class TextProcessor:
         if not api_key:
             raise ValueError("Gemini API key is not set in environment variables")
         genai.configure(api_key=api_key)
-        # Update to use Gemini 1.5 Pro
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
-        # Enhanced noise patterns
-        self.noise_patterns = {
-            'timestamps': r'\(\d{2}:\d{2}(?::\d{2})?\)',
-            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー)\b',
-            'repeated_chars': r'([^\W\d_])\1{3,}',
-            'multiple_spaces': r' +',
-            'empty_lines': r'\n\s*\n'
+        # Enhanced noise patterns for better Japanese text processing
+        self.noise_patterns: Dict[str, Any] = {
+            'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',  # Enhanced timestamp pattern
+            'speaker_tags': r'\[[^\]]*\]|\([^)]*\)',  # Remove speaker labels
+            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー|そうですね|ちょっと|まあ|そうですね|はい|あれ|そう|うん)\b',
+            'repeated_chars': r'([^\W\d_])\1{2,}',  # Reduced threshold for repeated characters
+            'multiple_spaces': r'[\s　]{2,}',  # Include full-width spaces
+            'empty_lines': r'\n\s*\n',
+            'punctuation': r'([。．！？])\1+',  # Handle repeated punctuation
+            'noise_symbols': r'[♪♫♬♩†‡◊◆◇■□▲△▼▽○●◎⊕⊖⊗⊘⊙⊚⊛⊜⊝]'
+        }
+        
+        # Additional patterns for Japanese text
+        self.jp_patterns = {
+            'half_to_full_width': str.maketrans({chr(0x0021 + i): chr(0xFF01 + i) for i in range(94)}),
+            'normalize_periods': str.maketrans({'．': '。', '…': '。', '....': '。', '...': '。'}),
+            'remove_emphasis': r'[﹅﹆゛゜]',
         }
 
     def _clean_text(self, text: str) -> str:
-        """Enhanced text cleaning with better noise removal"""
+        """Enhanced text cleaning with improved noise removal and Japanese text handling"""
         if not text:
             return text
             
-        # Keep original length for validation
         original_length = len(text)
+        logger.debug(f"Original text length: {original_length}")
         
         try:
-            # Remove timestamps
-            text = re.sub(self.noise_patterns['timestamps'], '', text)
+            # Convert half-width characters to full-width
+            text = text.translate(self.jp_patterns['half_to_full_width'])
             
-            # Remove filler words
-            text = re.sub(self.noise_patterns['filler_words'], '', text)
+            # Normalize periods and remove emphasis marks
+            text = text.translate(self.jp_patterns['normalize_periods'])
+            text = re.sub(self.jp_patterns['remove_emphasis'], '', text)
             
-            # Fix repeated characters
-            text = re.sub(self.noise_patterns['repeated_chars'], r'\1', text)
+            # Apply noise removal patterns
+            for pattern_name, pattern in self.noise_patterns.items():
+                before_length = len(text)
+                text = re.sub(pattern, '', text if pattern_name != 'multiple_spaces' else ' ', text)
+                after_length = len(text)
+                logger.debug(f"Pattern {pattern_name}: Removed {before_length - after_length} characters")
             
-            # Normalize spaces
-            text = re.sub(self.noise_patterns['multiple_spaces'], ' ', text)
+            # Normalize spaces and line breaks
+            text = re.sub(r'\s+', ' ', text)
+            text = re.sub(r'\n{2,}', '\n', text)
             
-            # Fix empty lines
-            text = re.sub(self.noise_patterns['empty_lines'], '\n', text)
-            
-            # Additional cleaning steps
-            text = text.replace('...', '。').replace('…', '。')
-            text = re.sub(r'([。．！？])\1+', r'\1', text)  # Remove repeated punctuation
-            text = re.sub(r'[\r\t]', '', text)  # Remove special characters
+            # Additional Japanese text cleanup
+            text = re.sub(r'([。．！？、]) ?', r'\1', text)  # Remove spaces after Japanese punctuation
+            text = re.sub(r'([。．！？、])([^」』】）\s])', r'\1\n\2', text)  # Add line breaks after sentences
             
             # Validate the cleaned text
-            if len(text.strip()) < (original_length * 0.3):  # Text is too short after cleaning
-                logger.warning("Significant content loss after cleaning")
-                return text
-                
+            cleaned_length = len(text.strip())
+            if cleaned_length < (original_length * 0.3):
+                logger.warning(f"Significant content loss after cleaning: {cleaned_length}/{original_length} characters remaining")
+                if cleaned_length < 100:  # Minimum viable length
+                    logger.error("Cleaned text is too short, might have lost important content")
+                    return text
+            
             return text.strip()
             
         except Exception as e:
