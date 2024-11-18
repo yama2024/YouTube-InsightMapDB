@@ -6,7 +6,7 @@ import os
 import time
 from typing import List, Optional, Dict, Any
 
-# Set up logging with more detailed format
+# Enhanced logging setup
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -25,13 +25,13 @@ class TextProcessor:
         self.noise_patterns: Dict[str, str] = {
             'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',
             'speaker_tags': r'\[[^\]]*\]|\([^)]*\)',
-            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー|そうですね|ちょっと|まあ|そうですね|はい|あれ|そう|うん|えっとですね|そうですねー|まぁね|あのですね|そうそう)\b',
-            'repeated_chars': r'([^\W\d_])\1{2,}',
+            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー|そうですね|ちょっと|まあ|そうですね|はい|あれ|そう|うん|えっとですね|そうですねー|まぁね|あのですね|そうそう|まあまあ|あのね|えっとね)\b',
+            'repeated_chars': r'([^\W\d_])\1{3,}',
             'multiple_spaces': r'[\s　]{2,}',
             'empty_lines': r'\n\s*\n',
             'punctuation': r'([。．！？])\1+',
             'noise_symbols': r'[♪♫♬♩†‡◊◆◇■□▲△▼▽○●◎⊕⊖⊗⊘⊙⊚⊛⊜⊝]',
-            'parentheses': r'（[^）]*）|\([^)]*\)',  # Japanese and English parentheses
+            'parentheses': r'（[^）]*）|\([^)]*\)',
             'unnecessary_symbols': r'[＊∗※#＃★☆►▷◁◀→←↑↓]',
             'repeated_particles': r'((?:です|ます|した|ました|ません|で|に|は|が|を|な|の|と|も|や|へ|より|から|まで|による|において|について|として|という|といった|における|であって|であり|である|のような|かもしれない)\s*)+',
             'excessive_honorifics': r'(?:さん|様|氏|君|先生|殿){2,}',
@@ -40,10 +40,19 @@ class TextProcessor:
             'url_patterns': r'https?://\S+|www\.\S+',
             'hashtags': r'#\w+',
             'time_codes': r'\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?',
-            'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音|ノイズ)\]'
+            'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音|ノイズ|雑音|間|一同|※)\]',
+            'parenthetical_info': r'【[^】]*】|\([^)]*\)',
+            'commercial_markers': r'(?:CM|広告|スポンサー)(?:\s*\d*)?',
+            'system_messages': r'(?:システム|エラー|通知)(?:：|:).*?(?:\n|$)',
+            'social_media_artifacts': r'@\w+|RT\s@\w+|#\w+',
+            'formatting_markers': r'\*+|\#+|\{[^}]*\}|\[[^\]]*\]',
+            'noise_words': r'\b(あー|えー|んー|まー|そのー|えっとー|あのー|まぁー|うーん|えっとぉ|んーと|そうですねぇ)\b',
+            'repeated_words': r'(\b\w+\b)(\s+\1\b)+',
+            'excessive_spaces': r'(?:　|\s){2,}',
+            'line_noise': r'^[\s　]*(?:[=\-~]{3,}|[・×※]{2,})[\s　]*$'
         }
         
-        # Japanese text normalization patterns
+        # Enhanced Japanese text normalization patterns
         self.jp_patterns = {
             'normalize_periods': {
                 '．': '。',
@@ -74,6 +83,9 @@ class TextProcessor:
                 '!': '！',
                 '！': '！'
             },
+            'normalize_long_vowels': {
+                'ー+': 'ー'
+            },
             'remove_emphasis': r'[﹅﹆゛゜]'
         }
 
@@ -89,22 +101,28 @@ class TextProcessor:
             # Text normalization
             text = self._normalize_japanese_text(text)
             
-            # Apply noise removal patterns
+            # Apply noise removal patterns with detailed logging
             for pattern_name, pattern in self.noise_patterns.items():
                 before_length = len(text)
                 if pattern_name == 'multiple_spaces':
                     text = re.sub(pattern, ' ', text)
                 elif pattern_name == 'repeated_particles':
                     text = re.sub(pattern, lambda m: m.group(1).split()[0] + ' ', text)
+                elif pattern_name == 'repeated_words':
+                    text = re.sub(pattern, r'\1', text)
                 else:
                     text = re.sub(pattern, '', text)
                 after_length = len(text)
-                logger.debug(f"Pattern {pattern_name}: Removed {before_length - after_length} characters")
+                
+                if before_length - after_length > 0:
+                    logger.debug(f"Pattern {pattern_name}: Removed {before_length - after_length} characters")
             
-            # Sentence structure improvement
+            # Post-processing improvements
             text = self._improve_sentence_structure(text)
+            text = self._format_paragraphs(text)
+            text = self._apply_final_cleanup(text)
             
-            # Final validation
+            # Final validation and quality check
             cleaned_text = text.strip()
             if not cleaned_text:
                 logger.warning("Cleaning resulted in empty text")
@@ -123,8 +141,32 @@ class TextProcessor:
             logger.error(f"Error during text cleaning: {str(e)}")
             return text if text else ""
 
+    def _apply_final_cleanup(self, text: str) -> str:
+        """Apply final cleanup rules to the text"""
+        try:
+            # Remove excessive newlines
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            
+            # Fix spacing around punctuation
+            text = re.sub(r'\s+([。、！？」』）])', r'\1', text)
+            text = re.sub(r'([「『（])\s+', r'\1', text)
+            
+            # Normalize sentence endings
+            text = re.sub(r'([。！？])\s*(?=[^」』）])', r'\1\n', text)
+            
+            # Clean up list markers
+            text = re.sub(r'^[-・]\s*', '• ', text, flags=re.MULTILINE)
+            
+            # Remove trailing spaces
+            text = re.sub(r'\s+$', '', text, flags=re.MULTILINE)
+            
+            return text
+        except Exception as e:
+            logger.error(f"Error in final cleanup: {str(e)}")
+            return text
+
     def _normalize_japanese_text(self, text: str) -> str:
-        """Normalize Japanese text with improved character handling"""
+        """Enhanced normalization for Japanese text"""
         try:
             # Apply all normalization patterns
             for pattern_type, patterns in self.jp_patterns.items():
@@ -133,6 +175,15 @@ class TextProcessor:
                         text = text.replace(old, new)
                 else:
                     text = re.sub(patterns, '', text)
+            
+            # Additional normalization for Japanese text
+            text = re.sub(r'([。！？])\1+', r'\1', text)  # Remove repeated punctuation
+            text = re.sub(r'([。！？])(?=[^」』】）\s])', r'\1\n', text)  # Add newline after sentence endings
+            text = re.sub(r'\s*\n\s*', '\n', text)  # Clean up whitespace around newlines
+            
+            # Normalize long vowels and remove unnecessary emphasis marks
+            text = re.sub(r'ー{2,}', 'ー', text)
+            text = re.sub(r'[゛゜]{2,}', '', text)
             
             return text
         except Exception as e:
@@ -158,9 +209,44 @@ class TextProcessor:
             # Improve readability of lists
             text = re.sub(r'(^|\n)[-・](.*?)(?=\n|$)', r'\1• \2', text)
             
+            # Fix Japanese particle spacing
+            text = re.sub(r'(\s+(?:は|が|を|に|へ|で|と|から|まで|より))\s+', r'\1', text)
+            
             return text
         except Exception as e:
             logger.error(f"Error in sentence structure improvement: {str(e)}")
+            return text
+
+    def _format_paragraphs(self, text: str) -> str:
+        """Enhanced paragraph formatting"""
+        try:
+            # Split into paragraphs
+            paragraphs = text.split('\n\n')
+            formatted_paragraphs = []
+            
+            for paragraph in paragraphs:
+                # Skip empty paragraphs
+                if not paragraph.strip():
+                    continue
+                    
+                # Clean up whitespace
+                paragraph = re.sub(r'\s+', ' ', paragraph.strip())
+                
+                # Remove single-character lines
+                if len(paragraph.strip()) <= 1:
+                    continue
+                
+                # Remove lines that are just punctuation
+                if re.match(r'^[。、！？]+$', paragraph.strip()):
+                    continue
+                
+                # Add paragraph to list
+                formatted_paragraphs.append(paragraph)
+            
+            # Join paragraphs with double newlines
+            return '\n\n'.join(formatted_paragraphs)
+        except Exception as e:
+            logger.error(f"Error in paragraph formatting: {str(e)}")
             return text
 
     def get_transcript(self, url: str) -> str:
@@ -251,6 +337,147 @@ class TextProcessor:
             logger.error(f"Error extracting video ID: {str(e)}")
             return None
 
+    def proofread_text(self, text: str, max_retries: int = 5, initial_delay: int = 1) -> str:
+        """Proofread and enhance text with improved validation and logging"""
+        try:
+            # Split text into chunks
+            text_chunks = self.chunk_text(text, chunk_size=8000)
+            total_chunks = len(text_chunks)
+            logger.info(f"テキストを{total_chunks}個のチャンクに分割しました")
+            
+            # Initialize result array with empty strings
+            proofread_chunks: List[str] = [""] * total_chunks
+            remaining_chunks = list(range(total_chunks))
+            
+            original_text_length = len(text)
+            logger.info(f"Original text length: {original_text_length}")
+            
+            for chunk_index in remaining_chunks[:]:
+                i = chunk_index + 1
+                chunk = text_chunks[chunk_index]
+                retry_count = 0
+                delay = initial_delay
+                
+                while retry_count < max_retries:
+                    try:
+                        logger.info(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
+                        
+                        chunk_prompt = f'''
+入力テキストを以下の基準で校閲し、改善してください：
+
+校閲基準：
+1. 誤字・脱字の修正
+2. 不要な繰り返しの削除
+3. 口語表現の書き言葉への変換
+4. 文章の自然な区切りの改善
+5. 文の接続と流れの最適化
+6. 読みやすい段落構成
+7. 適切な句読点の配置
+
+制約：
+- 意味の変更は不可
+- 内容の追加・削除は不可
+- 文の順序は維持
+- オリジナルの文脈を保持
+
+入力テキスト：
+{chunk}
+
+校閲後のテキストのみを出力してください。
+'''
+                        response = self.model.generate_content(
+                            chunk_prompt,
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=0.1,
+                                top_p=0.95,
+                                top_k=50,
+                                max_output_tokens=16384,
+                            )
+                        )
+                        
+                        if not response or not response.text:
+                            raise ValueError("Empty response from API")
+                        
+                        proofread_text = response.text.strip()
+                        
+                        # Validate the proofread text
+                        if len(proofread_text) < (len(chunk) * 0.5):
+                            raise ValueError("Proofread text is too short")
+                        
+                        # Clean up the proofread text
+                        proofread_text = self._clean_text(proofread_text)
+                        proofread_chunks[chunk_index] = proofread_text
+                        
+                        # Remove successfully processed chunk from remaining
+                        remaining_chunks.remove(chunk_index)
+                        break
+                        
+                    except Exception as e:
+                        logger.error(f"Error in chunk {i}: {str(e)}")
+                        retry_count += 1
+                        time.sleep(delay)
+                        delay *= 2  # Exponential backoff
+                        
+                        if retry_count >= max_retries:
+                            logger.error(f"Max retries reached for chunk {i}")
+                            proofread_chunks[chunk_index] = chunk  # Use original chunk if all retries fail
+                
+            # Combine all chunks
+            proofread_text = '\n\n'.join(filter(None, proofread_chunks))
+            
+            # Final cleanup
+            proofread_text = self._clean_text(proofread_text)
+            
+            if not proofread_text:
+                raise ValueError("Final proofread text is empty")
+                
+            return proofread_text
+            
+        except Exception as e:
+            logger.error(f"Error in proofread_text: {str(e)}")
+            return text
+
+    def chunk_text(self, text: str, chunk_size: int = 8000) -> List[str]:
+        """Split text into manageable chunks while preserving sentence boundaries"""
+        try:
+            if not text:
+                return []
+                
+            chunks = []
+            current_chunk = []
+            current_length = 0
+            
+            # Split text into sentences
+            sentences = re.split(r'([。．.！!？?])', text)
+            
+            for i in range(0, len(sentences), 2):
+                if i + 1 < len(sentences):
+                    # Combine sentence with its punctuation
+                    sentence = sentences[i] + sentences[i + 1]
+                else:
+                    sentence = sentences[i]
+                
+                sentence_length = len(sentence)
+                
+                if current_length + sentence_length > chunk_size and current_chunk:
+                    # Join current chunk and add to chunks list
+                    chunks.append(''.join(current_chunk))
+                    current_chunk = []
+                    current_length = 0
+                
+                current_chunk.append(sentence)
+                current_length += sentence_length
+            
+            # Add remaining chunk if any
+            if current_chunk:
+                chunks.append(''.join(current_chunk))
+            
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error in chunk_text: {str(e)}")
+            return [text]
+
     def generate_summary(self, text: str) -> str:
         """Generate summary with improved text processing"""
         if not text:
@@ -310,109 +537,3 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"Error generating summary: {str(e)}")
             raise
-
-    def proofread_text(self, text: str, max_retries: int = 5, initial_delay: int = 1) -> str:
-        """Proofread and enhance text with improved validation and logging"""
-        try:
-            # Split text into chunks
-            text_chunks = self.chunk_text(text, chunk_size=8000)
-            total_chunks = len(text_chunks)
-            logger.info(f"テキストを{total_chunks}個のチャンクに分割しました")
-            
-            # Initialize result array with empty strings
-            proofread_chunks: List[str] = [""] * total_chunks
-            remaining_chunks = list(range(total_chunks))
-            
-            original_text_length = len(text)
-            logger.info(f"Original text length: {original_text_length}")
-            
-            for chunk_index in remaining_chunks[:]:
-                i = chunk_index + 1
-                chunk = text_chunks[chunk_index]
-                retry_count = 0
-                delay = initial_delay
-                
-                while retry_count < max_retries:
-                    try:
-                        logger.info(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
-                        
-                        chunk_prompt = f'''
-入力テキストを校閲し、以下の基準で改善してください：
-
-1. 誤字・脱字の修正
-2. 句読点の適切な配置
-3. 自然な日本語表現への修正
-4. 冗長な表現の簡潔化
-
-制約：
-- 意味の変更は不可
-- 内容の追加・削除は不可
-- 文の順序は維持
-
-入力テキスト：
-{chunk}
-
-校閲後のテキストのみを出力してください。
-'''
-                        response = self.model.generate_content(
-                            chunk_prompt,
-                            generation_config=genai.types.GenerationConfig(
-                                temperature=0.1,
-                                top_p=0.95,
-                                top_k=50,
-                                max_output_tokens=16384,
-                            )
-                        )
-                        
-                        if not response or not response.text:
-                            raise ValueError("Empty response from API")
-                        
-                        proofread_chunks[chunk_index] = response.text.strip()
-                        break
-                        
-                    except Exception as e:
-                        retry_count += 1
-                        delay *= 2
-                        logger.error(f"Error processing chunk {i}: {str(e)}")
-                        
-                        if retry_count >= max_retries:
-                            logger.error(f"Failed to process chunk {i} after {max_retries} attempts")
-                            proofread_chunks[chunk_index] = chunk  # Use original chunk on failure
-                            break
-                        else:
-                            time.sleep(delay)
-            
-            # Combine all chunks
-            final_text = '\n'.join(chunk for chunk in proofread_chunks if chunk)
-            return final_text
-            
-        except Exception as e:
-            logger.error(f"Error during proofreading: {str(e)}")
-            return text
-
-    def chunk_text(self, text: str, chunk_size: int = 8000) -> List[str]:
-        """Split text into manageable chunks while preserving sentence boundaries"""
-        if not text:
-            return []
-            
-        sentences = re.split(r'([。．！？\n])', text)
-        current_chunk = []
-        chunks = []
-        current_length = 0
-        
-        for i in range(0, len(sentences)-1, 2):
-            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
-            sentence_length = len(sentence)
-            
-            if current_length + sentence_length > chunk_size and current_chunk:
-                chunks.append(''.join(current_chunk))
-                current_chunk = []
-                current_length = 0
-            
-            current_chunk.append(sentence)
-            current_length += sentence_length
-        
-        if current_chunk:
-            chunks.append(''.join(current_chunk))
-        
-        return chunks
