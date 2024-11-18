@@ -33,28 +33,27 @@ div.stApp {
 }
 
 .summary-content {
-    font-size: 1.1rem !important;
     line-height: 1.8 !important;
-    color: white !important;
+    color: #1a1a1a !important;  /* 濃い黒色 */
 }
 
 .summary-content h1 {
     font-size: 2.2rem !important;
-    color: #90caf9 !important;
+    color: #1a365d !important;  /* 濃い青色 */
     margin-bottom: 1.5rem !important;
-    border-bottom: 2px solid rgba(144, 202, 249, 0.3) !important;
+    border-bottom: 2px solid rgba(26, 54, 93, 0.3) !important;
     padding-bottom: 0.5rem !important;
 }
 
 .summary-content h2 {
     font-size: 1.8rem !important;
-    color: #64b5f6 !important;
+    color: #1e4976 !important;  /* やや薄い濃い青色 */
     margin: 2rem 0 1rem !important;
 }
 
 .summary-content h3 {
     font-size: 1.4rem !important;
-    color: #42a5f5 !important;
+    color: #2c5282 !important;  /* 中間の青色 */
     margin: 1.5rem 0 0.8rem !important;
 }
 
@@ -66,6 +65,7 @@ div.stApp {
 }
 
 .summary-content li {
+    color: #1a1a1a !important;  /* 濃い黒色 */
     margin: 0.8rem 0 !important;
     position: relative !important;
     padding-left: 1.5rem !important;
@@ -81,16 +81,16 @@ div.stApp {
 
 .summary-content p {
     margin: 1rem 0 !important;
-    color: rgba(255, 255, 255, 0.9) !important;
+    color: #1a1a1a !important;  /* 濃い黒色 */
 }
 
 .summary-content strong {
-    color: #81d4fa !important;
+    color: #1a365d !important;  /* 濃い青色 */
     font-weight: 600 !important;
 }
 
 .summary-content em {
-    color: #90caf9 !important;
+    color: #2c5282 !important;  /* 中間の青色 */
     font-style: italic !important;
 }
 
@@ -688,4 +688,52 @@ div.stApp {
 .stMarkdown li {
     color: rgba(255, 255, 255, 0.9) !important;
     margin: 0.8rem 0 !important;
+}
+
+.stMarkdown h3:contains('AI Summary') {
+    font-size: 2rem !important;
+    font-weight: 700 !important;
+    color: #1a365d !important;  /* 濃い青色 */
+    margin: 1.5rem 0 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.stMarkdown p {
+    font-size: 1.1rem !important;
+    line-height: 1.8 !important;
+    color: #1a1a1a !important;  /* 濃い黒色 */
+    margin: 1rem 0 !important;
+}
+
+.stMarkdown h1 {
+    color: #1a365d !important;  /* 濃い青色 */
+    font-size: 1.8rem !important;
+    margin: 2rem 0 1rem !important;
+}
+
+.stMarkdown h2 {
+    color: #1e4976 !important;  /* やや薄い濃い青色 */
+    font-size: 1.5rem !important;
+    margin: 1.5rem 0 1rem !important;
+}
+
+.stMarkdown ul {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 8px !important;
+    padding: 1.5rem 2rem !important;
+}
+
+.stMarkdown li {
+    color: #1a1a1a !important;  /* 濃い黒色 */
+    margin: 0.8rem 0 !important;
+}
+
+.stMarkdown strong {
+    color: #1a365d !important;  /* 濃い青色 */
+    font-weight: 600 !important;
+}
+
+.stMarkdown em {
+    color: #2c5282 !important;  /* 中間の青色 */
+    font-style: italic !important;
 }

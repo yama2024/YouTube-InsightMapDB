@@ -1,12 +1,8 @@
 import logging
 from youtube_transcript_api import YouTubeTranscriptApi
 import google.generativeai as genai
-from google.cloud import speech_v1p1beta1 as speech
 import re
 import os
-import tempfile
-import pytube
-import io
 import time
 from typing import List, Optional, Dict, Any
 
@@ -26,23 +22,57 @@ class TextProcessor:
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
         # Enhanced noise patterns for better Japanese text processing
-        self.noise_patterns: Dict[str, Any] = {
-            'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',  # Enhanced timestamp pattern
-            'speaker_tags': r'\[[^\]]*\]|\([^)]*\)',  # Remove speaker labels
-            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー|そうですね|ちょっと|まあ|そうですね|はい|あれ|そう|うん)\b',
-            'repeated_chars': r'([^\W\d_])\1{2,}',  # Reduced threshold for repeated characters
-            'multiple_spaces': r'[\s　]{2,}',  # Include full-width spaces
+        self.noise_patterns: Dict[str, str] = {
+            'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',
+            'speaker_tags': r'\[[^\]]*\]|\([^)]*\)',
+            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー|そうですね|ちょっと|まあ|そうですね|はい|あれ|そう|うん|えっとですね|そうですねー|まぁね|あのですね|そうそう)\b',
+            'repeated_chars': r'([^\W\d_])\1{2,}',
+            'multiple_spaces': r'[\s　]{2,}',
             'empty_lines': r'\n\s*\n',
-            'punctuation': r'([。．！？])\1+',  # Handle repeated punctuation
-            'noise_symbols': r'[♪♫♬♩†‡◊◆◇■□▲△▼▽○●◎⊕⊖⊗⊘⊙⊚⊛⊜⊝]'
+            'punctuation': r'([。．！？])\1+',
+            'noise_symbols': r'[♪♫♬♩†‡◊◆◇■□▲△▼▽○●◎⊕⊖⊗⊘⊙⊚⊛⊜⊝]',
+            'parentheses': r'（[^）]*）|\([^)]*\)',  # Japanese and English parentheses
+            'unnecessary_symbols': r'[＊∗※#＃★☆►▷◁◀→←↑↓]',
+            'repeated_particles': r'((?:です|ます|した|ました|ません|で|に|は|が|を|な|の|と|も|や|へ|より|から|まで|による|において|について|として|という|といった|における|であって|であり|である|のような|かもしれない)\s*)+',
+            'excessive_honorifics': r'(?:さん|様|氏|君|先生|殿){2,}',
+            'ascii_art': r'[│┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛━┃┏┓┗┛┣┫┳┻╋]',
+            'machine_artifacts': r'(?:\(generated\)|\[automated\]|\[machine\s*translated\])',
+            'url_patterns': r'https?://\S+|www\.\S+',
+            'hashtags': r'#\w+',
+            'time_codes': r'\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?',
+            'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音|ノイズ)\]'
         }
         
-        # Additional patterns for Japanese text
+        # Japanese text normalization patterns
         self.jp_patterns = {
             'normalize_periods': {
                 '．': '。',
                 '…': '。',
-                '.': '。'
+                '.': '。',
+                '....': '。',
+                '...': '。',
+                '｡': '。'
+            },
+            'normalize_spaces': {
+                '　': ' ',
+                '\u3000': ' ',
+                '\xa0': ' '
+            },
+            'normalize_quotes': {
+                '「': '『',
+                '」': '』',
+                '"': '『',
+                '"': '』',
+                ''': '『',
+                ''': '』'
+            },
+            'normalize_punctuation': {
+                '、': '、',
+                '､': '、',
+                '？': '？',
+                '?': '？',
+                '!': '！',
+                '！': '！'
             },
             'remove_emphasis': r'[﹅﹆゛゜]'
         }
@@ -50,65 +80,188 @@ class TextProcessor:
     def _clean_text(self, text: str) -> str:
         """Enhanced text cleaning with improved noise removal and Japanese text handling"""
         if not text:
-            return text
-            
+            return ""
+        
         original_length = len(text)
         logger.debug(f"Original text length: {original_length}")
         
         try:
-            # Normalize periods
-            for old, new in self.jp_patterns['normalize_periods'].items():
-                text = text.replace(old, new)
-            
-            # Remove emphasis marks
-            text = re.sub(self.jp_patterns['remove_emphasis'], '', text)
+            # Text normalization
+            text = self._normalize_japanese_text(text)
             
             # Apply noise removal patterns
             for pattern_name, pattern in self.noise_patterns.items():
                 before_length = len(text)
-                text = re.sub(pattern, '', text if pattern_name != 'multiple_spaces' else ' ', text)
+                if pattern_name == 'multiple_spaces':
+                    text = re.sub(pattern, ' ', text)
+                elif pattern_name == 'repeated_particles':
+                    text = re.sub(pattern, lambda m: m.group(1).split()[0] + ' ', text)
+                else:
+                    text = re.sub(pattern, '', text)
                 after_length = len(text)
                 logger.debug(f"Pattern {pattern_name}: Removed {before_length - after_length} characters")
             
-            # Normalize spaces and line breaks
-            text = re.sub(r'\s+', ' ', text)
-            text = re.sub(r'\n{2,}', '\n', text)
+            # Sentence structure improvement
+            text = self._improve_sentence_structure(text)
             
-            # Additional Japanese text cleanup
-            text = re.sub(r'([。．！？、]) ?', r'\1', text)  # Remove spaces after Japanese punctuation
-            text = re.sub(r'([。．！？、])([^」』】）\s])', r'\1\n\2', text)  # Add line breaks after sentences
+            # Final validation
+            cleaned_text = text.strip()
+            if not cleaned_text:
+                logger.warning("Cleaning resulted in empty text")
+                return text
             
-            # Validate the cleaned text
-            cleaned_length = len(text.strip())
+            cleaned_length = len(cleaned_text)
             if cleaned_length < (original_length * 0.3):
-                logger.warning(f"Significant content loss after cleaning: {cleaned_length}/{original_length} characters remaining")
-                if cleaned_length < 100:  # Minimum viable length
+                logger.warning(f"Significant content loss after cleaning: {cleaned_length}/{original_length} characters")
+                if cleaned_length < 100:
                     logger.error("Cleaned text is too short, might have lost important content")
                     return text
             
-            return text.strip() or text
+            return cleaned_text
             
         except Exception as e:
             logger.error(f"Error during text cleaning: {str(e)}")
+            return text if text else ""
+
+    def _normalize_japanese_text(self, text: str) -> str:
+        """Normalize Japanese text with improved character handling"""
+        try:
+            # Apply all normalization patterns
+            for pattern_type, patterns in self.jp_patterns.items():
+                if isinstance(patterns, dict):
+                    for old, new in patterns.items():
+                        text = text.replace(old, new)
+                else:
+                    text = re.sub(patterns, '', text)
+            
+            return text
+        except Exception as e:
+            logger.error(f"Error in Japanese text normalization: {str(e)}")
             return text
 
-    def generate_summary(self, text: str, max_retries: int = 5, initial_delay: int = 2) -> str:
-        print("AI要約の生成を開始します...")
+    def _improve_sentence_structure(self, text: str) -> str:
+        """Improve sentence structure while preserving context"""
+        try:
+            # Add proper spacing after punctuation
+            text = re.sub(r'([。．！？、]) ?([^」』】）\s])', r'\1\n\2', text)
+            
+            # Fix spacing around quotes
+            text = re.sub(r'『\s+', '『', text)
+            text = re.sub(r'\s+』', '』', text)
+            
+            # Normalize multiple newlines
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            
+            # Ensure proper spacing between sentences
+            text = re.sub(r'([。！？](?:[」』】）])?)\s*(?=[^\s」』】）])', r'\1\n', text)
+            
+            # Improve readability of lists
+            text = re.sub(r'(^|\n)[-・](.*?)(?=\n|$)', r'\1• \2', text)
+            
+            return text
+        except Exception as e:
+            logger.error(f"Error in sentence structure improvement: {str(e)}")
+            return text
+
+    def get_transcript(self, url: str) -> str:
+        """Enhanced transcript retrieval with improved fallback handling"""
+        video_id = self._extract_video_id(url)
+        if not video_id:
+            raise ValueError("無効なYouTube URLです")
         
-        # First clean the text
-        cleaned_text = self._clean_text(text)
+        transcript = self._get_subtitles_with_priority(video_id)
+        if not transcript:
+            raise ValueError("字幕を取得できませんでした")
         
-        retry_count = 0
-        delay = initial_delay
-        last_error = None
+        return self._clean_text(transcript)
+
+    def _get_subtitles_with_priority(self, video_id: str) -> Optional[str]:
+        """Get subtitles with enhanced language priority handling"""
+        language_priority = [
+            ['ja'],
+            ['ja-JP'],
+            ['en-JP'],
+            ['en'],
+            ['en-US'],
+            None  # Auto-generated captions
+        ]
         
-        while retry_count < max_retries:
+        for lang in language_priority:
             try:
-                prompt = f'''
+                logger.debug(f"字幕を試行中: {lang if lang else '自動生成'}")
+                transcript_list = YouTubeTranscriptApi.get_transcript(
+                    video_id,
+                    languages=[lang] if lang else None
+                )
+                
+                # Enhanced transcript processing with context preservation
+                transcript_segments = []
+                current_segment = []
+                
+                for entry in transcript_list:
+                    if entry.get('duration', 0) <= 0.5:  # Skip very short segments
+                        continue
+                    
+                    text = entry['text']
+                    text = re.sub(r'\[.*?\]', '', text)  # Remove bracketed content
+                    text = text.strip()
+                    
+                    if not text:
+                        continue
+                    
+                    # Check if this segment ends with sentence-ending punctuation
+                    if re.search(r'[。．.！!？?]$', text):
+                        current_segment.append(text)
+                        if current_segment:
+                            transcript_segments.append(' '.join(current_segment))
+                            current_segment = []
+                    else:
+                        current_segment.append(text)
+                
+                # Add any remaining segments
+                if current_segment:
+                    transcript_segments.append(' '.join(current_segment))
+                
+                if transcript_segments:
+                    return '\n'.join(transcript_segments)
+                    
+            except Exception as e:
+                logger.debug(f"字幕取得失敗 ({lang if lang else '自動生成'}): {str(e)}")
+                continue
+        
+        return None
+
+    def _extract_video_id(self, url: str) -> Optional[str]:
+        """Extract video ID from YouTube URL with enhanced validation"""
+        try:
+            patterns = [
+                r'(?:v=|\/videos\/|embed\/|youtu.be\/|\/v\/|\/e\/|watch\?v%3D|watch\?feature=player_embedded&v=|%2Fvideos%2F|embed%\u200C\u200B2F|youtu.be%2F|%2Fv%2F)([^#\&\?\n]*)',
+                r'(?:youtu\.be\/|youtube\.com(?:\/embed\/|\/v\/|\/watch\?v=|\/watch\?.+&v=))([\w-]{11})'
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, url)
+                if match:
+                    video_id = match.group(1)
+                    if len(video_id) == 11:  # Validate ID length
+                        return video_id
+            
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting video ID: {str(e)}")
+            return None
+
+    def generate_summary(self, text: str) -> str:
+        """Generate summary with improved text processing"""
+        if not text:
+            return ""
+            
+        try:
+            prompt = f'''
 以下のYouTube動画コンテンツから構造化された要約を生成してください：
 
 入力テキスト:
-{cleaned_text}
+{text}
 
 必須要素:
 1. タイトル（見出し1）
@@ -137,180 +290,26 @@ class TextProcessor:
 
 ## 結論
 [まとめと結論]
-
-上記のフォーマットに従って、簡潔で分かりやすい要約を生成してください。
 '''
-                
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.3,
-                        top_p=0.8,
-                        top_k=40,
-                        max_output_tokens=8192,
-                    )
+            
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    top_p=0.8,
+                    top_k=40,
+                    max_output_tokens=8192,
                 )
-                
-                if not response or not response.text:
-                    raise ValueError("Empty response from API")
-                
-                print("要約の生成が完了しました")
-                return response.text
-                
-            except Exception as e:
-                retry_count += 1
-                delay *= 2  # Exponential backoff
-                last_error = str(e)
-                
-                if retry_count < max_retries:
-                    print(f"要約の生成に失敗しました。{delay}秒後に再試行します... ({retry_count}/{max_retries})")
-                    time.sleep(delay)
-                else:
-                    error_msg = f"要約の生成に失敗しました: {last_error}"
-                    print(error_msg)
-                    raise Exception(error_msg)
-
-    def get_transcript(self, url: str) -> str:
-        video_id = self._extract_video_id(url)
-        if not video_id:
-            raise Exception("無効なYouTube URLです")
-        
-        try:
-            # First try getting subtitles
-            try:
-                print("字幕の取得を試みています...")
-                transcript = self._get_subtitles(video_id)
-                if transcript:
-                    # Clean and validate subtitle text
-                    cleaned_transcript = self._clean_text(transcript)
-                    if cleaned_transcript:
-                        return cleaned_transcript
-            except Exception as e:
-                print(f"字幕の取得に失敗しました: {str(e)}")
+            )
             
-            # If subtitles not available, use enhanced Speech-to-Text
-            try:
-                print("音声認識による文字起こしを開始します...")
-                # Download audio with enhanced error handling
-                yt = pytube.YouTube(url)
-                if not yt:
-                    raise Exception("YouTubeの動画情報を取得できませんでした")
-                    
-                audio_stream = yt.streams.filter(only_audio=True).first()
-                if not audio_stream:
-                    raise Exception("音声ストリームを取得できませんでした")
-                
-                print("音声ファイルをダウンロード中...")
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    audio_path = os.path.join(temp_dir, "audio.mp4")
-                    try:
-                        audio_stream.download(filename=audio_path)
-                    except Exception as e:
-                        raise Exception(f"音声ファイルのダウンロードに失敗しました: {str(e)}")
-                    
-                    print("音声認識の準備中...")
-                    client = speech.SpeechClient()
-                    
-                    # Enhanced audio configuration
-                    with io.open(audio_path, "rb") as audio_file:
-                        content = audio_file.read()
-                    
-                    audio = speech.RecognitionAudio(content=content)
-                    config = speech.RecognitionConfig(
-                        encoding=speech.RecognitionConfig.AudioEncoding.MP3,
-                        sample_rate_hertz=16000,
-                        language_code="ja-JP",
-                        enable_automatic_punctuation=True,
-                        model="video",
-                        use_enhanced=True,
-                        audio_channel_count=2,
-                        enable_word_time_offsets=True,
-                        enable_word_confidence=True,
-                        profanity_filter=True
-                    )
-                    
-                    print("音声認識を実行中...")
-                    operation = client.long_running_recognize(config=config, audio=audio)
-                    response = operation.result()
-                    
-                    # Enhanced transcript processing
-                    transcript = ""
-                    if response and hasattr(response, 'results'):
-                        for result in response.results:
-                            if result.alternatives:
-                                # Only include high confidence results
-                                if result.alternatives[0].confidence >= 0.8:
-                                    transcript += result.alternatives[0].transcript + "\n"
-                    
-                    if not transcript:
-                        raise Exception("音声認識に失敗しました")
-                    
-                    # Clean and enhance the transcript
-                    cleaned_transcript = self._clean_text(transcript)
-                    
-                    print("文字起こし完了")
-                    return cleaned_transcript
-                    
-            except Exception as e:
-                raise Exception(f"音声認識による文字起こしに失敗しました: {str(e)}")
-                
+            if not response or not response.text:
+                raise ValueError("Empty response from API")
+            
+            return response.text
+            
         except Exception as e:
-            error_msg = f"文字起こしの取得に失敗しました: {str(e)}"
-            print(error_msg)
-            raise Exception(error_msg)
-
-    def _extract_video_id(self, url: str) -> Optional[str]:
-        """Extract video ID from YouTube URL with enhanced validation"""
-        try:
-            patterns = [
-                r'(?:v=|\/videos\/|embed\/|youtu.be\/|\/v\/|\/e\/|watch\?v%3D|watch\?feature=player_embedded&v=|%2Fvideos%2F|embed%\u200C\u200B2F|youtu.be%2F|%2Fv%2F)([^#\&\?\n]*)',
-                r'(?:youtu\.be\/|youtube\.com(?:\/embed\/|\/v\/|\/watch\?v=|\/watch\?.+&v=))([\w-]{11})'
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, url)
-                if match:
-                    return match.group(1)
-            
-            return None
-        except Exception as e:
-            logger.error(f"Error extracting video ID: {str(e)}")
-            return None
-
-    def _get_subtitles(self, video_id: str) -> Optional[str]:
-        """Enhanced subtitle retrieval with better language handling"""
-        languages_to_try = [
-            ['ja'],
-            ['ja-JP'],
-            ['en'],
-            ['en-US'],
-            None  # Try auto-generated captions as last resort
-        ]
-        
-        for lang in languages_to_try:
-            try:
-                if lang:
-                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=lang)
-                else:
-                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-                
-                # Enhanced transcript processing
-                transcript_text = []
-                for entry in transcript_list:
-                    # Only include entries with duration > 0.5 seconds
-                    if entry.get('duration', 0) > 0.5:
-                        text = entry['text']
-                        # Basic cleaning before joining
-                        text = re.sub(r'\[.*?\]', '', text)  # Remove bracketed content
-                        text = text.strip()
-                        if text:
-                            transcript_text.append(text)
-                
-                return ' '.join(transcript_text)
-            except Exception:
-                continue
-        
-        return None
+            logger.error(f"Error generating summary: {str(e)}")
+            raise
 
     def proofread_text(self, text: str, max_retries: int = 5, initial_delay: int = 1) -> str:
         """Proofread and enhance text with improved validation and logging"""
