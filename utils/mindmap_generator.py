@@ -29,21 +29,15 @@ class MindMapGenerator:
         if not syntax or not isinstance(syntax, str):
             return self._generate_fallback_mindmap()
         
-        # 行を分割してクリーニング
         lines = []
-        lines.append('mindmap')  # 最初の行は必ずmindmap
+        lines.append('mindmap')
         
-        # 残りの行を処理
         for line in syntax.strip().split('\n')[1:]:
             if line.strip():
-                # インデントを計算
                 indent = len(line) - len(line.lstrip())
                 indent_level = indent // 2
-                
-                # クリーンな行を生成
                 clean_line = line.strip()
                 if clean_line:
-                    # 2スペースでインデント
                     formatted_line = '  ' * indent_level + clean_line
                     lines.append(formatted_line)
         
@@ -56,22 +50,21 @@ class MindMapGenerator:
 入力テキスト：
 {text}
 
-出力形式：
+必須規則：
+1. 必ず最初の行は「mindmap」のみ
+2. インデントは厳密に半角スペース2個
+3. ルートノードは「root(メインテーマ)」の形式
+4. 子ノードはプレーンテキストのみ
+5. 装飾や特殊文字は使用禁止
+6. 最大2階層まで
+
+出力例：
 mindmap
-  root((メインテーマ))
+  root(メインテーマ)
     トピック1
+    トピック2
       サブトピック1
       サブトピック2
-    トピック2
-      サブトピック3
-
-必須ルール：
-1. 最初の行は必ず「mindmap」のみ
-2. インデントは半角スペース2つで統一
-3. ルートノードは必ずroot((テキスト))形式
-4. 子ノードはインデントのみで階層を表現
-5. 特殊文字、装飾は一切使用しない
-6. 最大3階層まで
 '''
 
         try:
@@ -106,12 +99,11 @@ mindmap
     def _generate_fallback_mindmap(self):
         """Generate a simple fallback mindmap"""
         return '''mindmap
-  root((コンテンツ概要))
+  root(コンテンツ概要)
     トピック1
       サブトピック1
-      サブトピック2
     トピック2
-      サブトピック3'''
+      サブトピック2'''
 
     def generate_mindmap(self, text):
         if not text:
@@ -130,7 +122,7 @@ mindmap
             
             # 最終検証
             lines = formatted_syntax.split('\n')
-            if len(lines) < 2 or not lines[1].strip().startswith('root(('):
+            if len(lines) < 2 or not lines[1].strip().startswith('root('):
                 return self._generate_fallback_mindmap()
                 
             return formatted_syntax
