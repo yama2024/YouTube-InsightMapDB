@@ -11,34 +11,10 @@ import io
 import requests
 import logging
 import glob
-import signal
-from functools import wraps
-import threading
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-def timeout(seconds):
-    """Timeout decorator for functions"""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            result = [TimeoutError('Function call timed out')]
-            def worker():
-                try:
-                    result[0] = func(*args, **kwargs)
-                except Exception as e:
-                    result[0] = e
-            thread = threading.Thread(target=worker)
-            thread.daemon = True
-            thread.start()
-            thread.join(seconds)
-            if isinstance(result[0], Exception):
-                raise result[0]
-            return result[0]
-        return wrapper
-    return decorator
 
 class PDFGenerator:
     def __init__(self):
@@ -46,7 +22,6 @@ class PDFGenerator:
         self._setup_styles()
 
     def _setup_fonts(self):
-        """日本語フォントの設定"""
         try:
             # Additional font paths for Nix and common Linux distributions
             font_paths = [
@@ -76,6 +51,7 @@ class PDFGenerator:
             
             if not font_found:
                 logger.warning("日本語フォントが見つかりません。代替フォントを使用します。")
+                # Register a basic fallback font
                 self.use_fallback_fonts = True
             else:
                 self.use_fallback_fonts = False
@@ -85,17 +61,20 @@ class PDFGenerator:
             self.use_fallback_fonts = True
 
     def _encode_text(self, text):
-        """テキストのエンコーディング処理"""
+        """Ensure text is properly encoded for PDF generation"""
         try:
+            # Try UTF-8 encoding/decoding
             return text.encode('utf-8', errors='ignore').decode('utf-8')
         except Exception as e:
             logger.error(f"テキストエンコーディングエラー: {str(e)}")
+            # Return original text if encoding fails
             return text
 
     def _setup_styles(self):
         """スタイルの設定"""
         self.styles = getSampleStyleSheet()
         
+        # 基本フォント設定
         base_font = 'NotoSansCJK' if not self.use_fallback_fonts else 'Helvetica'
         logger.info(f"使用するフォント: {base_font}")
         
@@ -120,13 +99,9 @@ class PDFGenerator:
             spaceAfter=20
         ))
 
-    @timeout(60)  # Set 60-second timeout for PDF generation
     def create_pdf(self, video_info, transcript, summary, proofread_text=''):
-        """分析結果のPDF生成"""
+        """分析結果のPDFを生成"""
         try:
-            if not transcript or not summary:
-                raise ValueError("必須コンテンツ(文字起こしまたは要約)が不足しています")
-
             buffer = io.BytesIO()
             doc = SimpleDocTemplate(
                 buffer,
@@ -140,6 +115,10 @@ class PDFGenerator:
 
             elements = []
             logger.info("PDFの生成を開始します")
+
+            # Validate required content
+            if not transcript or not summary:
+                raise ValueError("必須コンテンツ(文字起こしまたは要約)が不足しています")
 
             # タイトル
             title_style = ParagraphStyle(
@@ -182,7 +161,7 @@ class PDFGenerator:
             if 'thumbnail_url' in video_info and video_info['thumbnail_url']:
                 try:
                     logger.info("サムネイル画像の取得を開始します")
-                    response = requests.get(video_info['thumbnail_url'], timeout=10)
+                    response = requests.get(video_info['thumbnail_url'])
                     if response.status_code == 200:
                         thumbnail_data = response.content
                         thumbnail_buffer = io.BytesIO(thumbnail_data)
@@ -196,7 +175,7 @@ class PDFGenerator:
             # 文字起こし
             logger.info("文字起こしの追加を開始します")
             elements.append(Paragraph("文字起こし", self.styles['JapaneseHeading']))
-            max_chars = 1000  # テキスト処理の分割サイズ
+            max_chars = 1000  # Chunk size for text processing
             transcript_chunks = [transcript[i:i+max_chars] for i in range(0, len(transcript), max_chars)]
             for chunk in transcript_chunks:
                 elements.append(Paragraph(self._encode_text(chunk), self.styles['JapaneseBody']))
