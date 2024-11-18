@@ -217,17 +217,31 @@ try:
                     with col2:
                         if st.button("✨ テキストを整形", help="AIを使用して文章を校正し、読みやすく整形します"):
                             try:
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
+                                
+                                def update_progress(progress, message):
+                                    progress_bar.progress(progress)
+                                    status_text.text(message)
+                                
                                 with st.spinner("テキストを整形中..."):
                                     text_processor = TextProcessor()
-                                    enhanced_text = text_processor.proofread_text(st.session_state.transcript)
+                                    enhanced_text = text_processor.proofread_text(
+                                        st.session_state.transcript,
+                                        progress_callback=update_progress
+                                    )
                                     st.session_state.enhanced_text = enhanced_text
-                                    update_progress('proofread')
-                                    
+                                    update_progress(100, 'テキストの整形が完了しました')
+                                
+                                progress_bar.empty()
+                                status_text.empty()
                                 st.success("テキストの整形が完了しました")
+                                
                                 st.markdown("### 整形後のテキスト")
                                 st.markdown('<div class="glass-container">', unsafe_allow_html=True)
                                 st.markdown(enhanced_text.replace('\n', '  \n'), unsafe_allow_html=True)
                                 st.markdown('</div>', unsafe_allow_html=True)
+                                
                             except Exception as e:
                                 st.error(f"テキストの整形中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error in text enhancement: {str(e)}")
