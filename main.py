@@ -299,44 +299,43 @@ with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_s
                     st.stop()
             
             if st.session_state.mindmap:
-                try:
-                    # Debug output for mindmap syntax
-                    st.markdown("### Debug: Generated Mermaid Syntax")
+                st.markdown("## Mind Map Visualization")
+                
+                # Display debug information in an expander
+                with st.expander("Debug Information", expanded=False):
+                    st.markdown("### Generated Mermaid Syntax")
                     st.code(st.session_state.mindmap, language="mermaid")
+                
+                # Add error handling for mindmap rendering
+                try:
+                    # Validate mindmap syntax
+                    if not st.session_state.mindmap.startswith('mindmap'):
+                        raise ValueError("Invalid mindmap syntax: Must start with 'mindmap'")
                     
                     # Render mindmap with enhanced error handling
-                    try:
-                        st_mermaid(
-                            st.session_state.mindmap,
-                            height="600px",
-                            width="100%"
-                        )
-                    except Exception as render_error:
-                        st.error(f"マインドマップのレンダリングに失敗しました: {str(render_error)}")
-                        st.info("マインドマップの構文を確認して、もう一度生成してください。")
-                        
-                        # Show retry button with error details
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.code(st.session_state.mindmap, language="mermaid")
-                        with col2:
-                            if st.button("🔄 再生成", use_container_width=True):
-                                st.session_state.mindmap = None
-                                st.rerun()
-                except Exception as e:
-                    st.error(f"マインドマップの処理中にエラーが発生しました: {str(e)}")
-                    st.info("フォールバックとしてシンプルなマインドマップを生成します。")
-                    try:
-                        mindmap_gen = MindMapGenerator()
-                        st.session_state.mindmap = mindmap_gen._generate_fallback_mindmap("")
-                        st_mermaid(
-                            st.session_state.mindmap,
-                            height="600px",
-                            width="100%"
-                        )
-                    except Exception as fallback_error:
-                        st.error(f"フォールバックマインドマップの生成にも失敗しました: {str(fallback_error)}")
-                    st.stop()
+                    st.markdown("### Interactive Mind Map")
+                    st_mermaid(
+                        st.session_state.mindmap,
+                        height="600px",
+                        width="100%"
+                    )
+                    
+                    # Add download button for the mindmap syntax
+                    st.download_button(
+                        label="Download Mermaid Syntax",
+                        data=st.session_state.mindmap,
+                        file_name="mindmap.mmd",
+                        mime="text/plain"
+                    )
+                    
+                except Exception as render_error:
+                    st.error(f"マインドマップのレンダリングに失敗しました: {str(render_error)}")
+                    st.info("マインドマップの構文を確認して、もう一度生成してください。")
+                    
+                    # Show retry button
+                    if st.button("🔄 マインドマップを再生成", use_container_width=True):
+                        st.session_state.mindmap = None
+                        st.experimental_rerun()
 
 # Step 4: Enhancement
 with st.expander("Step 4: Enhancement", expanded=st.session_state.current_step == 4):
