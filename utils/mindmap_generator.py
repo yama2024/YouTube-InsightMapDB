@@ -16,7 +16,8 @@ class MindMapGenerator:
         if not api_key:
             raise ValueError("Gemini API key is not set in environment variables")
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        # Update to use Gemini 1.5 Pro for better results
+        self.model = genai.GenerativeModel('gemini-1.5-pro')
 
     def _escape_special_characters(self, text):
         """Escape special characters in text while preserving icon syntax"""
@@ -137,43 +138,63 @@ class MindMapGenerator:
 
     def _generate_mindmap_internal(self, text):
         """Internal method for mindmap generation"""
-        prompt = """
-テキストコンテンツからMermaid形式のマインドマップを生成してください。
+        prompt = f"""
+以下の手順でコンテンツの内容から洗練されたMermaid形式のマインドマップを生成してください：
 
-入力テキスト:
+1. まず以下のテキストコンテンツを解析してください:
 {text}
 
-必須フォーマット規則:
-1. 最初の行は必ず 'mindmap' から始める
-2. インデントは2スペースを使用
-3. ルートノードは必ず root((テキスト)) の形式
-4. 各ノードには適切な絵文字アイコンを追加（::icon[絵文字]の形式）
+2. 必須フォーマット規則に従ってマインドマップを生成してください:
+   - 最初の行は必ず 'mindmap' から開始
+   - インデントは2スペースを使用
+   - ルートノードは root((中心テーマ)) の形式で表現
+   - 各ノードには必ず適切なアイコンを付加（::icon[絵文字]）
+   - 階層構造を3-4レベルまで展開
 
-アイコンガイド:
-- 📝 : 説明・定義
-- 💡 : アイデア・インサイト
-- 🔍 : 分析・詳細
-- 📊 : データ・統計
-- 🎯 : 目標・ゴール
-- ⚡ : 重要ポイント
-- 🔄 : プロセス・手順
+3. 以下のアイコンを適切に使用してください:
+   - 🎯 中心テーマ（ルートノード）
+   - 📚 概要・基本情報  
+   - 💡 アイデア・重要ポイント
+   - 🔍 詳細・分析
+   - 📊 データ・統計
+   - ⚡ キーポイント
+   - 🔄 プロセス・手順
+   - 📝 例示・具体例
+   - ✨ 特徴・特性
+   - 🎨 デザイン要素
+   - 🛠️ 実装・技術
+   - 🎬 メディア関連
+   - 📱 インターフェース
+   - 🔗 関連事項
+   - ❓ 課題・疑問点
+   - ✅ 解決策・結論
 
-出力例:
+4. 出力例の形式に従ってください:
+
 mindmap
   root((🎯 メインテーマ))
-    概要::icon[📝]
-      要点1::icon[💡]
-      要点2::icon[⚡]
-    詳細::icon[🔍]
-      分析1::icon[📊]
-      分析2::icon[📊]
+    概要::icon[📚]
+      基本情報::icon[📝]
+      重要性::icon[⚡]
+    主要ポイント::icon[💡]
+      詳細分析::icon[🔍]
+      データ::icon[📊]
+    実装手法::icon[🛠️]
+      具体例::icon[📝]
+      手順::icon[🔄]
+
+注意事項:
+- 必ず各ノードにアイコンを付加すること
+- 論理的な階層構造を維持すること
+- 関連性の高い項目をグループ化すること
+- インデントは2スペースを厳密に守ること
 """
 
         try:
             response = self.model.generate_content(
-                prompt.format(text=text),
+                prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.2,  # Lower temperature for more consistent output
+                    temperature=0.2,
                     top_p=0.9,
                     top_k=40,
                     max_output_tokens=8192,
