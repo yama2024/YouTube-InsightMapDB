@@ -287,25 +287,42 @@ try:
 
                         if st.button("✨ テキストを整形", help="AIを使用して文章を校正し、読みやすく整形します"):
                             try:
-                                progress_placeholder = st.empty()
-                                status_placeholder = st.empty()
-                                progress_bar = progress_placeholder.progress(0)
-                                
-                                def update_enhancement_progress(progress: float, message: str):
-                                    """Update enhancement progress in session state and UI"""
-                                    st.session_state.enhancement_progress = {
-                                        'progress': progress,
-                                        'message': message
-                                    }
-                                    progress_bar.progress(progress)
-                                    status_placeholder.markdown(f'<div class="progress-message">{message}</div>', unsafe_allow_html=True)
-                                
-                                with st.spinner("テキストを整形中..."):
-                                    text_processor = TextProcessor()
+                                # Create a container for progress tracking
+                                progress_container = st.container()
+                                with progress_container:
+                                    st.markdown('<div class="progress-container">', unsafe_allow_html=True)
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                    # Add stats columns
+                                    stats_cols = st.columns(2)
                                     
-                                    # Initial progress
-                                    update_enhancement_progress(0.1, "🔍 テキストの解析を開始...")
-                                    time.sleep(0.5)  # Visual feedback
+                                    def update_enhancement_progress(progress: float, message: str):
+                                        """Update enhancement progress in session state and UI"""
+                                        st.session_state.enhancement_progress = {
+                                            'progress': progress,
+                                            'message': message
+                                        }
+                                        progress_bar.progress(progress)
+                                        status_text.markdown(
+                                            f'<div class="progress-message">{message}</div>',
+                                            unsafe_allow_html=True
+                                        )
+                                        
+                                        # Update stats
+                                        if progress == 1.0 and message.startswith("✨"):
+                                            with stats_cols[0]:
+                                                st.metric(
+                                                    "処理済み文字数",
+                                                    f"{len(st.session_state.transcript):,}字"
+                                                )
+                                            with stats_cols[1]:
+                                                st.metric(
+                                                    "処理時間",
+                                                    f"{(time.time() - start_time):.1f}秒"
+                                                )
+                                    
+                                    start_time = time.time()
+                                    text_processor = TextProcessor()
                                     
                                     # Start enhancement process
                                     enhanced_text = text_processor.proofread_text(
@@ -316,37 +333,33 @@ try:
                                     if enhanced_text:
                                         st.session_state.enhanced_text = enhanced_text
                                         update_step_progress('proofread')
-                                        update_enhancement_progress(1.0, "✨ テキストの整形が完了しました!")
-                                        
-                                        # Success message with additional details
-                                        st.success("テキストの整形が完了しました")
                                         
                                         # Display enhanced text with improved formatting
                                         st.markdown("#### 整形後のテキスト")
-                                        st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+                                        st.markdown('<div class="glass-container enhanced-text">', unsafe_allow_html=True)
                                         st.markdown(enhanced_text.replace('\n', '  \n'))
                                         st.markdown('</div>', unsafe_allow_html=True)
                                         
-                                        # Add comparison metrics
-                                        original_length = len(st.session_state.transcript)
-                                        enhanced_length = len(enhanced_text)
-                                        st.markdown("#### 処理の統計")
-                                        col1, col2 = st.columns(2)
-                                        with col1:
-                                            st.metric("元のテキスト文字数", f"{original_length:,}")
-                                        with col2:
-                                            st.metric("整形後の文字数", f"{enhanced_length:,}", 
-                                                     delta=f"{enhanced_length - original_length:,}")
-                                    else:
-                                        update_enhancement_progress(1.0, "⚠️ テキストの整形に問題が発生しました")
-                                        st.error("テキストの整形に失敗しました。もう一度お試しください。")
-                                
+                                        # Add text comparison
+                                        with st.expander("テキスト分析の詳細", expanded=True):
+                                            comp_cols = st.columns(2)
+                                            with comp_cols[0]:
+                                                st.metric(
+                                                    "元の文字数",
+                                                    f"{len(st.session_state.transcript):,}字"
+                                                )
+                                            with comp_cols[1]:
+                                                st.metric(
+                                                    "整形後の文字数",
+                                                    f"{len(enhanced_text):,}字",
+                                                    delta=len(enhanced_text) - len(st.session_state.transcript)
+                                                )
+                                    
+                                    st.markdown('</div>', unsafe_allow_html=True)
+                                    
                             except Exception as e:
-                                update_enhancement_progress(1.0, "❌ エラーが発生しました")
-                                st.error(f"テキストの整形中にエラーが発生しました: {str(e)}")
+                                st.error(f"テキスト整形中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error in text enhancement: {str(e)}")
-                    else:
-                        st.info("マインドマップの生成後に利用可能になります")
 
                 # Add PDF Export functionality
                 if st.session_state.transcript and st.session_state.summary:

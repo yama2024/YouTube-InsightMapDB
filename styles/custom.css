@@ -666,3 +666,71 @@ div.stApp {
     border-radius: 8px !important;
     transition: width 0.3s ease !important;
 }
+
+/* Enhanced Progress Tracking Styles */
+.progress-container {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-radius: 12px !important;
+    padding: 1.5rem !important;
+    margin: 1rem 0 !important;
+    backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+.progress-message {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+    padding: 0.8rem 1.2rem !important;
+    margin: 0.5rem 0 !important;
+    font-size: 1rem !important;
+    color: white !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    backdrop-filter: blur(5px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    transition: all 0.3s ease !important;
+}
+
+/* Progress States */
+.progress-message:has(span:contains("✨")) {
+    background: rgba(46, 204, 113, 0.15) !important;
+    border-color: rgba(46, 204, 113, 0.3) !important;
+}
+
+.progress-message:has(span:contains("🔍")) {
+    background: rgba(52, 152, 219, 0.15) !important;
+    border-color: rgba(52, 152, 219, 0.3) !important;
+}
+
+.progress-message:has(span:contains("⚠️")) {
+    background: rgba(241, 196, 15, 0.15) !important;
+    border-color: rgba(241, 196, 15, 0.3) !important;
+}
+
+.progress-message:has(span:contains("❌")) {
+    background: rgba(231, 76, 60, 0.15) !important;
+    border-color: rgba(231, 76, 60, 0.3) !important;
+}
+
+/* Progress Bar Enhancement */
+.stProgress > div > div > div {
+    background-color: rgba(74, 144, 226, 0.3) !important;
+    border-radius: 8px !important;
+    height: 8px !important;
+}
+
+.stProgress > div > div > div > div {
+    background: linear-gradient(90deg, #4a90e2, #90caf9) !important;
+    border-radius: 8px !important;
+    transition: width 0.3s ease !important;
+}
+
+/* Enhanced Text Container */
+.enhanced-text {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 12px !important;
+    padding: 1.5rem !important;
+    margin-top: 1rem !important;
+    border: 1px solid rgba(74, 144, 226, 0.2) !important;
+}
