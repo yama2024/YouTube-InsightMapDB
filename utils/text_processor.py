@@ -8,6 +8,7 @@ import tempfile
 import pytube
 import io
 import time
+from typing import List, Optional
 
 # Set up logging with more detailed format
 logging.basicConfig(
@@ -34,7 +35,7 @@ class TextProcessor:
             'empty_lines': r'\n\s*\n'
         }
 
-    def _clean_text(self, text):
+    def _clean_text(self, text: str) -> str:
         """Enhanced text cleaning with better noise removal"""
         if not text:
             return text
@@ -74,7 +75,7 @@ class TextProcessor:
             logger.error(f"Error during text cleaning: {str(e)}")
             return text
 
-    def generate_summary(self, text, max_retries=5, initial_delay=2):
+    def generate_summary(self, text: str, max_retries: int = 5, initial_delay: int = 2) -> str:
         print("AI要約の生成を開始します...")
         
         # First clean the text
@@ -87,40 +88,41 @@ class TextProcessor:
         while retry_count < max_retries:
             try:
                 prompt = f'''
-                以下のYouTube動画コンテンツから構造化された要約を生成してください：
+以下のYouTube動画コンテンツから構造化された要約を生成してください：
 
-                入力テキスト:
-                {cleaned_text}
+入力テキスト:
+{cleaned_text}
 
-                必須要素:
-                1. タイトル（見出し1）
-                2. 概要（2-3文の簡潔な説明）
-                3. 主要ポイント（箇条書き）
-                4. 詳細説明（サブセクション）
-                5. 結論（まとめ）
+必須要素:
+1. タイトル（見出し1）
+2. 概要（2-3文の簡潔な説明）
+3. 主要ポイント（箇条書き）
+4. 詳細説明（サブセクション）
+5. 結論（まとめ）
 
-                フォーマット:
-                # タイトル
-                {タイトル}
+出力形式:
+# [動画タイトル]
 
-                ## 概要
-                {概要文}
+## 概要
+[2-3文の説明]
 
-                ## 主要ポイント
-                - {重要ポイント1}
-                - {重要ポイント2}
-                - {重要ポイント3}
+## 主要ポイント
+- [重要なポイント1]
+- [重要なポイント2]
+- [重要なポイント3]
 
-                ## 詳細説明
-                ### {サブトピック1}
-                {詳細テキスト}
+## 詳細説明
+### [トピック1]
+[詳細な説明]
 
-                ### {サブトピック2}
-                {詳細テキスト}
+### [トピック2]
+[詳細な説明]
 
-                ## 結論
-                {まとめと結論}
-                '''
+## 結論
+[まとめと結論]
+
+上記のフォーマットに従って、簡潔で分かりやすい要約を生成してください。
+'''
                 
                 response = self.model.generate_content(
                     prompt,
@@ -132,7 +134,7 @@ class TextProcessor:
                     )
                 )
                 
-                if not response.text:
+                if not response or not response.text:
                     raise ValueError("Empty response from API")
                 
                 print("要約の生成が完了しました")
@@ -151,63 +153,7 @@ class TextProcessor:
                     print(error_msg)
                     raise Exception(error_msg)
 
-    def chunk_text(self, text, chunk_size=8000):
-        """Improved text chunking with better sentence preservation"""
-        logger.debug(f"Starting text chunking with chunk_size: {chunk_size}")
-        logger.debug(f"Original text length: {len(text)}")
-        
-        # Clean text before chunking
-        text = self._clean_text(text)
-        
-        # Split by sentences while preserving Japanese periods
-        sentence_pattern = r'([。．！？][\s]*)'
-        sentences = re.split(sentence_pattern, text)
-        
-        # Recombine sentences with their punctuation
-        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2] + [''])]
-        
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        total_processed = 0
-        
-        for sentence in sentences:
-            if not sentence.strip():
-                continue
-            
-            sentence_length = len(sentence)
-            total_processed += sentence_length
-            
-            # Check if adding this sentence would exceed chunk size
-            if current_length + sentence_length > chunk_size and current_chunk:
-                chunk_text = ''.join(current_chunk)
-                chunks.append(chunk_text)
-                logger.debug(f"Created chunk of length: {len(chunk_text)}")
-                current_chunk = [sentence]
-                current_length = sentence_length
-            else:
-                current_chunk.append(sentence)
-                current_length += sentence_length
-        
-        # Add the last chunk if it exists
-        if current_chunk:
-            chunk_text = ''.join(current_chunk)
-            chunks.append(chunk_text)
-            logger.debug(f"Created final chunk of length: {len(chunk_text)}")
-        
-        # Validate chunking results
-        total_chunks_length = sum(len(chunk) for chunk in chunks)
-        logger.debug(f"Total processed text length: {total_processed}")
-        logger.debug(f"Total chunks length: {total_chunks_length}")
-        
-        if total_chunks_length < (total_processed * 0.98):
-            logger.error("Text chunking validation failed: Content loss detected")
-            raise ValueError("Text chunking resulted in content loss")
-        
-        logger.info(f"Successfully created {len(chunks)} chunks")
-        return chunks
-
-    def get_transcript(self, url):
+    def get_transcript(self, url: str) -> str:
         video_id = self._extract_video_id(url)
         if not video_id:
             raise Exception("無効なYouTube URLです")
@@ -261,9 +207,9 @@ class TextProcessor:
                         model="video",
                         use_enhanced=True,
                         audio_channel_count=2,
-                        enable_word_time_offsets=True,  # Added for better timing
-                        enable_word_confidence=True,    # Added for confidence scoring
-                        profanity_filter=True          # Added to filter inappropriate content
+                        enable_word_time_offsets=True,
+                        enable_word_confidence=True,
+                        profanity_filter=True
                     )
                     
                     print("音声認識を実行中...")
@@ -272,11 +218,12 @@ class TextProcessor:
                     
                     # Enhanced transcript processing
                     transcript = ""
-                    for result in response.results:
-                        if result.alternatives:
-                            # Only include high confidence results
-                            if result.alternatives[0].confidence >= 0.8:
-                                transcript += result.alternatives[0].transcript + "\n"
+                    if response and hasattr(response, 'results'):
+                        for result in response.results:
+                            if result.alternatives:
+                                # Only include high confidence results
+                                if result.alternatives[0].confidence >= 0.8:
+                                    transcript += result.alternatives[0].transcript + "\n"
                     
                     if not transcript:
                         raise Exception("音声認識に失敗しました")
@@ -295,7 +242,7 @@ class TextProcessor:
             print(error_msg)
             raise Exception(error_msg)
 
-    def _extract_video_id(self, url):
+    def _extract_video_id(self, url: str) -> Optional[str]:
         """Extract video ID from YouTube URL with enhanced validation"""
         try:
             patterns = [
@@ -313,7 +260,7 @@ class TextProcessor:
             logger.error(f"Error extracting video ID: {str(e)}")
             return None
 
-    def _get_subtitles(self, video_id):
+    def _get_subtitles(self, video_id: str) -> Optional[str]:
         """Enhanced subtitle retrieval with better language handling"""
         languages_to_try = [
             ['ja'],
@@ -348,7 +295,7 @@ class TextProcessor:
         
         return None
 
-    def proofread_text(self, text, max_retries=5, initial_delay=1):
+    def proofread_text(self, text: str, max_retries: int = 5, initial_delay: int = 1) -> str:
         """Proofread and enhance text with improved validation and logging"""
         try:
             # Split text into chunks
@@ -356,97 +303,119 @@ class TextProcessor:
             total_chunks = len(text_chunks)
             logger.info(f"テキストを{total_chunks}個のチャンクに分割しました")
             
-            # Initialize result array with None values to maintain order
-            proofread_chunks = [None] * total_chunks
+            # Initialize result array with empty strings
+            proofread_chunks: List[str] = [""] * total_chunks
             remaining_chunks = list(range(total_chunks))
             
             original_text_length = len(text)
             logger.info(f"Original text length: {original_text_length}")
             
-            while remaining_chunks:
-                for chunk_index in remaining_chunks[:]:
-                    i = chunk_index + 1
-                    chunk = text_chunks[chunk_index]
-                    retry_count = 0
-                    delay = initial_delay
-                    
-                    while retry_count < max_retries:
-                        try:
-                            logger.info(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
-                            logger.debug(f"Processing chunk of length: {len(chunk)}")
-                            
-                            generation_config = genai.types.GenerationConfig(
-                                temperature=0.1,  # Lower temperature for more consistent output
+            for chunk_index in remaining_chunks[:]:
+                i = chunk_index + 1
+                chunk = text_chunks[chunk_index]
+                retry_count = 0
+                delay = initial_delay
+                
+                while retry_count < max_retries:
+                    try:
+                        logger.info(f"チャンク {i}/{total_chunks} を処理中... (試行: {retry_count + 1})")
+                        
+                        chunk_prompt = f'''
+入力テキストを校閲し、以下の基準で改善してください：
+
+1. 誤字・脱字の修正
+2. 句読点の適切な配置
+3. 自然な日本語表現への修正
+4. 冗長な表現の簡潔化
+
+制約：
+- 意味の変更は不可
+- 内容の追加・削除は不可
+- 文の順序は維持
+
+入力テキスト：
+{chunk}
+
+校閲後のテキストのみを出力してください。
+'''
+                        response = self.model.generate_content(
+                            chunk_prompt,
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=0.1,
                                 top_p=0.95,
                                 top_k=50,
-                                max_output_tokens=16384,  # Increased token limit
+                                max_output_tokens=16384,
                             )
-                            
-                            chunk_prompt = f'''
-# あなたの目的:
-{chunk}のテキストを完全に漏れなく校閲します。
-
-文字起こしした{chunk}のテキストについて、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。最後まで処理が完了するまで{max_retries}回繰り返して、実行してください。
-
-# 追加のルール:
-1. 校閲した文章以外の出力は決して行ってはいけません。
-2. 校閲した文章のみを出力します。
-3. 改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
-4. 時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
-5. スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
-6. テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
-'''
-                            response = self.model.generate_content(
-                                chunk_prompt,
-                                generation_config=generation_config
-                            )
-                            
-                            if response and response.text:
-                                proofread_chunk = response.text.strip()
-                                logger.debug(f"Processed chunk length: {len(proofread_chunk)}")
-                                
-                                # Stricter validation for chunk processing
-                                if len(proofread_chunk) < (len(chunk) * 0.8):  # Increased threshold
-                                    raise ValueError(f"Processed chunk is incomplete: {len(proofread_chunk)} vs {len(chunk)}")
-                                
-                                proofread_chunks[chunk_index] = proofread_chunk
-                                remaining_chunks.remove(chunk_index)
-                                logger.info(f"チャンク {i}/{total_chunks} の処理が完了しました")
-                                break
-                            else:
-                                raise ValueError(f"チャンク {i}/{total_chunks} の校閲結果が空です")
-                                
-                        except Exception as e:
-                            retry_count += 1
-                            if retry_count < max_retries:
-                                logger.warning(f"チャンク {i} の処理に失敗しました。{delay}秒後に再試行します...")
-                                time.sleep(delay)
-                                delay *= 2  # Exponential backoff
-                            else:
-                                logger.error(f"チャンク {i} の処理が{max_retries}回失敗しました。元のテキストを使用します。")
-                                proofread_chunks[chunk_index] = chunk
-                                remaining_chunks.remove(chunk_index)
-                                break
+                        )
+                        
+                        if not response or not response.text:
+                            raise ValueError("Empty response from API")
+                        
+                        proofread_chunks[chunk_index] = response.text.strip()
+                        break
+                        
+                    except Exception as e:
+                        retry_count += 1
+                        delay *= 2
+                        logger.error(f"Error processing chunk {i}: {str(e)}")
+                        
+                        if retry_count >= max_retries:
+                            logger.error(f"Failed to process chunk {i} after {max_retries} attempts")
+                            proofread_chunks[chunk_index] = chunk  # Use original chunk on failure
+                            break
+                        else:
+                            time.sleep(delay)
             
-            # Verify all chunks were processed
-            if None in proofread_chunks:
-                raise Exception("一部のチャンクが処理されていません")
-            
-            # Join all proofread chunks with proper spacing
-            final_text = '\n\n'.join(chunk.strip() for chunk in proofread_chunks if chunk)
+            # Combine all chunks
+            final_text = '\n'.join(chunk for chunk in proofread_chunks if chunk)
             
             # Validate final text
-            final_text_length = len(final_text)
-            logger.info(f"Final text length: {final_text_length}")
+            if not final_text or len(final_text.strip()) < (original_text_length * 0.5):
+                raise ValueError("Significant content loss detected in proofread text")
             
-            if final_text_length < (original_text_length * 0.5):
-                logger.error(f"Final text is too short: {final_text_length} vs {original_text_length}")
-                raise ValueError("校閲後のテキストが元のテキストと比べて極端に短くなっています")
-            
-            logger.info("すべてのチャンクの処理が完了しました")
             return final_text
-                
+            
         except Exception as e:
-            error_msg = f"テキストの校閲に失敗しました: {str(e)}"
+            error_msg = f"Error during proofreading: {str(e)}"
             logger.error(error_msg)
             raise Exception(error_msg)
+
+    def chunk_text(self, text: str, chunk_size: int = 8000) -> List[str]:
+        """Improved text chunking with better sentence preservation"""
+        logger.debug(f"Starting text chunking with chunk_size: {chunk_size}")
+        logger.debug(f"Original text length: {len(text)}")
+        
+        # Clean text before chunking
+        text = self._clean_text(text)
+        
+        # Split by sentences while preserving Japanese periods
+        sentence_pattern = r'([。．！？][\s]*)'
+        sentences = re.split(sentence_pattern, text)
+        
+        # Recombine sentences with their punctuation
+        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2] + [''])]
+        
+        chunks: List[str] = []
+        current_chunk: List[str] = []
+        current_length = 0
+        
+        for sentence in sentences:
+            if not sentence.strip():
+                continue
+            
+            sentence_length = len(sentence)
+            
+            # Check if adding this sentence would exceed chunk size
+            if current_length + sentence_length > chunk_size and current_chunk:
+                chunks.append(''.join(current_chunk))
+                current_chunk = [sentence]
+                current_length = sentence_length
+            else:
+                current_chunk.append(sentence)
+                current_length += sentence_length
+        
+        # Add the last chunk if it exists
+        if current_chunk:
+            chunks.append(''.join(current_chunk))
+        
+        return chunks
