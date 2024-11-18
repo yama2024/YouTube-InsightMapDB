@@ -788,15 +788,6 @@ wheels = [
 ]
 
 [[package]]
-name = "networkx"
-version = "3.4.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/fd/1d/06475e1cd5264c0b870ea2cc6fdb3e37177c1e565c43f56ff17a10e3937f/networkx-3.4.2.tar.gz", hash = "sha256:307c3669428c5362aab27c8a1260aa8f47c4e91d3891f48be0141738d8d053e1", size = 2151368 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/54/dd730b32ea14ea797530a4479b2ed46a6fb250f682a9cfb997e968bf0261/networkx-3.4.2-py3-none-any.whl", hash = "sha256:df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f", size = 1723263 },
-]
-
-[[package]]
 name = "numpy"
 version = "2.1.3"
 source = { registry = "https://pypi.org/simple" }
@@ -941,19 +932,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d6/b9/fb620dd47fc7cc9678af8f8bd8c772034ca4977237049287e99dda360b66/pillow-11.0.0-cp313-cp313t-win32.whl", hash = "sha256:607bbe123c74e272e381a8d1957083a9463401f7bd01287f50521ecb05a313f8", size = 2253197 },
     { url = "https://files.pythonhosted.org/packages/df/86/25dde85c06c89d7fc5db17940f07aae0a56ac69aa9ccb5eb0f09798862a8/pillow-11.0.0-cp313-cp313t-win_amd64.whl", hash = "sha256:5c39ed17edea3bc69c743a8dd3e9853b7509625c2462532e62baa0732163a904", size = 2572169 },
     { url = "https://files.pythonhosted.org/packages/51/85/9c33f2517add612e17f3381aee7c4072779130c634921a756c97bc29fb49/pillow-11.0.0-cp313-cp313t-win_arm64.whl", hash = "sha256:75acbbeb05b86bc53cbe7b7e6fe00fbcf82ad7c684b3ad82e3d711da9ba287d3", size = 2256828 },
-]
-
-[[package]]
-name = "plotly"
-version = "5.24.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-    { name = "tenacity" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/79/4f/428f6d959818d7425a94c190a6b26fbc58035cbef40bf249be0b62a9aedd/plotly-5.24.1.tar.gz", hash = "sha256:dbc8ac8339d248a4bcc36e08a5659bacfe1b079390b8953533f4eb22169b4bae", size = 9479398 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/ae/580600f441f6fc05218bd6c9d5794f4aef072a7d9093b291f1c50a9db8bc/plotly-5.24.1-py3-none-any.whl", hash = "sha256:f67073a1e637eb0dc3e46324d9d51e2fe76e9727c892dde64ddf1e1b51f29089", size = 19054220 },
 ]
 
 [[package]]
@@ -1227,10 +1205,8 @@ dependencies = [
     { name = "google-generativeai" },
     { name = "isodate" },
     { name = "kaleido" },
-    { name = "networkx" },
     { name = "pandas" },
     { name = "pillow" },
-    { name = "plotly" },
     { name = "pyperclip" },
     { name = "python-dotenv" },
     { name = "pytube" },
@@ -1238,6 +1214,7 @@ dependencies = [
     { name = "requests" },
     { name = "stqdm" },
     { name = "streamlit" },
+    { name = "streamlit-mermaid" },
     { name = "svglib" },
     { name = "weasyprint" },
     { name = "youtube-transcript-api" },
@@ -1252,10 +1229,8 @@ requires-dist = [
     { name = "google-generativeai", specifier = ">=0.8.3" },
     { name = "isodate", specifier = ">=0.7.2" },
     { name = "kaleido", specifier = "==0.2.1" },
-    { name = "networkx", specifier = ">=3.4.2" },
     { name = "pandas" },
     { name = "pillow", specifier = ">=10.1.0" },
-    { name = "plotly", specifier = ">=5.24.1" },
     { name = "pyperclip", specifier = ">=1.9.0" },
     { name = "python-dotenv" },
     { name = "pytube", specifier = ">=15.0.0" },
@@ -1263,6 +1238,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31.0" },
     { name = "stqdm", specifier = ">=0.0.5" },
     { name = "streamlit", specifier = ">=1.40.1" },
+    { name = "streamlit-mermaid", specifier = ">=0.2.0" },
     { name = "svglib", specifier = ">=1.5.1" },
     { name = "weasyprint", specifier = ">=62.3" },
     { name = "youtube-transcript-api", specifier = ">=0.6.2" },
@@ -1428,6 +1404,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/80/70/b76a32201b04a5a2a
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/14/857d0734989f3d26f2f965b2e3f67568ea7a6e8a60cb9c1ed7f774b6d606/streamlit-1.40.1-py2.py3-none-any.whl", hash = "sha256:b9d7a317a0cc88edd7857c7e07dde9cf95647d3ae51cbfa8a3db82fbb8a2990d", size = 8645398 },
 ]
+
+[[package]]
+name = "streamlit-mermaid"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/d7/cfb2b1fdebc736cd22d31f5f87debf8550c3bf616ebd290a9c2bf7d7e0a6/streamlit-mermaid-0.2.0.tar.gz", hash = "sha256:a7883f63be991a378b2c327efae9a03ae49e830481659ae1a955bf68597f9c48", size = 3762617 }
 
 [[package]]
 name = "svglib"

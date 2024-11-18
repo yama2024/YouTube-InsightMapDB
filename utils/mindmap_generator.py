@@ -1,8 +1,5 @@
-import networkx as nx
-import plotly.graph_objects as go
 import google.generativeai as genai
 import os
-import io
 import json
 import time
 import logging
@@ -36,21 +33,23 @@ class MindMapGenerator:
                 raise Exception(f"マインドマップの生成中にエラーが発生しました。しばらく待ってから再度お試しください。: {error_str}")
 
     def _generate_mindmap_internal(self, text):
-        """Internal method for mindmap generation"""
+        """Internal method for mindmap generation in Mermaid format"""
         prompt = f"""
-        以下のテキストから階層的なマインドマップを生成してください。
-        以下の形式でJSON形式で出力してください：
-        
-        {{
-            "center": "中心テーマ",
-            "branches": [
-                {{
-                    "name": "メインブランチ1",
-                    "sub_branches": ["サブブランチ1", "サブブランチ2"]
-                }}
-            ]
-        }}
-        
+        以下のテキストから階層的なマインドマップをMermaid形式で生成してください。
+        以下の形式で出力してください：
+
+        ```mermaid
+        graph TD
+            A[中心テーマ]
+            B[メインブランチ1]
+            C[メインブランチ2]
+            A --> B
+            A --> C
+            B --> B1[サブブランチ1]
+            B --> B2[サブブランチ2]
+            C --> C1[サブブランチ1]
+        ```
+
         テキスト:
         {text}
         """
@@ -60,144 +59,26 @@ class MindMapGenerator:
             if not response.text:
                 raise ValueError("APIレスポンスが空です")
 
-            # Clean and validate JSON string
-            json_str = response.text.strip()
-            # Remove markdown code blocks if present
-            if json_str.startswith('```json'):
-                json_str = json_str[7:]
-            elif json_str.startswith('```'):
-                json_str = json_str[3:]
-            if json_str.endswith('```'):
-                json_str = json_str[:-3]
+            # Extract Mermaid syntax from the response
+            mermaid_syntax = response.text.strip()
+            if mermaid_syntax.startswith('```mermaid'):
+                mermaid_syntax = mermaid_syntax[10:]
+            if mermaid_syntax.endswith('```'):
+                mermaid_syntax = mermaid_syntax[:-3]
             
-            json_str = json_str.strip()
+            mermaid_syntax = mermaid_syntax.strip()
             
-            # Remove any control characters and escape sequences
-            json_str = ''.join(char for char in json_str if ord(char) >= 32 or char in '\n\r\t')
+            # Validate the Mermaid syntax
+            if not mermaid_syntax.startswith('graph TD'):
+                raise ValueError("生成されたMermaid構文が不正です")
             
-            try:
-                mindmap_data = json.loads(json_str)
-                
-                # Validate structure
-                if not isinstance(mindmap_data, dict):
-                    raise ValueError("マインドマップデータが辞書形式ではありません")
-                if "center" not in mindmap_data:
-                    raise ValueError("中心テーマが見つかりません")
-                if "branches" not in mindmap_data or not isinstance(mindmap_data["branches"], list):
-                    raise ValueError("ブランチデータが正しい形式ではありません")
-                
-                return mindmap_data
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON解析エラー: {str(e)}")
-                logger.error(f"解析対象の文字列: {json_str}")
-                raise ValueError(f"マインドマップデータのJSON解析に失敗しました: {str(e)}")
+            return mermaid_syntax
                 
         except Exception as e:
             error_msg = f"マインドマップの生成中にエラーが発生しました: {str(e)}"
             logger.error(error_msg)
             raise Exception(error_msg)
 
-    def create_visualization(self, mindmap_data):
-        """Create plotly visualization from mindmap data"""
-        try:
-            G = nx.Graph()
-            
-            # Generate unique node IDs
-            node_id = 0
-            node_mapping = {}
-            
-            # Add center node
-            center = mindmap_data['center']
-            node_mapping[node_id] = center
-            G.add_node(node_id, label=center)
-            center_id = node_id
-            node_id += 1
-            
-            # Set colors
-            node_colors = ['#1B365D']  # Center node color
-            edge_colors = []
-            
-            # Add branches
-            for branch in mindmap_data['branches']:
-                # Add main branch
-                node_mapping[node_id] = branch['name']
-                G.add_node(node_id, label=branch['name'])
-                G.add_edge(center_id, node_id)
-                branch_id = node_id
-                node_id += 1
-                node_colors.append('#4A90E2')  # Main branch color
-                edge_colors.append('#8AB4F8')  # Edge color
-                
-                # Add sub-branches
-                for sub in branch['sub_branches']:
-                    node_mapping[node_id] = sub
-                    G.add_node(node_id, label=sub)
-                    G.add_edge(branch_id, node_id)
-                    node_id += 1
-                    node_colors.append('#7FB3D5')  # Sub-branch color
-                    edge_colors.append('#8AB4F8')  # Edge color
-            
-            # Calculate layout
-            pos = nx.spring_layout(G)
-            
-            # Create edge traces
-            edge_trace = []
-            for edge in G.edges():
-                x0, y0 = pos[edge[0]]
-                x1, y1 = pos[edge[1]]
-                edge_trace.append(
-                    go.Scatter(
-                        x=[x0, x1], y=[y0, y1],
-                        line=dict(width=2, color='#8AB4F8'),
-                        hoverinfo='none',
-                        mode='lines'
-                    )
-                )
-            
-            # Create node trace
-            node_trace = go.Scatter(
-                x=[pos[node][0] for node in G.nodes()],
-                y=[pos[node][1] for node in G.nodes()],
-                mode='markers+text',
-                marker=dict(
-                    size=30,
-                    color=node_colors,
-                    line_width=2
-                ),
-                text=[G.nodes[node]['label'] for node in G.nodes()],
-                textposition="middle center",
-                textfont=dict(
-                    family='Noto Sans JP, sans-serif',
-                    size=12,
-                    color='#1a365d'
-                ),
-                hoverinfo='text'
-            )
-            
-            # Create layout
-            layout = go.Layout(
-                showlegend=False,
-                hovermode='closest',
-                margin=dict(b=20,l=5,r=5,t=40),
-                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                width=800,
-                height=600,
-                font=dict(
-                    family='Noto Sans JP, sans-serif',
-                    size=12,
-                    color='#1a365d'
-                )
-            )
-            
-            # Create figure
-            fig = go.Figure(data=edge_trace + [node_trace], layout=layout)
-            return fig
-            
-        except Exception as e:
-            error_msg = f"マインドマップの可視化中にエラーが発生しました: {str(e)}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+    def create_visualization(self, mermaid_syntax):
+        """Return the Mermaid syntax directly for visualization"""
+        return mermaid_syntax

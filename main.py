@@ -5,6 +5,7 @@ from utils.mindmap_generator import MindMapGenerator
 from utils.pdf_generator import PDFGenerator
 import os
 import time
+from streamlit_mermaid import st_mermaid
 
 # Page configuration
 st.set_page_config(
@@ -186,8 +187,8 @@ with st.expander("Step 1: Video Input", expanded=st.session_state.current_step =
     )
 
     if youtube_url:
+        loading_spinner = show_loading_spinner("動画情報を取得中...", key="video_info")
         try:
-            loading_spinner = show_loading_spinner("動画情報を取得中...", key="video_info")
             yt_helper = YouTubeHelper()
             video_info = yt_helper.get_video_info(youtube_url)
             st.session_state.video_info = video_info
@@ -234,9 +235,9 @@ with st.expander("Step 2: Content Overview", expanded=st.session_state.current_s
             </div>
             ''', unsafe_allow_html=True)
             
-            text_processor = TextProcessor()
             loading_dots = show_loading_dots("文字起こしを生成中...", key="transcript")
             try:
+                text_processor = TextProcessor()
                 transcript = text_processor.get_transcript(youtube_url)
                 st.session_state.transcript = transcript
                 st.session_state.current_step = 3
@@ -283,28 +284,25 @@ with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_s
             if 'mindmap' not in st.session_state or not st.session_state.mindmap:
                 st.markdown('<h5 class="subsection-header">Mind Map Visualization</h5>', unsafe_allow_html=True)
                 mindmap_gen = MindMapGenerator()
-                loading_container = show_loading_spinner("マインドマップを生成中...", key="mindmap")
+                mindmap_loading = show_loading_spinner("マインドマップを生成中...", key="mindmap")
                 try:
-                    mindmap_data = mindmap_gen.generate_mindmap(st.session_state.transcript)
-                    fig = mindmap_gen.create_visualization(mindmap_data)
-                    fig.update_layout(
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        font=dict(color='white'),
-                    )
-                    st.session_state.mindmap = fig
+                    mermaid_syntax = mindmap_gen.generate_mindmap(st.session_state.transcript)
+                    st.session_state.mindmap = mermaid_syntax
                     st.session_state.current_step = 4
                     update_progress('mindmap')
                     time.sleep(0.5)
-                    loading_container.empty()
+                    mindmap_loading.empty()
                     show_success_message("マインドマップの生成が完了しました", key="mindmap_success")
                 except Exception as e:
-                    loading_container.empty()
+                    mindmap_loading.empty()
                     st.error(f"マインドマップの生成に失敗しました: {str(e)}")
                     st.stop()
             
             if st.session_state.mindmap:
-                st.plotly_chart(st.session_state.mindmap, use_container_width=True)
+                try:
+                    st_mermaid(st.session_state.mindmap, height="600px")
+                except Exception as e:
+                    st.error(f"マインドマップの表示に失敗しました: {str(e)}")
 
 # Step 4: Enhancement
 with st.expander("Step 4: Enhancement", expanded=st.session_state.current_step == 4):
@@ -378,14 +376,13 @@ with st.expander("Step 4: Enhancement", expanded=st.session_state.current_step =
                     st.session_state.proofread_transcript = proofread_transcript
                     st.session_state.current_step = 5
                     update_progress('proofread')
-                    if 'progress_bar' in locals():
-                        progress_bar.empty()
+                    progress_bar.empty()
                     show_success_message("テキストの校閲が完了しました")
                     st.rerun()
                 except Exception as e:
-                    if 'progress_bar' in locals():
-                        progress_bar.empty()
+                    progress_bar.empty()
                     st.error(f"テキストの校閲に失敗しました: {str(e)}")
+
         else:
             if st.button("🔄 校閲をやり直す", use_container_width=True, key="reproofread_button",
                         help="テキストの校閲をもう一度実行します"):
