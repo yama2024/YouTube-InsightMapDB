@@ -7,6 +7,7 @@ import time
 from typing import List, Optional, Dict, Any, Tuple
 from retrying import retry
 from cachetools import TTLCache, cached
+import json
 
 # Enhanced logging setup
 logging.basicConfig(
@@ -61,68 +62,164 @@ class TextProcessor:
             }
         }
 
-    def generate_summary(self, text: str) -> str:
-        """Generate a summary of the input text using Gemini 1.5 Pro"""
-        if not text:
-            logger.warning("Empty text provided for summary generation")
-            return ""
-
+    def _validate_text(self, text: str) -> Tuple[bool, str]:
+        """Validate input text and return validation status and error message"""
         try:
+            if not text:
+                return False, "入力テキストが空です"
+            
+            # Check minimum length (100 characters)
+            if len(text) < 100:
+                return False, "テキストが短すぎます（最小100文字必要）"
+            
+            # Validate text encoding
+            try:
+                text.encode('utf-8').decode('utf-8')
+            except UnicodeError:
+                return False, "テキストのエンコーディングが無効です"
+            
+            # Check for excessive noise or invalid patterns
+            noise_ratio = len(re.findall(r'[^\w\s。、！？」』）「『（]', text)) / len(text)
+            if noise_ratio > 0.3:  # More than 30% noise characters
+                return False, "テキストにノイズが多すぎます"
+            
+            return True, ""
+        except Exception as e:
+            logger.error(f"テキスト検証中にエラーが発生: {str(e)}")
+            return False, f"テキスト検証エラー: {str(e)}"
+
+    def _validate_summary_response(self, response: str) -> Tuple[bool, str]:
+        """Validate the generated summary response"""
+        try:
+            if not response:
+                return False, "生成された要約が空です"
+            
+            # Check for required sections
+            required_sections = ['概要', '主なポイント', '詳細な解説', 'まとめ']
+            for section in required_sections:
+                if section not in response:
+                    return False, f"必要なセクション '{section}' が見つかりません"
+            
+            # Check for minimum content length in each section
+            sections_content = re.split(r'#{1,2}\s+(?:概要|主なポイント|詳細な解説|まとめ)', response)
+            if any(len(section.strip()) < 50 for section in sections_content[1:]):
+                return False, "一部のセクションの内容が不十分です"
+            
+            # Verify bullet points in main points section
+            main_points_match = re.search(r'##\s*主なポイント\n(.*?)(?=##|$)', response, re.DOTALL)
+            if main_points_match:
+                main_points = main_points_match.group(1)
+                if len(re.findall(r'•|\*|\-', main_points)) < 2:
+                    return False, "主なポイントの箇条書きが不十分です"
+            
+            return True, ""
+        except Exception as e:
+            logger.error(f"要約の検証中にエラーが発生: {str(e)}")
+            return False, f"要約の検証エラー: {str(e)}"
+
+    def generate_summary(self, text: str) -> str:
+        """Generate a summary of the input text using Gemini 1.5 Pro with enhanced error handling and validation"""
+        logger.info("要約生成を開始します")
+        
+        try:
+            # Input validation
+            is_valid, error_msg = self._validate_text(text)
+            if not is_valid:
+                raise ValueError(f"入力テキストが無効です: {error_msg}")
+            
             # Check cache first
             cache_key = hash(text)
             cached_summary = self.summary_cache.get(cache_key)
             if cached_summary:
-                logger.info("Using cached summary")
+                logger.info("キャッシュされた要約を使用します")
                 return cached_summary
 
             # Clean the text before summarization
+            logger.debug("テキストのクリーニングを開始")
             cleaned_text = self._clean_text(text)
             
-            # Prepare the prompt for the model
+            # Prepare the enhanced prompt
             prompt = f"""
-# 目的
-提供されたYouTube動画の文字起こしテキストから、包括的な要約を生成します。
+# 目的と背景
+このテキストはYouTube動画の文字起こしから生成されたものです。
+視聴者が内容を効率的に理解できるよう、包括的な要約を生成します。
 
 # 要約のガイドライン
-1. 重要なポイントを漏らさず、簡潔に要約してください
-2. 専門用語は可能な限り平易な言葉で説明してください
-3. 階層的な構造で情報を整理してください
-4. 箇条書きと段落を適切に組み合わせて読みやすくしてください
+1. コンテンツの重要なポイントを漏らさず、簡潔に要約
+2. 専門用語や技術的な概念は以下のように扱う：
+   - 初出時に簡潔な説明を付記
+   - 可能な場合は平易な言葉で言い換え
+   - 重要な専門用語は文脈を保持
+3. 階層的な構造で情報を整理：
+   - メインテーマから詳細へと展開
+   - 関連する概念をグループ化
+4. 読みやすさの確保：
+   - 適切な見出しレベルを使用
+   - 箇条書きと段落を効果的に組み合わせ
+   - 論理的な流れを維持
 
 # 出力フォーマット
 以下の構造で要約を作成してください：
 
 # 概要
-[全体的な要約を2-3文で]
+[全体の要点を2-3文で簡潔に説明]
 
 ## 主なポイント
-• [重要なポイント1]
-• [重要なポイント2]
-• [重要なポイント3]
+• [重要なポイント1 - 具体的な例や数値を含める]
+• [重要なポイント2 - 技術用語がある場合は説明を付記]
+• [重要なポイント3 - 実践的な示唆や応用点を含める]
 
 ## 詳細な解説
-[より詳細な説明を段落形式で]
+[本文の詳細な解説：
+- 重要な概念の詳細な説明
+- 具体例や事例の紹介
+- 技術的な詳細（必要な場合）
+- 関連する背景情報]
 
 ## まとめ
-[結論や重要なメッセージを1-2文で]
+[主要な発見や示唆を1-2文で結論付け
+実践的な応用や今後の展望を示唆]
 
 # 入力テキスト：
 {cleaned_text}
 """
-
-            # Generate summary
-            response = self.model.generate_content(prompt)
-            if not response.text:
-                raise ValueError("AI modelからの応答が空でした")
-
-            # Process and format the summary
-            summary = response.text.strip()
+            logger.debug("Gemini APIにリクエストを送信")
             
-            # Cache the result
-            self.summary_cache[cache_key] = summary
+            # Generate summary with retry mechanism
+            for attempt in range(3):
+                try:
+                    response = self.model.generate_content(prompt)
+                    if not response or not response.text:
+                        raise ValueError("AIモデルからの応答が空でした")
+                    
+                    summary = response.text.strip()
+                    
+                    # Validate the generated summary
+                    is_valid, error_msg = self._validate_summary_response(summary)
+                    if not is_valid:
+                        raise ValueError(f"生成された要約が無効です: {error_msg}")
+                    
+                    # Cache the validated summary
+                    self.summary_cache[cache_key] = summary
+                    logger.info("要約の生成が正常に完了しました")
+                    return summary
+                    
+                except genai.types.generation_types.BlockedPromptException as e:
+                    logger.error(f"プロンプトがブロックされました: {str(e)}")
+                    raise ValueError("不適切なコンテンツが検出されました")
+                    
+                except genai.types.generation_types.GenerationException as e:
+                    logger.warning(f"生成エラー (試行 {attempt + 1}/3): {str(e)}")
+                    if attempt == 2:  # Last attempt
+                        raise ValueError(f"要約の生成に失敗しました: {str(e)}")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    
+                except Exception as e:
+                    logger.error(f"予期しないエラーが発生 (試行 {attempt + 1}/3): {str(e)}")
+                    if attempt == 2:  # Last attempt
+                        raise
+                    time.sleep(2 ** attempt)
             
-            return summary
-
         except Exception as e:
             error_msg = f"要約生成中にエラーが発生しました: {str(e)}"
             logger.error(error_msg)
@@ -421,31 +518,3 @@ class TextProcessor:
             error_msg = f"字幕の取得に失敗しました: {str(e)}"
             logger.error(error_msg)
             return None
-
-    def generate_summary(self, text: str) -> str:
-        """Generate summary with improved error handling"""
-        if not text:
-            return ""
-            
-        try:
-            prompt = f"""以下のテキストを要約してください。重要なポイントを箇条書きで示し、
-            その後に簡潔な要約を作成してください：
-
-            {text}
-
-            出力形式：
-            ■ 主なポイント：
-            • ポイント1
-            • ポイント2
-            • ポイント3
-
-            ■ 要約：
-            [簡潔な要約文]
-            """
-            
-            response = self.model.generate_content(prompt)
-            return response.text if response.text else "要約を生成できませんでした。"
-            
-        except Exception as e:
-            logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
-            return "要約の生成中にエラーが発生しました。"
