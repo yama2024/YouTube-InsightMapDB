@@ -20,8 +20,8 @@ div.stApp {
 .ai-summary-container {
     background: rgba(255, 255, 255, 0.1) !important;
     border-radius: 16px !important;
-    padding: 2rem !important;
-    margin: 1.5rem 0 !important;
+    padding: 2.5rem !important;
+    margin: 2rem 0 !important;
 }
 
 .summary-title {
@@ -34,29 +34,53 @@ div.stApp {
 
 .summary-content {
     font-size: 1.1rem !important;
-    line-height: 1.6 !important;
+    line-height: 1.8 !important;
     color: white !important;
 }
 
 .summary-content h1 {
-    font-size: 1.8rem !important;
-    color: #4a90e2 !important;
-    margin: 1.5rem 0 1rem !important;
+    font-size: 2.2rem !important;
+    color: #90caf9 !important;
+    margin-bottom: 1.5rem !important;
+    border-bottom: 2px solid rgba(144, 202, 249, 0.3) !important;
+    padding-bottom: 0.5rem !important;
 }
 
 .summary-content h2 {
-    font-size: 1.5rem !important;
+    font-size: 1.8rem !important;
     color: #64b5f6 !important;
-    margin: 1.2rem 0 0.8rem !important;
+    margin: 2rem 0 1rem !important;
+}
+
+.summary-content h3 {
+    font-size: 1.4rem !important;
+    color: #42a5f5 !important;
+    margin: 1.5rem 0 0.8rem !important;
 }
 
 .summary-content ul {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 8px !important;
+    padding: 1.5rem 2rem !important;
     margin: 1rem 0 !important;
-    padding-left: 1.5rem !important;
 }
 
 .summary-content li {
-    margin: 0.5rem 0 !important;
+    margin: 0.8rem 0 !important;
+    position: relative !important;
+    padding-left: 1.5rem !important;
+}
+
+.summary-content li:before {
+    content: '•' !important;
+    color: #90caf9 !important;
+    position: absolute !important;
+    left: 0 !important;
+    font-size: 1.2rem !important;
+}
+
+.summary-content p {
+    margin: 1rem 0 !important;
     color: rgba(255, 255, 255, 0.9) !important;
 }
 

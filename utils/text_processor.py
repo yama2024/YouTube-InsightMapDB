@@ -74,6 +74,83 @@ class TextProcessor:
             logger.error(f"Error during text cleaning: {str(e)}")
             return text
 
+    def generate_summary(self, text, max_retries=5, initial_delay=2):
+        print("AI要約の生成を開始します...")
+        
+        # First clean the text
+        cleaned_text = self._clean_text(text)
+        
+        retry_count = 0
+        delay = initial_delay
+        last_error = None
+        
+        while retry_count < max_retries:
+            try:
+                prompt = f'''
+                以下のYouTube動画コンテンツから構造化された要約を生成してください：
+
+                入力テキスト:
+                {cleaned_text}
+
+                必須要素:
+                1. タイトル（見出し1）
+                2. 概要（2-3文の簡潔な説明）
+                3. 主要ポイント（箇条書き）
+                4. 詳細説明（サブセクション）
+                5. 結論（まとめ）
+
+                フォーマット:
+                # タイトル
+                {タイトル}
+
+                ## 概要
+                {概要文}
+
+                ## 主要ポイント
+                - {重要ポイント1}
+                - {重要ポイント2}
+                - {重要ポイント3}
+
+                ## 詳細説明
+                ### {サブトピック1}
+                {詳細テキスト}
+
+                ### {サブトピック2}
+                {詳細テキスト}
+
+                ## 結論
+                {まとめと結論}
+                '''
+                
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.3,
+                        top_p=0.8,
+                        top_k=40,
+                        max_output_tokens=8192,
+                    )
+                )
+                
+                if not response.text:
+                    raise ValueError("Empty response from API")
+                
+                print("要約の生成が完了しました")
+                return response.text
+                
+            except Exception as e:
+                retry_count += 1
+                delay *= 2  # Exponential backoff
+                last_error = str(e)
+                
+                if retry_count < max_retries:
+                    print(f"要約の生成に失敗しました。{delay}秒後に再試行します... ({retry_count}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    error_msg = f"要約の生成に失敗しました: {last_error}"
+                    print(error_msg)
+                    raise Exception(error_msg)
+
     def chunk_text(self, text, chunk_size=8000):
         """Improved text chunking with better sentence preservation"""
         logger.debug(f"Starting text chunking with chunk_size: {chunk_size}")
@@ -270,74 +347,6 @@ class TextProcessor:
                 continue
         
         return None
-
-    def generate_summary(self, text, max_retries=5, initial_delay=2):
-        print("AI要約の生成を開始します...")
-        
-        # First clean the text
-        cleaned_text = self._clean_text(text)
-        
-        retry_count = 0
-        delay = initial_delay
-        last_error = None
-        
-        while retry_count < max_retries:
-            try:
-                prompt = f'''
-                以下のYouTube動画の文字起こしテキストから、重要なポイントを抽出し、簡潔で読みやすい要約を生成してください。
-
-                # 必須条件
-                1. 文字起こしの内容を正確に反映
-                2. 重要なポイントを明確に抽出
-                3. 簡潔で分かりやすい日本語
-                4. 論理的な構造化
-
-                # 出力フォーマット
-                タイトル: [内容を端的に表現]
-                
-                概要:
-                [全体の要約を2-3文で]
-                
-                主要ポイント:
-                ・[ポイント1]
-                ・[ポイント2]
-                ・[ポイント3]
-                
-                結論:
-                [メインメッセージや重要な結論]
-
-                テキスト:
-                {cleaned_text}
-                '''
-                
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.3,
-                        top_p=0.8,
-                        top_k=40,
-                        max_output_tokens=8192,
-                    )
-                )
-                
-                if not response.text:
-                    raise ValueError("Empty response from API")
-                
-                print("要約の生成が完了しました")
-                return response.text
-                
-            except Exception as e:
-                retry_count += 1
-                delay *= 2  # Exponential backoff
-                last_error = str(e)
-                
-                if retry_count < max_retries:
-                    print(f"要約の生成に失敗しました。{delay}秒後に再試行します... ({retry_count}/{max_retries})")
-                    time.sleep(delay)
-                else:
-                    error_msg = f"要約の生成に失敗しました: {last_error}"
-                    print(error_msg)
-                    raise Exception(error_msg)
 
     def proofread_text(self, text, max_retries=5, initial_delay=1):
         """Proofread and enhance text with improved validation and logging"""
