@@ -5,8 +5,11 @@ import time
 import logging
 import re
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
+# Set up logging with more detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 class MindMapGenerator:
@@ -17,17 +20,75 @@ class MindMapGenerator:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-pro')
 
+    def _escape_special_characters(self, text):
+        """Escape special characters in text for Mermaid syntax"""
+        special_chars = ['\\', '(', ')', '[', ']', ':', '-', '_']
+        for char in special_chars:
+            text = text.replace(char, f'\\{char}')
+        return text
+
+    def _format_mindmap_syntax(self, syntax):
+        """Format and validate the mindmap syntax with strict rules"""
+        logger.info("マインドマップ構文のフォーマットを開始します")
+        
+        # Split and clean lines
+        lines = [line.rstrip() for line in syntax.strip().split('\n') if line.strip()]
+        formatted_lines = []
+        
+        # Ensure mindmap starts correctly
+        if not lines or not lines[0].strip() == 'mindmap':
+            logger.warning("mindmapキーワードが見つかりません。追加します。")
+            formatted_lines.append('mindmap')
+        else:
+            formatted_lines.append('mindmap')
+            lines = lines[1:]
+        
+        for line in lines:
+            # Remove all existing indentation
+            clean_line = line.lstrip()
+            
+            # Calculate proper indentation level
+            indent_level = (len(line) - len(clean_line)) // 2
+            
+            # Process the line content
+            if '((' in clean_line and '))' in clean_line:
+                try:
+                    # Extract and escape text within double parentheses
+                    match = re.search(r'\(\((.*?)\)\)', clean_line)
+                    if match:
+                        inner_text = match.group(1)
+                        escaped_text = self._escape_special_characters(inner_text)
+                        if clean_line.startswith('root'):
+                            clean_line = f"root(({escaped_text}))"
+                        else:
+                            clean_line = f"(({escaped_text}))"
+                        logger.debug(f"括弧内のテキストをエスケープしました: {inner_text} -> {escaped_text}")
+                except Exception as e:
+                    logger.error(f"括弧内のテキスト処理中にエラーが発生: {str(e)}")
+            else:
+                # Escape special characters in regular text
+                clean_line = self._escape_special_characters(clean_line)
+            
+            # Add proper indentation
+            formatted_line = '  ' * indent_level + clean_line
+            formatted_lines.append(formatted_line)
+            logger.debug(f"フォーマット済みの行: {formatted_line}")
+        
+        # Join lines and validate final syntax
+        result = '\n'.join(formatted_lines)
+        logger.info("マインドマップ構文のフォーマットが完了しました")
+        logger.debug("生成された構文:\n" + result)
+        
+        return result
+
     def generate_mindmap(self, text, max_retries=3):
         """Generate mindmap data from text using Gemini API with retry mechanism"""
         for attempt in range(max_retries):
             try:
                 logger.info(f"マインドマップ生成を試行中... (試行: {attempt + 1}/{max_retries})")
                 mermaid_syntax = self._generate_mindmap_internal(text)
-                
-                # Validate and format the syntax
                 formatted_syntax = self._format_mindmap_syntax(mermaid_syntax)
                 return formatted_syntax
-                
             except Exception as e:
                 error_str = str(e)
                 if "429" in error_str and attempt < max_retries - 1:
@@ -37,60 +98,59 @@ class MindMapGenerator:
                     continue
                 logger.error(f"マインドマップの生成に失敗しました (試行: {attempt + 1}/{max_retries}): {error_str}")
                 if attempt == max_retries - 1:
-                    # Fallback to a simple mindmap structure
+                    logger.info("フォールバックマインドマップを生成します")
                     return self._generate_fallback_mindmap(text)
-                raise Exception(f"マインドマップの生成中にエラーが発生しました。しばらく待ってから再度お試しください。: {error_str}")
+                raise Exception(f"マインドマップの生成中にエラーが発生しました: {error_str}")
 
-    def _escape_japanese_parentheses(self, text):
-        """Escape parentheses in Japanese text for Mermaid syntax"""
-        return text.replace('(', '\\(').replace(')', '\\)')
+    def _generate_mindmap_internal(self, text):
+        """Internal method for mindmap generation in Mermaid mindmap format"""
+        prompt = """
+        以下のテキストから階層的なマインドマップをMermaid形式で生成してください。
+        
+        出力形式:
+        mindmap
+          root((メインテーマ))
+            トピック1
+              サブトピック1
+              サブトピック2
+            トピック2
+              サブトピック3
 
-    def _format_mindmap_syntax(self, syntax):
-        """Format and validate the mindmap syntax"""
-        lines = syntax.strip().split('\n')
-        formatted_lines = []
+        重要な注意点:
+        1. 必ず'mindmap'で開始し、その後は空行を入れない
+        2. インデントは正確に2スペース
+        3. rootノードは必ず((テキスト))の形式で記述
+        4. 特殊文字（[]():_-）は必ずエスケープする
+        5. 最大3階層まで
+        6. 日本語で出力
+
+        解析するテキスト:
+        {text}
+        """
         
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            if line.startswith('mindmap'):
-                formatted_lines.append('mindmap')
-                continue
-                
-            # Count leading spaces to determine level
-            spaces = len(line) - len(line.lstrip())
-            level = spaces // 2
+        try:
+            logger.info("Gemini APIにリクエストを送信中...")
+            response = self.model.generate_content(prompt.format(text=text))
             
-            # Remove existing spaces
-            line = line.strip()
+            if not response.text:
+                raise ValueError("APIレスポンスが空です")
+
+            # Extract and clean Mermaid syntax
+            mermaid_syntax = response.text.strip()
+            if '```mermaid' in mermaid_syntax:
+                mermaid_syntax = mermaid_syntax[mermaid_syntax.find('```mermaid')+10:]
+            if '```' in mermaid_syntax:
+                mermaid_syntax = mermaid_syntax[:mermaid_syntax.rfind('```')]
             
-            # Add proper indentation
-            if '((' in line and '))' in line:
-                # Root node or any node with double parentheses
-                try:
-                    match = re.search(r'\(\((.*?)\)\)', line)
-                    if match:
-                        text = match.group(1)
-                        escaped_text = self._escape_japanese_parentheses(text)
-                        if line.startswith('root'):
-                            line = f"root(({escaped_text}))"
-                        else:
-                            line = f"(({escaped_text}))"
-                except Exception as e:
-                    logger.warning(f"正規表現のマッチングに失敗しました: {str(e)}")
-                    # Keep the line as is if regex fails
+            mermaid_syntax = mermaid_syntax.strip()
+            logger.debug("生成された生のMermaid構文:\n" + mermaid_syntax)
             
-            # Add proper indentation
-            formatted_lines.append('  ' * level + line)
-        
-        # Ensure proper mindmap format
-        result = '\n'.join(formatted_lines)
-        if not result.startswith('mindmap'):
-            result = 'mindmap\n' + result
+            return mermaid_syntax
             
-        return result
+        except Exception as e:
+            error_msg = f"マインドマップの生成中にエラーが発生しました: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
 
     def _generate_fallback_mindmap(self, text):
         """Generate a simple fallback mindmap when the main generation fails"""
@@ -102,64 +162,6 @@ class MindMapGenerator:
     詳細情報
       詳細1
       詳細2"""
-
-    def _generate_mindmap_internal(self, text):
-        """Internal method for mindmap generation in Mermaid mindmap format"""
-        prompt = """
-        以下のテキストから階層的なマインドマップをMermaid形式で生成してください。
-        以下の形式で出力してください：
-
-        ```mermaid
-        mindmap
-          root((中心テーマ))
-            トピック1
-              サブトピック1
-              サブトピック2
-            トピック2
-              サブトピック3
-              サブトピック4
-        ```
-
-        注意点:
-        1. 必ずmindmapで開始すること
-        2. 必ず2スペースでインデントすること
-        3. 日本語のテキストを(())で囲む場合は\\(\\)でエスケープすること
-        4. 最大3階層までとすること
-        5. 階層は必ず2スペースずつ増やすこと
-        6. 日本語で出力すること
-
-        テキスト:
-        {text}
-        """
-        
-        try:
-            response = self.model.generate_content(prompt.format(text=text))
-            if not response.text:
-                raise ValueError("APIレスポンスが空です")
-
-            # Extract Mermaid syntax from the response
-            mermaid_syntax = response.text.strip()
-            if '```mermaid' in mermaid_syntax:
-                mermaid_syntax = mermaid_syntax[mermaid_syntax.find('```mermaid')+10:]
-            if '```' in mermaid_syntax:
-                mermaid_syntax = mermaid_syntax[:mermaid_syntax.rfind('```')]
-            
-            mermaid_syntax = mermaid_syntax.strip()
-            
-            # Validate the Mermaid syntax
-            if not mermaid_syntax.startswith('mindmap'):
-                mermaid_syntax = 'mindmap\n' + mermaid_syntax
-            
-            # Debug output
-            logger.info("生成されたMermaid構文:")
-            logger.info(mermaid_syntax)
-            
-            return mermaid_syntax
-                
-        except Exception as e:
-            error_msg = f"マインドマップの生成中にエラーが発生しました: {str(e)}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
 
     def create_visualization(self, mermaid_syntax):
         """Return the Mermaid syntax directly for visualization"""
