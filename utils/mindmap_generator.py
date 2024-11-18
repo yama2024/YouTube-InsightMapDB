@@ -25,57 +25,38 @@ class MindMapGenerator:
         return cleaned_text.strip()
 
     def _format_mindmap_syntax(self, syntax):
-        """Format and validate mindmap syntax"""
-        try:
-            # Input validation
-            if not syntax or not isinstance(syntax, str):
-                return self._generate_fallback_mindmap()
-
-            # Split lines and clean
-            lines = [line.rstrip() for line in syntax.strip().split('\n') if line.strip()]
-            
-            # Ensure first line is 'mindmap'
-            if not lines or lines[0].strip() != 'mindmap':
-                lines.insert(0, 'mindmap')
-            
-            formatted_lines = ['mindmap']  # First line is always 'mindmap'
-            
-            # Process remaining lines
-            for line in lines[1:]:
-                # Calculate indentation
-                indent_match = re.match(r'^(\s*)', line)
-                current_indent = len(indent_match.group(1)) // 2 if indent_match else 0
-                
-                # Clean line
-                clean_line = line.strip()
-                clean_line = self._validate_node_text(clean_line)
-                
-                # Rebuild indentation with 2 spaces
-                formatted_line = '  ' * current_indent + clean_line
-                formatted_lines.append(formatted_line)
-            
-            return '\n'.join(formatted_lines)
-
-        except Exception as e:
-            logger.error(f"Syntax formatting error: {str(e)}")
+        # 入力検証
+        if not syntax or not isinstance(syntax, str):
             return self._generate_fallback_mindmap()
+        
+        # 行を分割してクリーニング
+        lines = []
+        lines.append('mindmap')  # 最初の行は必ずmindmap
+        
+        # 残りの行を処理
+        for line in syntax.strip().split('\n')[1:]:
+            if line.strip():
+                # インデントを計算
+                indent = len(line) - len(line.lstrip())
+                indent_level = indent // 2
+                
+                # クリーンな行を生成
+                clean_line = line.strip()
+                if clean_line:
+                    # 2スペースでインデント
+                    formatted_line = '  ' * indent_level + clean_line
+                    lines.append(formatted_line)
+        
+        return '\n'.join(lines)
 
     def _generate_mindmap_internal(self, text):
-        """Internal method for mindmap generation"""
         prompt = f'''
-テキストから最もシンプルなMermaid形式のマインドマップを生成してください。
+以下のテキストから最小限のMermaid形式のマインドマップを生成してください：
 
-入力テキスト:
+入力テキスト：
 {text}
 
-必須要件:
-1. 最初の行は必ず「mindmap」のみ
-2. インデントは厳密に2スペースで統一
-3. ノードは以下の形式のみ使用:
-   - root((テキスト))  # ルートノード
-   - 通常ノード        # 子ノード
-
-出力例:
+出力形式：
 mindmap
   root((メインテーマ))
     トピック1
@@ -83,6 +64,14 @@ mindmap
       サブトピック2
     トピック2
       サブトピック3
+
+必須ルール：
+1. 最初の行は必ず「mindmap」のみ
+2. インデントは半角スペース2つで統一
+3. ルートノードは必ずroot((テキスト))形式
+4. 子ノードはインデントのみで階層を表現
+5. 特殊文字、装飾は一切使用しない
+6. 最大3階層まで
 '''
 
         try:
@@ -125,17 +114,23 @@ mindmap
       サブトピック3'''
 
     def generate_mindmap(self, text):
-        """Generate mindmap from text"""
         if not text:
             return self._generate_fallback_mindmap()
             
         try:
+            # マインドマップを生成
             mermaid_syntax = self._generate_mindmap_internal(text)
+            
+            # 基本的な検証
+            if not mermaid_syntax.startswith('mindmap'):
+                mermaid_syntax = 'mindmap\n' + mermaid_syntax
+                
+            # フォーマットを適用
             formatted_syntax = self._format_mindmap_syntax(mermaid_syntax)
             
-            # Final validation
-            if not formatted_syntax or not formatted_syntax.startswith('mindmap'):
-                logger.error("Generated invalid mindmap syntax")
+            # 最終検証
+            lines = formatted_syntax.split('\n')
+            if len(lines) < 2 or not lines[1].strip().startswith('root(('):
                 return self._generate_fallback_mindmap()
                 
             return formatted_syntax
