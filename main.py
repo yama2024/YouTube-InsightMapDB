@@ -198,8 +198,14 @@ with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_s
                         st.stop()
             
             if st.session_state.summary:
-                st.markdown("### AI Summary")
-                st.markdown(st.session_state.summary)
+                st.markdown('''
+                <div class="ai-summary-container glass-container">
+                    <h3 class="summary-title">AI Summary</h3>
+                    <div class="summary-content">
+                        {}
+                    </div>
+                </div>
+                '''.format(st.session_state.summary), unsafe_allow_html=True)
         
         with tabs[2]:
             st.markdown("### Mind Map Visualization")

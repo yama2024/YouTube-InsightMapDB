@@ -16,6 +16,60 @@ div.stApp {
     color: white !important;
 }
 
+/* AI Summary Container Styles */
+.ai-summary-container {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-radius: 16px !important;
+    padding: 2rem !important;
+    margin: 1.5rem 0 !important;
+}
+
+.summary-title {
+    font-size: 2rem !important;
+    font-weight: 700 !important;
+    color: #4a90e2 !important;
+    margin-bottom: 1.5rem !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+.summary-content {
+    font-size: 1.1rem !important;
+    line-height: 1.6 !important;
+    color: white !important;
+}
+
+.summary-content h1 {
+    font-size: 1.8rem !important;
+    color: #4a90e2 !important;
+    margin: 1.5rem 0 1rem !important;
+}
+
+.summary-content h2 {
+    font-size: 1.5rem !important;
+    color: #64b5f6 !important;
+    margin: 1.2rem 0 0.8rem !important;
+}
+
+.summary-content ul {
+    margin: 1rem 0 !important;
+    padding-left: 1.5rem !important;
+}
+
+.summary-content li {
+    margin: 0.5rem 0 !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.summary-content strong {
+    color: #81d4fa !important;
+    font-weight: 600 !important;
+}
+
+.summary-content em {
+    color: #90caf9 !important;
+    font-style: italic !important;
+}
+
 @keyframes gradientBG {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
