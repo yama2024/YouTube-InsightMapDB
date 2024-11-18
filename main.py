@@ -223,8 +223,7 @@ try:
                                "文字起こし、要約、マインドマップを生成します")
             if st.session_state.transcript:
                 tabs = st.tabs([
-                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Enhancement",
-                    "📑 Export"
+                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Enhancement"
                 ])
 
                 with tabs[0]:
@@ -353,73 +352,29 @@ try:
 
                                     if enhanced_text:
                                         st.session_state.enhanced_text = enhanced_text
-                                        update_step_progress('proofread')
-                                        st.markdown(
-                                            '<div class="glass-container">',
-                                            unsafe_allow_html=True)
-                                        st.markdown("#### 整形後のテキスト")
-                                        st.markdown(enhanced_text.replace(
-                                            '\n', '  \n'))
-                                        st.markdown('</div>',
+                                        st.markdown('<div class="glass-container">',
                                                     unsafe_allow_html=True)
+                                        st.markdown("#### 整形済みテキスト")
+                                        st.markdown(
+                                            enhanced_text.replace('\n', '  \n'))
+
+                                        # Download button for enhanced text
+                                        st.download_button(
+                                            "📥 整形済みテキストをダウンロード",
+                                            enhanced_text,
+                                            file_name="enhanced_text.txt",
+                                            mime="text/plain")
+
+                                        # Update progress container
+                                        st.markdown('</div>', unsafe_allow_html=True)
 
                             except Exception as e:
                                 st.error(f"テキスト整形中にエラーが発生しました: {str(e)}")
-                                logger.error(
-                                    f"Error in text enhancement: {str(e)}")
-
-                with tabs[4]:
-                    st.markdown("### PDF出力")
-                    if not st.session_state.summary:
-                        st.warning("PDFを生成するには、先にAI要約を生成する必要があります。")
-                    else:
-                        # PDF generation section
-                        st.markdown('''
-                        <div class="glass-container">
-                            <h4>PDFレポートの生成</h4>
-                            <p>以下のコンテンツを含むPDFレポートを生成します：</p>
-                            <ul>
-                                <li>動画基本情報</li>
-                                <li>文字起こし</li>
-                                <li>AI要約</li>
-                                <li>整形済みテキスト（生成済みの場合）</li>
-                            </ul>
-                        </div>
-                        ''', unsafe_allow_html=True)
-
-                        if st.button("📑 PDFレポートを生成"):
-                            try:
-                                with st.spinner("PDFレポートを生成中..."):
-                                    pdf_generator = PDFGenerator()
-                                    proofread_text = st.session_state.enhanced_text if st.session_state.enhanced_text else ''
-                                    
-                                    pdf_data = pdf_generator.create_pdf(
-                                        video_info=st.session_state.video_info,
-                                        transcript=st.session_state.transcript,
-                                        summary=st.session_state.summary,
-                                        proofread_text=proofread_text
-                                    )
-                                    
-                                    st.session_state.pdf_data = pdf_data
-                                    update_step_progress('pdf')
-                                    
-                                    # Provide download button for the generated PDF
-                                    st.download_button(
-                                        label="📥 PDFをダウンロード",
-                                        data=pdf_data,
-                                        file_name=f"youtube_analysis_{st.session_state.video_info['video_id']}.pdf",
-                                        mime="application/pdf",
-                                    )
-                                    
-                                    st.success("PDFレポートの生成が完了しました！")
-                                    
-                            except Exception as e:
-                                st.error(f"PDFの生成中にエラーが発生しました: {str(e)}")
-                                logger.error(f"Error in PDF generation: {str(e)}")
+                                logger.error(f"Error in text enhancement: {str(e)}")
 
     except Exception as e:
-        st.error(f"アプリケーションエラー: {str(e)}")
-        logger.error(f"Application error: {str(e)}")
+        st.error(f"初期化エラー: {str(e)}")
+        logger.error(f"Initialization error: {str(e)}")
 
 except Exception as e:
     st.error(f"初期化エラー: {str(e)}")
