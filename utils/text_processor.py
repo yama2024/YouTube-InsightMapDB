@@ -5,8 +5,8 @@ import re
 import os
 import time
 from typing import List, Optional, Dict, Any, Tuple
-from retrying import retry
 from cachetools import TTLCache, cached
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Enhanced logging setup
 logging.basicConfig(
@@ -96,113 +96,11 @@ class TextProcessor:
             logger.error(f"テキストのクリーニング中にエラーが発生しました: {str(e)}")
             return text
 
-    def proofread_text(self, text: str, progress_callback=None) -> str:
-        """Proofread and enhance text readability with progress tracking"""
-        if not text:
-            return ""
-            
-        try:
-            if progress_callback:
-                progress_callback(0.1, "🔍 テキスト解析を開始")
-            
-            # Initial text cleaning with detailed progress
-            cleaning_steps = {
-                0.15: "📝 フィラーワードを除去中...",
-                0.20: "🔤 文字の正規化を実行中...",
-                0.25: "📊 タイムスタンプを処理中...",
-                0.30: "✨ 不要な記号を削除中..."
-            }
-            
-            for progress, message in cleaning_steps.items():
-                if progress_callback:
-                    progress_callback(progress, message)
-                time.sleep(0.3)  # Visual feedback
-            
-            text = self._clean_text(text, lambda p, m: progress_callback(0.3 + p * 0.2, m) if progress_callback else None)
-            
-            if progress_callback:
-                progress_callback(0.5, "🤖 AIモデルによる文章校正を準備中...")
-            
-            # AI Processing steps
-            prompt = f"""
-# あなたの目的:
-「Original Transcript」のテキストを全文校閲します。
-
-文字起こししたYouTubeの動画について、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。
-あなたが文脈として不自然と感じた文章は全て誤字脱字が含まれており、正確に修正する必要があります。
-ステップバイステップで思考しながら校閲を行い、正確に修正して文章を出力してください。
-
-# ルール:
-1.校閲した文章以外の出力は決して行ってはいけません。
-2.校閲した文章のみを出力します。
-3.改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
-4.時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
-5.スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
-6.テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
-
-入力テキスト：
-{text}
-"""
-            
-            if progress_callback:
-                progress_callback(0.6, "🧠 AIによる文章解析中...")
-                time.sleep(0.3)
-                progress_callback(0.7, "📝 文章の校正を実行中...")
-            
-            response = self.model.generate_content(prompt)
-            if not response.text:
-                logger.error("AIモデルからの応答が空でした")
-                if progress_callback:
-                    progress_callback(1.0, "❌ エラー: AIモデルからの応答が空です")
-                return text
-            
-            if progress_callback:
-                progress_callback(0.8, "🎨 文章の最終調整中...")
-            
-            enhanced_text = response.text
-            enhanced_text = self._clean_text(enhanced_text)
-            
-            if progress_callback:
-                progress_callback(0.9, "📊 文章構造を最適化中...")
-            
-            enhanced_text = self._improve_sentence_structure(enhanced_text)
-            enhanced_text = re.sub(r'([。])', r'\1\n', enhanced_text)
-            enhanced_text = re.sub(r'\n{3,}', '\n\n', enhanced_text)
-            enhanced_text = enhanced_text.strip()
-            
-            if progress_callback:
-                progress_callback(1.0, "✨ 校正処理が完了しました!")
-            
-            return enhanced_text
-            
-        except Exception as e:
-            logger.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
-            if progress_callback:
-                progress_callback(1.0, f"❌ エラー: {str(e)}")
-            return text
-
-    def _improve_sentence_structure(self, text: str) -> str:
-        """Improve Japanese sentence structure and readability"""
-        try:
-            # Fix sentence endings
-            text = re.sub(r'([。！？])\s*(?=[^」』）])', r'\1\n', text)
-            
-            # Improve paragraph breaks
-            text = re.sub(r'([。！？])\s*\n\s*([^「『（])', r'\1\n\n\2', text)
-            
-            # Fix spacing around Japanese punctuation
-            text = re.sub(r'\s+([。、！？」』）])', r'\1', text)
-            text = re.sub(r'([「『（])\s+', r'\1', text)
-            
-            # Clean up list items
-            text = re.sub(r'^[-・]\s*', '• ', text, flags=re.MULTILINE)
-            
-            return text
-        except Exception as e:
-            logger.error(f"文章構造の改善中にエラーが発生しました: {str(e)}")
-            return text
-
-    @retry(stop_max_attempt_number=3, wait_fixed=2000)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, Exception))
+    )
     def get_transcript(self, url: str) -> str:
         """Get transcript with improved error handling and retries"""
         video_id = self._extract_video_id(url)
@@ -354,30 +252,121 @@ class TextProcessor:
             logger.error(error_msg)
             return None
 
-    def generate_summary(self, text: str) -> str:
-        """Generate summary with improved error handling"""
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, Exception))
+    )
+    def generate_summary(self, text: str, progress_callback=None) -> str:
+        """Generate AI summary with enhanced error handling and retry mechanism"""
         if not text:
-            return ""
+            raise ValueError("入力テキストが空です")
             
         try:
-            prompt = f"""以下のテキストを要約してください。重要なポイントを箇条書きで示し、
-            その後に簡潔な要約を作成してください：
-
-            {text}
-
-            出力形式：
-            ■ 主なポイント：
-            • ポイント1
-            • ポイント2
-            • ポイント3
-
-            ■ 要約：
-            [簡潔な要約文]
-            """
+            if progress_callback:
+                progress_callback(0.1, "🔍 テキスト解析を開始")
             
-            response = self.model.generate_content(prompt)
-            return response.text if response.text else "要約を生成できませんでした。"
+            prompt = f"""
+# あなたの目的:
+入力されたテキストの包括的な要約を生成してください。
+
+# ルール:
+1. 要約は以下の構造で作成:
+   - 概要（全体の要点）
+   - 主要なポイント（箇条書き）
+   - 詳細な分析（重要なトピックごと）
+   - 結論
+
+2. フォーマット:
+   - Markdown形式で出力
+   - 見出しは適切なレベルで
+   - 重要なポイントは強調
+   - 箇条書きを効果的に使用
+
+入力テキスト:
+{text}
+"""
             
+            if progress_callback:
+                progress_callback(0.3, "🤖 AI分析を実行中...")
+            
+            # First attempt with detailed error handling
+            try:
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.3,
+                        top_p=0.8,
+                        top_k=40,
+                        max_output_tokens=8192,
+                    )
+                )
+                
+                if not response.text:
+                    raise ValueError("AIモデルからの応答が空です")
+                
+                if progress_callback:
+                    progress_callback(0.7, "📝 要約を整形中...")
+                
+                summary = response.text
+                
+                # Post-processing
+                summary = self._clean_text(summary)
+                summary = self._improve_sentence_structure(summary)
+                
+                if progress_callback:
+                    progress_callback(1.0, "✨ 要約が完了しました")
+                
+                return summary
+                
+            except Exception as e:
+                logger.error(f"要約生成中にエラーが発生しました: {str(e)}")
+                error_msg = self._get_user_friendly_error_message(str(e))
+                if progress_callback:
+                    progress_callback(1.0, f"❌ エラー: {error_msg}")
+                raise Exception(f"要約生成エラー: {error_msg}")
+                
         except Exception as e:
-            logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
-            return "要約の生成中にエラーが発生しました。"
+            logger.error(f"要約処理中に重大なエラーが発生しました: {str(e)}")
+            error_msg = self._get_user_friendly_error_message(str(e))
+            if progress_callback:
+                progress_callback(1.0, f"❌ 致命的なエラー: {error_msg}")
+            raise Exception(f"要約処理エラー: {error_msg}")
+
+    def _improve_sentence_structure(self, text: str) -> str:
+        """Improve Japanese sentence structure and readability"""
+        try:
+            # Fix sentence endings
+            text = re.sub(r'([。！？])\s*(?=[^」』）])', r'\1\n', text)
+            
+            # Improve paragraph breaks
+            text = re.sub(r'([。！？])\s*\n\s*([^「『（])', r'\1\n\n\2', text)
+            
+            # Fix spacing around Japanese punctuation
+            text = re.sub(r'\s+([。、！？」』）])', r'\1', text)
+            text = re.sub(r'([「『（])\s+', r'\1', text)
+            
+            # Clean up list items
+            text = re.sub(r'^[-・]\s*', '• ', text, flags=re.MULTILINE)
+            
+            return text
+        except Exception as e:
+            logger.error(f"文章構造の改善中にエラーが発生しました: {str(e)}")
+            return text
+
+    def _get_user_friendly_error_message(self, error_msg: str) -> str:
+        """Convert technical error messages to user-friendly messages"""
+        error_map = {
+            'connection': "ネットワーク接続に問題が発生しました。インターネット接続を確認してください。",
+            'timeout': "応答待ちタイムアウトが発生しました。しばらく待ってから再試行してください。",
+            'api': "APIサービスにアクセスできません。システム管理者に連絡してください。",
+            'invalid': "入力データが無効です。テキストを確認して再試行してください。",
+            'empty': "AIモデルからの応答が空でした。別の入力テキストで試してください。"
+        }
+        
+        error_msg = error_msg.lower()
+        for key, message in error_map.items():
+            if key in error_msg:
+                return message
+        
+        return "予期せぬエラーが発生しました。しばらく待ってから再試行してください。"

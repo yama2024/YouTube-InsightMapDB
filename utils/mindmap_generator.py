@@ -2,7 +2,8 @@ import google.generativeai as genai
 import os
 import logging
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -16,66 +17,110 @@ class MindMapGenerator:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
-        # Node style definitions
+        # Updated node styles with proper Mermaid syntax
         self.node_styles = {
-            'root': '::',  # Root node style
-            'main_topic': '[💡]',  # Main topics with light bulb
-            'subtopic': '[📌]',  # Subtopics with pin
-            'detail': '[ℹ️]',  # Details with info symbol
-            'key_point': '[🔑]',  # Key points with key symbol
-            'example': '[📝]',  # Examples with note symbol
-            'conclusion': '[🎯]'  # Conclusions with target symbol
+            'root': '[',  # Root node
+            'main_topic': '([',  # Main topics
+            'subtopic': '[[',  # Subtopics
+            'detail': '{{',  # Details
+            'key_point': '((',  # Key points
+            'example': '>',  # Examples
+            'conclusion': '}}'  # Conclusions
         }
+        
+        # Closing brackets for each style
+        self.node_closings = {
+            '[': ']',
+            '([': '])',
+            '[[': ']]',
+            '{{': '}}',
+            '((': '))',
+            '>': ']',
+            '}}': '}}'
+        }
+
+    def _escape_special_chars(self, text: str) -> str:
+        """Escape special characters for Mermaid compatibility"""
+        special_chars = ['&', '<', '>', '"', "'"]
+        escaped_text = text
+        for char in special_chars:
+            escaped_text = escaped_text.replace(char, f'&#{ord(char)};')
+        return escaped_text
 
     def _validate_node_text(self, text: str) -> str:
         """Validate and clean node text for Mermaid compatibility"""
         if not text:
             return text
         
-        # Remove special characters but keep emojis and Japanese characters
-        cleaned_text = re.sub(r'[^\w\s\u3000-\u9fff\u4e00-\u9faf\.,\-_()[\]💡📌ℹ️🔑📝🎯]', '', text)
-        return cleaned_text.strip()
+        # Remove invalid characters but keep Japanese text
+        text = self._escape_special_chars(text)
+        text = re.sub(r'[^\w\s\u3000-\u9fff\u4e00-\u9faf\.,\-_()[\]{}><&;#]', '', text)
+        return text.strip()
+
+    def _format_node(self, text: str, style: str) -> str:
+        """Format a node with proper Mermaid syntax"""
+        text = self._validate_node_text(text)
+        closing = self.node_closings.get(style, ']')
+        return f"{style}{text}{closing}"
 
     def _format_mindmap_syntax(self, syntax: str) -> str:
-        """Format and validate mindmap syntax with improved styling"""
+        """Format and validate mindmap syntax with proper Mermaid styling"""
         if not syntax or not isinstance(syntax, str):
             return self._generate_fallback_mindmap()
         
-        lines = ['mindmap']
-        current_level = 0
-        
-        for line in syntax.strip().split('\n')[1:]:
-            if line.strip():
-                # Calculate indentation level
-                indent = len(line) - len(line.lstrip())
-                indent_level = indent // 2
-                clean_line = line.strip()
-                
-                # Add appropriate styling based on level
-                if indent_level == 0 and 'root' in clean_line.lower():
-                    style = self.node_styles['root']
-                elif indent_level == 1:
-                    style = self.node_styles['main_topic']
-                elif indent_level == 2:
-                    style = self.node_styles['subtopic']
-                elif indent_level == 3:
-                    style = self.node_styles['detail']
-                else:
-                    style = ''
-                
-                # Apply styling if not already present
-                if not any(key in clean_line for key in self.node_styles.values()):
-                    clean_line = f"{style} {clean_line}"
-                
-                formatted_line = '  ' * indent_level + clean_line
-                lines.append(formatted_line)
-                current_level = max(current_level, indent_level)
-        
-        return '\n'.join(lines)
+        try:
+            lines = ['mindmap']
+            current_level = 0
+            
+            for line in syntax.strip().split('\n')[1:]:
+                if line.strip():
+                    # Calculate indentation level
+                    indent = len(line) - len(line.lstrip())
+                    indent_level = indent // 2
+                    clean_line = line.strip()
+                    
+                    # Determine node style based on level and content
+                    if indent_level == 0 and 'root' in clean_line.lower():
+                        node_style = self.node_styles['root']
+                    elif indent_level == 1:
+                        node_style = self.node_styles['main_topic']
+                    elif indent_level == 2:
+                        node_style = self.node_styles['subtopic']
+                    elif indent_level == 3:
+                        node_style = self.node_styles['detail']
+                    else:
+                        node_style = self.node_styles['example']
+                    
+                    # Extract text content
+                    if '(' in clean_line and ')' in clean_line:
+                        text = re.search(r'\((.*?)\)', clean_line)
+                        if text:
+                            content = text.group(1)
+                        else:
+                            content = clean_line
+                    else:
+                        content = clean_line
+                    
+                    # Format node with proper syntax
+                    formatted_node = self._format_node(content, node_style)
+                    formatted_line = '  ' * indent_level + formatted_node
+                    lines.append(formatted_line)
+            
+            return '\n'.join(lines)
+            
+        except Exception as e:
+            logger.error(f"Mindmap formatting error: {str(e)}")
+            return self._generate_fallback_mindmap()
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, Exception))
+    )
     def _generate_mindmap_internal(self, text: str) -> str:
+        """Generate mindmap with retry mechanism and enhanced error handling"""
         prompt = f'''
-以下のテキストから階層的で詳細なMermaid形式のマインドマップを生成してください。
+以下のテキストから階層的なMermaid形式のマインドマップを生成してください。
 
 入力テキスト：
 {text}
@@ -83,29 +128,23 @@ class MindMapGenerator:
 必須規則：
 1. 最初の行は「mindmap」のみ
 2. インデントは半角スペース2個を使用
-3. ルートノードは「root(コンテンツ概要)」の形式
+3. ルートノードは「root(概要)」の形式
 4. 以下の階層構造を厳密に守る：
-   - レベル1: メインテーマ（概要）
-   - レベル2: 主要トピック（3-5個）
-   - レベル3: サブトピックと詳細（各主要トピックに2-4個）
-5. 各トピック間の関連性を明確に示す
-6. トピックの分類と階層を論理的に整理する
-7. キーポイントや重要な概念を強調する
-8. 簡潔で明確な表現を使用する
+   - レベル0: ルートノード
+   - レベル1: メインテーマ (3-4個)
+   - レベル2: サブトピック (各メインテーマに2-3個)
+   - レベル3: 詳細 (必要な場合のみ)
+5. 各ノードは簡潔で明確な表現を使用
 
 出力例：
 mindmap
-  root(コンテンツ概要)
-    主要トピック1
+  root(概要)
+    メインテーマ1
       サブトピック1.1
       サブトピック1.2
-        詳細1.2.1
-    主要トピック2
-      キーポイント2.1
+    メインテーマ2
       サブトピック2.1
-    主要トピック3
-      結論3.1
-      要点3.1
+      サブトピック2.2
 '''
 
         try:
@@ -119,58 +158,49 @@ mindmap
                 )
             )
             
-            if not response or not response.text:
+            if not response.text:
                 raise ValueError("Empty response from API")
             
-            # Clean up the response
-            mermaid_syntax = response.text.strip()
-            
-            # Remove code blocks if present
-            if '```mermaid' in mermaid_syntax:
-                mermaid_syntax = mermaid_syntax[mermaid_syntax.find('```mermaid')+10:]
-            if '```' in mermaid_syntax:
-                mermaid_syntax = mermaid_syntax[:mermaid_syntax.rfind('```')]
-            
-            return mermaid_syntax.strip()
+            return response.text.strip()
             
         except Exception as e:
-            logger.error(f"Error in mindmap generation: {str(e)}")
-            raise Exception(f"Mindmap generation failed: {str(e)}")
+            logger.error(f"Mindmap generation error: {str(e)}")
+            raise Exception(f"マインドマップの生成に失敗しました: {str(e)}")
 
     def _generate_fallback_mindmap(self) -> str:
-        """Generate an enhanced fallback mindmap"""
+        """Generate a fallback mindmap with proper Mermaid syntax"""
         return '''mindmap
   root(コンテンツ概要)
-    [💡] トピック1
-      [📌] サブトピック1.1
-      [ℹ️] 詳細1.1
-    [💡] トピック2
-      [📌] サブトピック2.1
-      [🔑] キーポイント2.1'''
+    ((メインポイント))
+      [[重要なトピック1]]
+      [[重要なトピック2]]
+    ((キーポイント))
+      {{詳細1}}
+      {{詳細2}}'''
 
     def generate_mindmap(self, text: str) -> str:
-        """Generate an enhanced mindmap with improved hierarchy and styling"""
+        """Generate mindmap with enhanced error handling and validation"""
         if not text:
             return self._generate_fallback_mindmap()
             
         try:
-            # Generate base mindmap
+            # Generate initial mindmap
             mermaid_syntax = self._generate_mindmap_internal(text)
             
-            # Validate and format
+            # Validate basics
             if not mermaid_syntax.startswith('mindmap'):
                 mermaid_syntax = 'mindmap\n' + mermaid_syntax
-                
-            # Apply enhanced formatting
+            
+            # Format with proper syntax
             formatted_syntax = self._format_mindmap_syntax(mermaid_syntax)
             
-            # Final validation
-            lines = formatted_syntax.split('\n')
-            if len(lines) < 2 or not lines[1].strip().startswith('root('):
+            # Validate structure
+            if len(formatted_syntax.split('\n')) < 3:
+                logger.warning("Generated mindmap is too short, using fallback")
                 return self._generate_fallback_mindmap()
-                
+            
             return formatted_syntax
             
         except Exception as e:
-            logger.error(f"Mindmap generation error: {str(e)}")
+            logger.error(f"Mindmap generation failed: {str(e)}")
             return self._generate_fallback_mindmap()
