@@ -22,9 +22,10 @@ class TextProcessor:
         if not api_key:
             raise ValueError("Gemini API key is not set in environment variables")
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        # Update to use Gemini 1.5 Pro
+        self.model = genai.GenerativeModel('gemini-1.5-pro')
 
-    def chunk_text(self, text, chunk_size=4000):
+    def chunk_text(self, text, chunk_size=8000):  # Increased chunk size
         """Split text into chunks while preserving sentence integrity"""
         logger.debug(f"Starting text chunking with chunk_size: {chunk_size}")
         logger.debug(f"Original text length: {len(text)}")
@@ -58,14 +59,14 @@ class TextProcessor:
             chunks.append(chunk_text)
             logger.debug(f"Created final chunk of length: {len(chunk_text)}")
         
-        # Validate no text was lost
+        # Validate no text was lost with stricter validation
         total_chunks_length = sum(len(chunk) for chunk in chunks)
         logger.debug(f"Total processed text length: {total_processed}")
         logger.debug(f"Total chunks length: {total_chunks_length}")
         
-        if total_chunks_length < (total_processed * 0.95):  # Allow 5% difference for whitespace
-            logger.error("Text chunking validation failed: Significant text loss detected")
-            raise ValueError("Text chunking resulted in significant content loss")
+        if total_chunks_length < (total_processed * 0.98):  # Stricter validation
+            logger.error("Text chunking validation failed: Content loss detected")
+            raise ValueError("Text chunking resulted in content loss")
             
         logger.info(f"Successfully created {len(chunks)} chunks")
         return chunks
@@ -74,7 +75,7 @@ class TextProcessor:
         """Proofread and enhance text with improved validation and logging"""
         try:
             # Split text into chunks
-            text_chunks = self.chunk_text(text, chunk_size=4000)
+            text_chunks = self.chunk_text(text, chunk_size=8000)
             total_chunks = len(text_chunks)
             logger.info(f"テキストを{total_chunks}個のチャンクに分割しました")
             
@@ -98,10 +99,10 @@ class TextProcessor:
                             logger.debug(f"Processing chunk of length: {len(chunk)}")
                             
                             generation_config = genai.types.GenerationConfig(
-                                temperature=0.3,
-                                top_p=0.8,
-                                top_k=40,
-                                max_output_tokens=8192,
+                                temperature=0.1,  # Lower temperature for more consistent output
+                                top_p=0.95,
+                                top_k=50,
+                                max_output_tokens=16384,  # Increased token limit
                             )
                             
                             chunk_prompt = f'''
@@ -127,9 +128,9 @@ class TextProcessor:
                                 proofread_chunk = response.text.strip()
                                 logger.debug(f"Processed chunk length: {len(proofread_chunk)}")
                                 
-                                # Validate chunk processing
-                                if len(proofread_chunk) < (len(chunk) * 0.5):
-                                    raise ValueError(f"Processed chunk is too short: {len(proofread_chunk)} vs {len(chunk)}")
+                                # Stricter validation for chunk processing
+                                if len(proofread_chunk) < (len(chunk) * 0.8):  # Increased threshold
+                                    raise ValueError(f"Processed chunk is incomplete: {len(proofread_chunk)} vs {len(chunk)}")
                                 
                                 proofread_chunks[chunk_index] = proofread_chunk
                                 remaining_chunks.remove(chunk_index)

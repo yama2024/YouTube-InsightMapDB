@@ -241,12 +241,14 @@ div.stApp {
 .step-header {
     background: rgba(255, 255, 255, 0.1) !important;
     border-radius: 12px !important;
-    padding: 1.2rem !important;
-    margin: 1rem 0 !important;
+    padding: 1.5rem !important;
+    margin: 1.2rem 0 !important;
     transition: all 0.3s ease !important;
     display: flex !important;
     align-items: center !important;
     border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    backdrop-filter: blur(10px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
 }
 
 .step-content {
@@ -254,22 +256,24 @@ div.stApp {
 }
 
 .step-title {
-    font-size: 1.4rem !important;
+    font-size: 1.6rem !important;
     font-weight: 700 !important;
-    margin-bottom: 0.4rem !important;
+    margin-bottom: 0.5rem !important;
     display: flex !important;
     align-items: center !important;
-    gap: 0.8rem !important;
+    gap: 1rem !important;
     color: white !important;
     letter-spacing: 0.5px !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
 }
 
 .step-description {
-    font-size: 1rem !important;
-    opacity: 0.9 !important;
-    margin-top: 0.3rem !important;
+    font-size: 1.1rem !important;
+    opacity: 0.95 !important;
+    margin-top: 0.4rem !important;
     color: rgba(255, 255, 255, 0.9) !important;
     font-weight: 400 !important;
+    letter-spacing: 0.3px !important;
 }
 
 .step-header.completed {
@@ -282,6 +286,7 @@ div.stApp {
     background: rgba(74, 144, 226, 0.15) !important;
     border-left: 4px solid #4a90e2 !important;
     box-shadow: 0 4px 12px rgba(74, 144, 226, 0.1) !important;
+    transform: translateY(-1px) !important;
 }
 
 /* Tabs Styling */
