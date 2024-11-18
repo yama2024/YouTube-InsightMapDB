@@ -208,11 +208,15 @@ class TextProcessor:
                     logger.error(f"プロンプトがブロックされました: {str(e)}")
                     raise ValueError("不適切なコンテンツが検出されました")
                     
-                except genai.types.generation_types.GenerationException as e:
-                    logger.warning(f"生成エラー (試行 {attempt + 1}/3): {str(e)}")
-                    if attempt == 2:  # Last attempt
-                        raise ValueError(f"要約の生成に失敗しました: {str(e)}")
-                    time.sleep(2 ** attempt)  # Exponential backoff
+                except Exception as e:
+                    if "blocked" in str(e).lower():
+                        logger.error(f"プロンプトがブロックされました: {str(e)}")
+                        raise ValueError("不適切なコンテンツが検出されました")
+                    else:
+                        logger.warning(f"生成エラー (試行 {attempt + 1}/3): {str(e)}")
+                        if attempt == 2:  # Last attempt
+                            raise ValueError(f"要約の生成に失敗しました: {str(e)}")
+                        time.sleep(2 ** attempt)  # Exponential backoff
                     
                 except Exception as e:
                     logger.error(f"予期しないエラーが発生 (試行 {attempt + 1}/3): {str(e)}")
