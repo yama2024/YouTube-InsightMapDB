@@ -26,6 +26,7 @@ class TextProcessor:
         # Initialize caches
         self.subtitle_cache = TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL
         self.processed_text_cache = TTLCache(maxsize=100, ttl=1800)  # 30 minutes TTL
+        self.summary_cache = TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL for summaries
         
         # Enhanced noise patterns for Japanese text
         self.noise_patterns = {
@@ -59,6 +60,73 @@ class TextProcessor:
                 '､': '、'
             }
         }
+
+    def generate_summary(self, text: str) -> str:
+        """Generate a summary of the input text using Gemini 1.5 Pro"""
+        if not text:
+            logger.warning("Empty text provided for summary generation")
+            return ""
+
+        try:
+            # Check cache first
+            cache_key = hash(text)
+            cached_summary = self.summary_cache.get(cache_key)
+            if cached_summary:
+                logger.info("Using cached summary")
+                return cached_summary
+
+            # Clean the text before summarization
+            cleaned_text = self._clean_text(text)
+            
+            # Prepare the prompt for the model
+            prompt = f"""
+# 目的
+提供されたYouTube動画の文字起こしテキストから、包括的な要約を生成します。
+
+# 要約のガイドライン
+1. 重要なポイントを漏らさず、簡潔に要約してください
+2. 専門用語は可能な限り平易な言葉で説明してください
+3. 階層的な構造で情報を整理してください
+4. 箇条書きと段落を適切に組み合わせて読みやすくしてください
+
+# 出力フォーマット
+以下の構造で要約を作成してください：
+
+# 概要
+[全体的な要約を2-3文で]
+
+## 主なポイント
+• [重要なポイント1]
+• [重要なポイント2]
+• [重要なポイント3]
+
+## 詳細な解説
+[より詳細な説明を段落形式で]
+
+## まとめ
+[結論や重要なメッセージを1-2文で]
+
+# 入力テキスト：
+{cleaned_text}
+"""
+
+            # Generate summary
+            response = self.model.generate_content(prompt)
+            if not response.text:
+                raise ValueError("AI modelからの応答が空でした")
+
+            # Process and format the summary
+            summary = response.text.strip()
+            
+            # Cache the result
+            self.summary_cache[cache_key] = summary
+            
+            return summary
+
+        except Exception as e:
+            error_msg = f"要約生成中にエラーが発生しました: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
 
     def _clean_text(self, text: str, progress_callback=None) -> str:
         """Enhanced text cleaning with progress tracking"""
