@@ -4,8 +4,9 @@ import google.generativeai as genai
 import re
 import os
 import time
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from retrying import retry
+from cachetools import TTLCache, cached
 
 # Enhanced logging setup
 logging.basicConfig(
@@ -22,11 +23,14 @@ class TextProcessor:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
+        # Initialize cache for subtitles (TTL: 1 hour)
+        self.subtitle_cache = TTLCache(maxsize=100, ttl=3600)
+        
         # Enhanced noise patterns for better Japanese text processing
         self.noise_patterns: Dict[str, str] = {
             'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',
             'speaker_tags': r'\[[^\]]*\]|\([^)]*\)',
-            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー|そうですね|ちょっと|まあ|そうですね|はい|あれ|そう|うん|えっとですね|そうですねー|まぁね|あのですね|そうそう|まあまあ|あのね|えっとね)\b',
+            'filler_words': r'\b(えーと|えっと|えー|あの|あのー|まぁ|んー|そのー|なんか|こう|ね|ねぇ|さぁ|うーん|あー|そうですね|ちょっと|まあ|そうですね|はい|あれ|そう|うん|えっとですね|そうですねー|まぁね|あのですね|そうそう|まあまあ|あのね|えっとね|んーと|えっとぉ|うーんと|そのですね|まぁそうですね)\b',
             'repeated_chars': r'([^\W\d_])\1{3,}',
             'multiple_spaces': r'[\s　]{2,}',
             'empty_lines': r'\n\s*\n',
@@ -41,13 +45,13 @@ class TextProcessor:
             'url_patterns': r'https?://\S+|www\.\S+',
             'hashtags': r'#\w+',
             'time_codes': r'\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?',
-            'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音|ノイズ|雑音|間|一同|※)\]',
+            'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音|ノイズ|雑音|間|一同|※|サウンド|BGM開始|BGM終了|SE開始|SE終了)\]',
             'parenthetical_info': r'【[^】]*】|\([^)]*\)',
             'commercial_markers': r'(?:CM|広告|スポンサー)(?:\s*\d*)?',
             'system_messages': r'(?:システム|エラー|通知)(?:：|:).*?(?:\n|$)',
             'social_media_artifacts': r'@\w+|RT\s@\w+|#\w+',
             'formatting_markers': r'\*+|\#+|\{[^}]*\}|\[[^\]]*\]',
-            'noise_words': r'\b(あー|えー|んー|まー|そのー|えっとー|あのー|まぁー|うーん|えっとぉ|んーと|そうですねぇ)\b',
+            'noise_words': r'\b(あー|えー|んー|まー|そのー|えっとー|あのー|まぁー|うーん|えっとぉ|んーと|そうですねぇ|うーんと|えーっと|まぁまぁ)\b',
             'repeated_words': r'(\b\w+\b)(\s+\1\b)+',
             'excessive_spaces': r'(?:　|\s){2,}',
             'line_noise': r'^[\s　]*(?:[=\-~]{3,}|[・×※]{2,})[\s　]*$'
@@ -90,7 +94,9 @@ class TextProcessor:
             'remove_emphasis': r'[﹅﹆゛゜]'
         }
 
-    def _get_subtitles_with_priority(self, video_id: str) -> Optional[str]:
+    @cached(lambda self: self.subtitle_cache)
+    def _get_subtitles_with_priority(self, video_id: str) -> Optional[Tuple[str, str]]:
+        """Enhanced subtitle retrieval with caching and language detection"""
         language_priority = [
             ['ja'],
             ['ja-JP'],
@@ -109,26 +115,35 @@ class TextProcessor:
                 if lang:
                     try:
                         transcript = transcript_list.find_manually_created_transcript(lang)
-                    except:
+                        logger.info(f"Found manual transcript for language: {lang}")
+                    except Exception as e:
+                        logger.debug(f"No manual transcript for {lang}: {str(e)}")
                         try:
                             transcript = transcript_list.find_generated_transcript(lang)
-                        except:
+                            logger.info(f"Found auto-generated transcript for language: {lang}")
+                        except Exception as e:
+                            logger.debug(f"No auto-generated transcript for {lang}: {str(e)}")
                             continue
                 else:
                     # Try any available transcript
                     try:
                         transcript = transcript_list.find_generated_transcript(['ja', 'en'])
-                    except:
+                        logger.info("Found auto-generated transcript (fallback)")
+                    except Exception as e:
+                        logger.debug(f"No auto-generated transcript available: {str(e)}")
                         try:
                             transcript = transcript_list.find_manually_created_transcript(['ja', 'en'])
-                        except:
+                            logger.info("Found manual transcript (fallback)")
+                        except Exception as e:
+                            logger.debug(f"No manual transcript available: {str(e)}")
                             continue
                 
                 transcript_data = transcript.fetch()
                 
-                # Process transcript data
+                # Process transcript data with improved segmentation
                 transcript_segments = []
                 current_segment = []
+                current_time = 0
                 
                 for entry in transcript_data:
                     text = entry['text'].strip()
@@ -139,6 +154,16 @@ class TextProcessor:
                     text = re.sub(r'\[.*?\]', '', text)
                     text = text.strip()
                     
+                    # Handle time gaps
+                    start_time = entry.get('start', 0)
+                    if start_time - current_time > 5:  # Gap of more than 5 seconds
+                        if current_segment:
+                            transcript_segments.append(' '.join(current_segment))
+                            current_segment = []
+                    
+                    current_time = start_time + entry.get('duration', 0)
+                    
+                    # Check for sentence endings
                     if re.search(r'[。．.！!？?]$', text):
                         current_segment.append(text)
                         if current_segment:
@@ -151,7 +176,9 @@ class TextProcessor:
                     transcript_segments.append(' '.join(current_segment))
                 
                 if transcript_segments:
-                    return '\n'.join(transcript_segments)
+                    transcript_text = '\n'.join(transcript_segments)
+                    detected_lang = lang if lang else 'auto'
+                    return transcript_text, detected_lang
                     
             except Exception as e:
                 logger.error(f"Failed to fetch subtitles ({lang if lang else 'auto-generated'}): {str(e)}")
@@ -161,15 +188,25 @@ class TextProcessor:
 
     @retry(stop_max_attempt_number=3, wait_fixed=2000)
     def get_transcript(self, url: str) -> str:
+        """Get transcript with improved error handling and retries"""
         video_id = self._extract_video_id(url)
         if not video_id:
             raise ValueError("無効なYouTube URLです")
         
-        transcript = self._get_subtitles_with_priority(video_id)
-        if not transcript:
-            raise ValueError("字幕を取得できませんでした。手動字幕と自動字幕のどちらも利用できません。")
-        
-        return self._clean_text(transcript)
+        try:
+            result = self._get_subtitles_with_priority(video_id)
+            if not result:
+                raise ValueError("字幕を取得できませんでした。手動字幕と自動字幕のどちらも利用できません。")
+            
+            transcript_text, detected_lang = result
+            logger.info(f"Successfully retrieved transcript in language: {detected_lang}")
+            
+            return self._clean_text(transcript_text)
+            
+        except Exception as e:
+            error_msg = f"字幕取得エラー: {str(e)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
     def _clean_text(self, text: str) -> str:
         """Enhanced text cleaning with improved noise removal and Japanese text handling"""
@@ -224,7 +261,7 @@ class TextProcessor:
             return text if text else ""
 
     def _apply_final_cleanup(self, text: str) -> str:
-        """Apply final cleanup rules to the text"""
+        """Enhanced final cleanup for improved readability"""
         try:
             # Remove excessive newlines
             text = re.sub(r'\n{3,}', '\n\n', text)
@@ -239,8 +276,14 @@ class TextProcessor:
             # Clean up list markers
             text = re.sub(r'^[-・]\s*', '• ', text, flags=re.MULTILINE)
             
+            # Improve spacing around Japanese particles
+            text = re.sub(r'(\s+(?:は|が|を|に|へ|で|と|から|まで|より))\s+', r'\1', text)
+            
             # Remove trailing spaces
             text = re.sub(r'\s+$', '', text, flags=re.MULTILINE)
+            
+            # Improve paragraph breaks
+            text = re.sub(r'([。！？])\s*\n\s*([^「『（])', r'\1\n\n\2', text)
             
             return text
         except Exception as e:
@@ -267,13 +310,17 @@ class TextProcessor:
             text = re.sub(r'ー{2,}', 'ー', text)
             text = re.sub(r'[゛゜]{2,}', '', text)
             
+            # Additional Japanese-specific normalization
+            text = re.sub(r'([あ-んア-ン])\1{2,}', r'\1', text)  # Remove excessive hiragana/katakana repetition
+            text = re.sub(r'([、。！？])[　 ]+', r'\1', text)  # Fix spacing around punctuation
+            
             return text
         except Exception as e:
             logger.error(f"Error in Japanese text normalization: {str(e)}")
             return text
 
     def _improve_sentence_structure(self, text: str) -> str:
-        """Improve sentence structure while preserving context"""
+        """Enhanced sentence structure improvement"""
         try:
             # Add proper spacing after punctuation
             text = re.sub(r'([。．！？、]) ?([^」』】）\s])', r'\1\n\2', text)
@@ -294,13 +341,16 @@ class TextProcessor:
             # Fix Japanese particle spacing
             text = re.sub(r'(\s+(?:は|が|を|に|へ|で|と|から|まで|より))\s+', r'\1', text)
             
+            # Improve paragraph separation
+            text = re.sub(r'([。！？])\s*([^」』】）\s])', r'\1\n\n\2', text)
+            
             return text
         except Exception as e:
             logger.error(f"Error in sentence structure improvement: {str(e)}")
             return text
 
     def _format_paragraphs(self, text: str) -> str:
-        """Enhanced paragraph formatting"""
+        """Enhanced paragraph formatting with improved readability"""
         try:
             # Split into paragraphs
             paragraphs = text.split('\n\n')
@@ -322,10 +372,18 @@ class TextProcessor:
                 if re.match(r'^[。、！？]+$', paragraph.strip()):
                     continue
                 
+                # Handle short segments
+                if len(paragraph) < 10 and not re.search(r'[。！？]$', paragraph):
+                    continue
+                
+                # Format list items
+                if paragraph.startswith('•'):
+                    paragraph = re.sub(r'•\s*', '• ', paragraph)
+                
                 # Add paragraph to list
                 formatted_paragraphs.append(paragraph)
             
-            # Join paragraphs with double newlines
+            # Join paragraphs with appropriate spacing
             return '\n\n'.join(formatted_paragraphs)
         except Exception as e:
             logger.error(f"Error in paragraph formatting: {str(e)}")
@@ -343,16 +401,18 @@ class TextProcessor:
                 match = re.search(pattern, url)
                 if match:
                     video_id = match.group(1)
-                    if len(video_id) == 11:  # Validate ID length
+                    if len(video_id) == 11 and re.match(r'^[\w-]+$', video_id):
                         return video_id
             
-            return None
+            raise ValueError("無効なYouTube URL形式です")
+            
         except Exception as e:
             logger.error(f"Error extracting video ID: {str(e)}")
-            return None
+            raise ValueError(f"YouTube URLの解析に失敗しました: {str(e)}")
 
+    @retry(stop_max_attempt_number=3, wait_fixed=2000)
     def proofread_text(self, text: str, max_retries: int = 5, initial_delay: int = 1) -> str:
-        """Proofread and enhance text with improved validation and logging"""
+        """Enhanced text proofreading with improved error handling"""
         try:
             # Split text into chunks
             text_chunks = self.chunk_text(text, chunk_size=8000)
@@ -396,16 +456,15 @@ class TextProcessor:
 
 入力テキスト：
 {chunk}
-
-校閲後のテキストのみを出力してください。
 '''
+                        
                         response = self.model.generate_content(
                             chunk_prompt,
                             generation_config=genai.types.GenerationConfig(
-                                temperature=0.1,
-                                top_p=0.95,
-                                top_k=50,
-                                max_output_tokens=16384,
+                                temperature=0.3,
+                                top_p=0.8,
+                                top_k=40,
+                                max_output_tokens=8192,
                             )
                         )
                         
@@ -452,7 +511,7 @@ class TextProcessor:
             return text
 
     def chunk_text(self, text: str, chunk_size: int = 8000) -> List[str]:
-        """Split text into manageable chunks while preserving sentence boundaries"""
+        """Enhanced text chunking with improved sentence boundary detection"""
         try:
             if not text:
                 return []
@@ -491,63 +550,3 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"Error in chunk_text: {str(e)}")
             return [text]
-
-    def generate_summary(self, text: str) -> str:
-        """Generate summary with improved text processing"""
-        if not text:
-            return ""
-            
-        try:
-            prompt = f'''
-以下のYouTube動画コンテンツから構造化された要約を生成してください：
-
-入力テキスト:
-{text}
-
-必須要素:
-1. タイトル（見出し1）
-2. 概要（2-3文の簡潔な説明）
-3. 主要ポイント（箇条書き）
-4. 詳細説明（サブセクション）
-5. 結論（まとめ）
-
-出力形式:
-# [動画タイトル]
-
-## 概要
-[2-3文の説明]
-
-## 主要ポイント
-- [重要なポイント1]
-- [重要なポイント2]
-- [重要なポイント3]
-
-## 詳細説明
-### [トピック1]
-[詳細な説明]
-
-### [トピック2]
-[詳細な説明]
-
-## 結論
-[まとめと結論]
-'''
-            
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.3,
-                    top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=8192,
-                )
-            )
-            
-            if not response or not response.text:
-                raise ValueError("Empty response from API")
-            
-            return response.text
-            
-        except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
-            raise
