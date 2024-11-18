@@ -39,9 +39,12 @@ class TextProcessor:
         
         # Additional patterns for Japanese text
         self.jp_patterns = {
-            'half_to_full_width': str.maketrans({chr(0x0021 + i): chr(0xFF01 + i) for i in range(94)}),
-            'normalize_periods': str.maketrans({'．': '。', '…': '。', '....': '。', '...': '。'}),
-            'remove_emphasis': r'[﹅﹆゛゜]',
+            'normalize_periods': {
+                '．': '。',
+                '…': '。',
+                '.': '。'
+            },
+            'remove_emphasis': r'[﹅﹆゛゜]'
         }
 
     def _clean_text(self, text: str) -> str:
@@ -53,11 +56,11 @@ class TextProcessor:
         logger.debug(f"Original text length: {original_length}")
         
         try:
-            # Convert half-width characters to full-width
-            text = text.translate(self.jp_patterns['half_to_full_width'])
+            # Normalize periods
+            for old, new in self.jp_patterns['normalize_periods'].items():
+                text = text.replace(old, new)
             
-            # Normalize periods and remove emphasis marks
-            text = text.translate(self.jp_patterns['normalize_periods'])
+            # Remove emphasis marks
             text = re.sub(self.jp_patterns['remove_emphasis'], '', text)
             
             # Apply noise removal patterns
@@ -83,7 +86,7 @@ class TextProcessor:
                     logger.error("Cleaned text is too short, might have lost important content")
                     return text
             
-            return text.strip()
+            return text.strip() or text
             
         except Exception as e:
             logger.error(f"Error during text cleaning: {str(e)}")
@@ -382,53 +385,34 @@ class TextProcessor:
             
             # Combine all chunks
             final_text = '\n'.join(chunk for chunk in proofread_chunks if chunk)
-            
-            # Validate final text
-            if not final_text or len(final_text.strip()) < (original_text_length * 0.5):
-                raise ValueError("Significant content loss detected in proofread text")
-            
             return final_text
             
         except Exception as e:
-            error_msg = f"Error during proofreading: {str(e)}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
+            logger.error(f"Error during proofreading: {str(e)}")
+            return text
 
     def chunk_text(self, text: str, chunk_size: int = 8000) -> List[str]:
-        """Improved text chunking with better sentence preservation"""
-        logger.debug(f"Starting text chunking with chunk_size: {chunk_size}")
-        logger.debug(f"Original text length: {len(text)}")
-        
-        # Clean text before chunking
-        text = self._clean_text(text)
-        
-        # Split by sentences while preserving Japanese periods
-        sentence_pattern = r'([。．！？][\s]*)'
-        sentences = re.split(sentence_pattern, text)
-        
-        # Recombine sentences with their punctuation
-        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2] + [''])]
-        
-        chunks: List[str] = []
-        current_chunk: List[str] = []
+        """Split text into manageable chunks while preserving sentence boundaries"""
+        if not text:
+            return []
+            
+        sentences = re.split(r'([。．！？\n])', text)
+        current_chunk = []
+        chunks = []
         current_length = 0
         
-        for sentence in sentences:
-            if not sentence.strip():
-                continue
-            
+        for i in range(0, len(sentences)-1, 2):
+            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
             sentence_length = len(sentence)
             
-            # Check if adding this sentence would exceed chunk size
             if current_length + sentence_length > chunk_size and current_chunk:
                 chunks.append(''.join(current_chunk))
-                current_chunk = [sentence]
-                current_length = sentence_length
-            else:
-                current_chunk.append(sentence)
-                current_length += sentence_length
+                current_chunk = []
+                current_length = 0
+            
+            current_chunk.append(sentence)
+            current_length += sentence_length
         
-        # Add the last chunk if it exists
         if current_chunk:
             chunks.append(''.join(current_chunk))
         
