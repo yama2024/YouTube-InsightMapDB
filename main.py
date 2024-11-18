@@ -27,17 +27,9 @@ def load_css():
 load_css()
 
 def copy_text_block(text, label=""):
-    """Display text in a styled container"""
-    st.markdown(f'''
-    <div class="text-display-container">
-        <div class="text-area-header">
-            {label if label else ""}
-        </div>
-        <div class="text-content">
-            {text}
-        </div>
-    </div>
-    ''', unsafe_allow_html=True)
+    if label:
+        st.markdown(f"#### {label}")
+    st.markdown(text, unsafe_allow_html=False)
 
 # Initialize session state
 if 'current_step' not in st.session_state:
@@ -189,8 +181,8 @@ with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_s
         tabs = st.tabs(["📝 Transcript", "📊 Summary", "🔄 Mind Map"])
         
         with tabs[0]:
-            st.markdown('<h5 class="subsection-header">Original Transcript</h5>', unsafe_allow_html=True)
-            copy_text_block(st.session_state.transcript, "文字起こしテキスト")
+            st.markdown("### Original Transcript")
+            copy_text_block(st.session_state.transcript)
         
         with tabs[1]:
             if 'summary' not in st.session_state or not st.session_state.summary:
@@ -206,11 +198,11 @@ with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_s
                         st.stop()
             
             if st.session_state.summary:
-                st.markdown('<h5 class="subsection-header">AI Summary</h5>', unsafe_allow_html=True)
-                copy_text_block(st.session_state.summary, "AI要約")
+                st.markdown("### AI Summary")
+                st.markdown(st.session_state.summary)
         
         with tabs[2]:
-            st.markdown('<h5 class="subsection-header">Mind Map Visualization</h5>', unsafe_allow_html=True)
+            st.markdown("### Mind Map Visualization")
             
             if 'mindmap' not in st.session_state or not st.session_state.mindmap:
                 with st.spinner("マインドマップを生成中..."):
