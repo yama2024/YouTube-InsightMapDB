@@ -211,21 +211,27 @@ try:
                 
                 with tabs[0]:
                     st.markdown("### Original Transcript")
-                    copy_text_block(st.session_state.transcript)
-                    
-                    if st.button("✨ Enhance Readability"):
-                        with st.spinner("テキストを整形中..."):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        copy_text_block(st.session_state.transcript)
+                    with col2:
+                        if st.button("✨ テキストを整形", help="AIを使用して文章を校正し、読みやすく整形します"):
                             try:
-                                text_processor = TextProcessor()
-                                enhanced_text = text_processor.proofread_text(st.session_state.transcript)
-                                st.session_state.enhanced_text = enhanced_text
-                                st.markdown("### Enhanced Text")
-                                st.markdown(enhanced_text)
-                                update_progress('proofread')
+                                with st.spinner("テキストを整形中..."):
+                                    text_processor = TextProcessor()
+                                    enhanced_text = text_processor.proofread_text(st.session_state.transcript)
+                                    st.session_state.enhanced_text = enhanced_text
+                                    update_progress('proofread')
+                                    
+                                st.success("テキストの整形が完了しました")
+                                st.markdown("### 整形後のテキスト")
+                                st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+                                st.markdown(enhanced_text.replace('\n', '  \n'), unsafe_allow_html=True)
+                                st.markdown('</div>', unsafe_allow_html=True)
                             except Exception as e:
-                                st.error(f"テキストの整形に失敗しました: {str(e)}")
+                                st.error(f"テキストの整形中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error in text enhancement: {str(e)}")
-                
+
                 with tabs[1]:
                     if 'summary' not in st.session_state or not st.session_state.summary:
                         with st.spinner("AI要約を生成中..."):

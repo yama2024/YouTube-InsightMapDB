@@ -106,8 +106,7 @@ class TextProcessor:
                 logger.error(f"利用可能な字幕が見つかりませんでした:\n{error_detail}")
                 return None
 
-            # Safe transcript fetching with type verification
-            logger.debug(f"字幕オブジェクトの型: {type(transcript)}")
+            # Process transcript segments with improved timing and logging
             try:
                 transcript_data = transcript.fetch()
                 logger.debug(f"取得した字幕データの型: {type(transcript_data)}")
@@ -268,24 +267,43 @@ class TextProcessor:
             return ""
             
         try:
-            prompt = f"""以下のテキストを校正し、読みやすく整形してください：
-            
-            1. 文章を自然な日本語に修正
-            2. 句読点を適切に配置
-            3. 段落を適切に分割
-            4. 冗長な表現を簡潔に
-            5. 文法的な誤りを修正
-            
-            入力テキスト：
-            {text}
-            """
+            prompt = f"""
+# あなたの目的:
+「Original Transcript」のテキストを全文校閲します。
+
+文字起こししたYouTubeの動画について、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。
+あなたが文脈として不自然と感じた文章は全て誤字脱字が含まれており、正確に修正する必要があります。
+ステップバイステップで思考しながら校閲を行い、正確に修正して文章を出力してください。
+
+# ルール:
+1.校閲した文章以外の出力は決して行ってはいけません。
+2.校閲した文章のみを出力します。
+3.改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
+4.時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
+5.スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
+6.テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
+
+入力テキスト：
+{text}
+"""
             
             response = self.model.generate_content(prompt)
-            enhanced_text = response.text if response.text else text
+            if not response.text:
+                logger.error("AIモデルからの応答が空でした")
+                return text
+                
+            enhanced_text = response.text
             
             # Apply additional formatting
             enhanced_text = self._clean_text(enhanced_text)
             enhanced_text = self._improve_sentence_structure(enhanced_text)
+            
+            # Ensure proper line breaks after periods
+            enhanced_text = re.sub(r'([。])', r'\1\n', enhanced_text)
+            
+            # Remove any remaining excessive whitespace
+            enhanced_text = re.sub(r'\n{3,}', '\n\n', enhanced_text)
+            enhanced_text = enhanced_text.strip()
             
             return enhanced_text
             
