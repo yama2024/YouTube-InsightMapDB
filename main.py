@@ -226,61 +226,31 @@ with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_s
                         st.stop()
             
             if st.session_state.mindmap:
-                st.markdown('''
-                <div class="mindmap-container glass-container">
-                    <div class="mindmap-visualization">
-                        <h3 class="section-header">Interactive Mind Map</h3>
-                        <!-- Mermaid diagram will be rendered here -->
-                    </div>
-                </div>
-                ''', unsafe_allow_html=True)
-
                 # Main content area
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
-                    try:
-                        st_mermaid(st.session_state.mindmap, height="600px")
-                    except Exception as e:
-                        st.error(f"マインドマップの表示に失敗しました: {str(e)}")
+                    st.markdown("### Mind Map")
+                    st_mermaid(st.session_state.mindmap, height="400px")
                 
                 with col2:
-                    st.markdown("""
-                    <div class="glass-container">
-                        <h3 class="section-header">Mind Map Options</h3>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Controls for mindmap interaction
-                    st.markdown('<div class="mindmap-controls">', unsafe_allow_html=True)
-                    
-                    # Display options
-                    st.selectbox(
-                        "表示サイズ",
-                        ["Small", "Medium", "Large"],
-                        index=1,
-                        key="mindmap_size"
-                    )
-                    
-                    # Mermaid syntax display
+                    st.markdown("### Mermaid Syntax")
                     st.text_area(
-                        "Mermaid Syntax",
+                        "",
                         value=st.session_state.mindmap,
-                        height=200,
-                        help="このMermaid構文をコピーして他の場所で使用できます"
+                        height=200
                     )
                     
-                    # Download options
+                    # Download option
                     st.download_button(
                         "📥 Download Mermaid Syntax",
                         data=st.session_state.mindmap,
                         file_name="mindmap.mmd",
-                        mime="text/plain",
-                        help="Mermaid構文をファイルとしてダウンロード"
+                        mime="text/plain"
                     )
                     
                     # Regenerate button
-                    if st.button("🔄 マインドマップを再生成", use_container_width=True):
+                    if st.button("🔄 マインドマップを再生成"):
                         st.session_state.mindmap = None
                         st.rerun()
 

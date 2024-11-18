@@ -205,7 +205,7 @@ div.stApp {
     margin-top: 0.8rem !important;
 }
 
-/* Progress Steps */
+/* Process Steps */
 .process-step {
     display: flex !important;
     align-items: center !important;
@@ -287,6 +287,133 @@ div.stApp {
     border-left: 4px solid #4a90e2 !important;
     box-shadow: 0 4px 12px rgba(74, 144, 226, 0.1) !important;
     transform: translateY(-1px) !important;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .video-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .video-thumbnail {
+        max-width: 100% !important;
+    }
+    
+    .video-stats {
+        justify-content: center !important;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 0.75rem 1rem !important;
+        font-size: 0.9rem !important;
+    }
+}
+
+/* Enhanced Collapsible Sections */
+.streamlit-expanderHeader {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 10px !important;
+    padding: 1rem !important;
+    transition: all 0.3s ease !important;
+    margin-bottom: 0.5rem !important;
+    display: flex !important;
+    align-items: center !important;
+    cursor: pointer !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.streamlit-expanderHeader:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.streamlit-expanderHeader p {
+    margin: 0 !important;
+    font-size: 1.1rem !important;
+    font-weight: 500 !important;
+    color: white !important;
+}
+
+.streamlit-expanderContent {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-radius: 0 0 10px 10px !important;
+    margin-top: -0.5rem !important;
+    padding: 1.5rem !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-top: none !important;
+    transition: all 0.3s ease !important;
+}
+
+/* Collapse/Expand Icon */
+.streamlit-expanderHeader::after {
+    content: '▼' !important;
+    font-size: 0.8rem !important;
+    margin-left: auto !important;
+    transition: transform 0.3s ease !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.streamlit-expanderHeader[aria-expanded="true"]::after {
+    transform: rotate(180deg) !important;
+}
+
+/* Space Management for Content */
+.glass-container {
+    margin: 0.75rem 0 !important;
+    padding: 1.5rem !important;
+}
+
+.feature-grid {
+    gap: 1rem !important;
+}
+
+.video-grid {
+    gap: 1.5rem !important;
+}
+
+/* Tabs Space Management */
+.stTabs [data-baseweb="tab-panel"] {
+    padding: 1rem !important;
+}
+
+.stat-badge {
+    padding: 0.3rem 0.6rem !important;
+    font-size: 0.85rem !important;
+}
+
+/* Responsive Spacing */
+@media (max-width: 768px) {
+    .glass-container {
+        padding: 1rem !important;
+    }
+    
+    .streamlit-expanderHeader {
+        padding: 0.75rem !important;
+    }
+    
+    .streamlit-expanderContent {
+        padding: 1rem !important;
+    }
+    
+    .feature-grid {
+        gap: 0.75rem !important;
+    }
+}
+
+/* Animation for Content */
+.streamlit-expanderContent {
+    animation: slideDown 0.3s ease-out !important;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* Tabs Styling */
@@ -444,58 +571,4 @@ div.stApp {
         opacity: 1;
         transform: translateY(0);
     }
-}
-
-/* Add new mindmap-specific styles */
-.mindmap-container {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    padding: 2rem;
-    margin: 1.5rem 0;
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-}
-
-.mindmap-visualization {
-    min-height: 600px;
-    width: 100%;
-    overflow: auto;
-    padding: 1rem;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-}
-
-.mindmap-controls {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-}
-
-.mindmap-control-button {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    padding: 0.5rem 1rem;
-    color: white;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-
-.mindmap-control-button:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: translateY(-1px);
-}
-
-/* Mermaid diagram customization */
-.mindmap-container .mermaid {
-    background: transparent !important;
-}
-
-.mindmap-container .section-header {
-    color: white;
-    margin-bottom: 1.5rem;
-    font-size: 1.8rem;
-    font-weight: 600;
 }
