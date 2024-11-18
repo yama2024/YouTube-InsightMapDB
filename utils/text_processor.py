@@ -103,14 +103,27 @@ class TextProcessor:
             
         try:
             if progress_callback:
-                progress_callback(0.1, "校正処理を開始")
+                progress_callback(0.1, "🔍 テキスト解析を開始")
             
-            # Initial text cleaning
-            text = self._clean_text(text, lambda p, m: progress_callback(p * 0.3, m) if progress_callback else None)
+            # Initial text cleaning with detailed progress
+            cleaning_steps = {
+                0.15: "📝 フィラーワードを除去中...",
+                0.20: "🔤 文字の正規化を実行中...",
+                0.25: "📊 タイムスタンプを処理中...",
+                0.30: "✨ 不要な記号を削除中..."
+            }
+            
+            for progress, message in cleaning_steps.items():
+                if progress_callback:
+                    progress_callback(progress, message)
+                time.sleep(0.3)  # Visual feedback
+            
+            text = self._clean_text(text, lambda p, m: progress_callback(0.3 + p * 0.2, m) if progress_callback else None)
             
             if progress_callback:
-                progress_callback(0.4, "AIによる文章校正を実行中")
+                progress_callback(0.5, "🤖 AIモデルによる文章校正を準備中...")
             
+            # AI Processing steps
             prompt = f"""
 # あなたの目的:
 「Original Transcript」のテキストを全文校閲します。
@@ -132,30 +145,40 @@ class TextProcessor:
 """
             
             if progress_callback:
-                progress_callback(0.6, "AIモデルからの応答を処理中")
+                progress_callback(0.6, "🧠 AIによる文章解析中...")
+                time.sleep(0.3)
+                progress_callback(0.7, "📝 文章の校正を実行中...")
             
             response = self.model.generate_content(prompt)
             if not response.text:
                 logger.error("AIモデルからの応答が空でした")
+                if progress_callback:
+                    progress_callback(1.0, "❌ エラー: AIモデルからの応答が空です")
                 return text
             
             if progress_callback:
-                progress_callback(0.8, "最終的な文章の整形中")
+                progress_callback(0.8, "🎨 文章の最終調整中...")
             
             enhanced_text = response.text
             enhanced_text = self._clean_text(enhanced_text)
+            
+            if progress_callback:
+                progress_callback(0.9, "📊 文章構造を最適化中...")
+            
             enhanced_text = self._improve_sentence_structure(enhanced_text)
             enhanced_text = re.sub(r'([。])', r'\1\n', enhanced_text)
             enhanced_text = re.sub(r'\n{3,}', '\n\n', enhanced_text)
             enhanced_text = enhanced_text.strip()
             
             if progress_callback:
-                progress_callback(1.0, "校正処理が完了しました")
+                progress_callback(1.0, "✨ 校正処理が完了しました!")
             
             return enhanced_text
             
         except Exception as e:
             logger.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
+            if progress_callback:
+                progress_callback(1.0, f"❌ エラー: {str(e)}")
             return text
 
     def _improve_sentence_structure(self, text: str) -> str:
