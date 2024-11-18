@@ -29,6 +29,9 @@ class TextProcessor:
         self.processed_text_cache = TTLCache(maxsize=100, ttl=1800)  # 30 minutes TTL
         self.summary_cache = TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL for summaries
         
+        # Maximum chunk size for text processing (in characters)
+        self.max_chunk_size = 8000
+        
         # Enhanced noise patterns for Japanese text
         self.noise_patterns = {
             'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',
@@ -61,6 +64,173 @@ class TextProcessor:
                 '､': '、'
             }
         }
+
+    def _chunk_text(self, text: str) -> List[str]:
+        """Split text into manageable chunks"""
+        sentences = re.split(r'([。！？])', text)
+        chunks = []
+        current_chunk = ""
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
+            if len(current_chunk) + len(sentence) <= self.max_chunk_size:
+                current_chunk += sentence
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = sentence
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        return chunks
+
+    def generate_summary(self, text: str) -> str:
+        """Generate a summary of the input text using Gemini 1.5 Pro with enhanced error handling and validation"""
+        logger.info("要約生成を開始します")
+        
+        try:
+            # Input validation
+            is_valid, error_msg = self._validate_text(text)
+            if not is_valid:
+                raise ValueError(f"入力テキストが無効です: {error_msg}")
+            
+            # Check cache first
+            cache_key = hash(text)
+            cached_summary = self.summary_cache.get(cache_key)
+            if cached_summary:
+                logger.info("キャッシュされた要約を使用します")
+                return cached_summary
+
+            # Clean and chunk the text
+            cleaned_text = self._clean_text(text)
+            text_chunks = self._chunk_text(cleaned_text)
+            logger.info(f"テキストを{len(text_chunks)}チャンクに分割しました")
+
+            chunk_summaries = []
+            for i, chunk in enumerate(text_chunks):
+                logger.info(f"チャンク {i+1}/{len(text_chunks)} の処理を開始")
+                
+                # Prepare the prompt for this chunk
+                prompt = f"""
+                # 目的と背景
+                このテキストはYouTube動画の文字起こしの一部です ({i+1}/{len(text_chunks)})。
+                視聴者が内容を効率的に理解できるよう、包括的な要約を生成します。
+
+                # 要約のガイドライン
+                1. このチャンクの重要なポイントを簡潔に要約
+                2. 専門用語や技術的な概念は以下のように扱う：
+                   - 初出時に簡潔な説明を付記
+                   - 可能な場合は平易な言葉で言い換え
+                   - 重要な専門用語は文脈を保持
+
+                # 入力テキスト：
+                {chunk}
+                """
+
+                # Generate summary for this chunk with enhanced error handling
+                for attempt in range(3):
+                    try:
+                        response = self.model.generate_content(prompt)
+                        if not response or not response.text:
+                            raise ValueError("AIモデルからの応答が空でした")
+                        
+                        chunk_summaries.append(response.text.strip())
+                        break
+                        
+                    except Exception as e:
+                        if "429" in str(e) or "Resource has been exhausted" in str(e):
+                            logger.error(f"API制限に達しました: {str(e)}")
+                            wait_time = min(32, (2 ** attempt) * 5)  # Longer backoff, max 32 seconds
+                            logger.info(f"待機中... {wait_time}秒")
+                            time.sleep(wait_time)
+                            if attempt == 2:
+                                raise ValueError("API制限に達しました。しばらく待ってから再試行してください。")
+                        elif "blocked" in str(e).lower():
+                            logger.error(f"プロンプトがブロックされました: {str(e)}")
+                            raise ValueError("不適切なコンテンツが検出されました")
+                        else:
+                            logger.warning(f"生成エラー (試行 {attempt + 1}/3): {str(e)}")
+                            if attempt == 2:  # Last attempt
+                                raise ValueError(f"要約の生成に失敗しました: {str(e)}")
+                            wait_time = min(32, (2 ** attempt) * 5)  # Longer backoff, max 32 seconds
+                            time.sleep(wait_time)
+
+            # Combine chunk summaries into final summary
+            if chunk_summaries:
+                combined_summary = self._combine_summaries(chunk_summaries)
+                self.summary_cache[cache_key] = combined_summary
+                logger.info("要約の生成が正常に完了しました")
+                return combined_summary
+            else:
+                raise ValueError("チャンクの要約生成に失敗しました")
+
+        except Exception as e:
+            error_msg = f"要約生成中にエラーが発生しました: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+
+    def _combine_summaries(self, chunk_summaries: List[str]) -> str:
+        """Combine multiple chunk summaries into a coherent final summary"""
+        if not chunk_summaries:
+            return ""
+
+        try:
+            combine_prompt = f"""
+            # 目的
+            複数のテキストチャンクの要約を1つの包括的な要約にまとめます。
+
+            # 出力フォーマット
+            以下の構造で最終的な要約を作成してください：
+
+            # 概要
+            [全体の要点を2-3文で簡潔に説明]
+
+            ## 主なポイント
+            • [重要なポイント1 - 具体的な例や数値を含める]
+            • [重要なポイント2 - 技術用語がある場合は説明を付記]
+            • [重要なポイント3 - 実践的な示唆や応用点を含める]
+
+            ## 詳細な解説
+            [本文の詳細な解説]
+
+            ## まとめ
+            [主要な発見や示唆を1-2文で結論付け]
+
+            # 入力テキスト（チャンク要約）：
+            {' '.join(chunk_summaries)}
+            """
+
+            for attempt in range(3):
+                try:
+                    response = self.model.generate_content(combine_prompt)
+                    if not response or not response.text:
+                        raise ValueError("AIモデルからの応答が空でした")
+                    
+                    final_summary = response.text.strip()
+                    is_valid, error_msg = self._validate_summary_response(final_summary)
+                    if not is_valid:
+                        raise ValueError(f"生成された要約が無効です: {error_msg}")
+                    
+                    return final_summary
+
+                except Exception as e:
+                    if "429" in str(e) or "Resource has been exhausted" in str(e):
+                        logger.error(f"API制限に達しました: {str(e)}")
+                        wait_time = min(32, (2 ** attempt) * 5)
+                        time.sleep(wait_time)
+                        if attempt == 2:
+                            raise ValueError("API制限に達しました。しばらく待ってから再試行してください。")
+                    else:
+                        logger.warning(f"要約の結合中にエラーが発生 (試行 {attempt + 1}/3): {str(e)}")
+                        if attempt == 2:
+                            raise
+                        wait_time = min(32, (2 ** attempt) * 5)
+                        time.sleep(wait_time)
+
+        except Exception as e:
+            logger.error(f"要約の結合中にエラーが発生しました: {str(e)}")
+            raise ValueError(f"要約の結合に失敗しました: {str(e)}")
 
     def _validate_text(self, text: str) -> Tuple[bool, str]:
         """Validate input text and return validation status and error message"""
