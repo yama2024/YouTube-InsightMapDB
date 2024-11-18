@@ -298,26 +298,51 @@ try:
                                         'message': message
                                     }
                                     progress_bar.progress(progress)
-                                    status_placeholder.text(message)
+                                    status_placeholder.markdown(f'<div class="progress-message">{message}</div>', unsafe_allow_html=True)
                                 
                                 with st.spinner("テキストを整形中..."):
                                     text_processor = TextProcessor()
+                                    
+                                    # Initial progress
+                                    update_enhancement_progress(0.1, "🔍 テキストの解析を開始...")
+                                    time.sleep(0.5)  # Visual feedback
+                                    
+                                    # Start enhancement process
                                     enhanced_text = text_processor.proofread_text(
                                         st.session_state.transcript,
                                         progress_callback=update_enhancement_progress
                                     )
-                                    st.session_state.enhanced_text = enhanced_text
-                                    update_step_progress('proofread')
-                                    update_enhancement_progress(1.0, "テキストの整形が完了しました")
-                                
-                                st.success("テキストの整形が完了しました")
-                                
-                                st.markdown("#### 整形後のテキスト")
-                                st.markdown('<div class="glass-container">', unsafe_allow_html=True)
-                                st.markdown(enhanced_text.replace('\n', '  \n'))
-                                st.markdown('</div>', unsafe_allow_html=True)
+                                    
+                                    if enhanced_text:
+                                        st.session_state.enhanced_text = enhanced_text
+                                        update_step_progress('proofread')
+                                        update_enhancement_progress(1.0, "✨ テキストの整形が完了しました!")
+                                        
+                                        # Success message with additional details
+                                        st.success("テキストの整形が完了しました")
+                                        
+                                        # Display enhanced text with improved formatting
+                                        st.markdown("#### 整形後のテキスト")
+                                        st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+                                        st.markdown(enhanced_text.replace('\n', '  \n'))
+                                        st.markdown('</div>', unsafe_allow_html=True)
+                                        
+                                        # Add comparison metrics
+                                        original_length = len(st.session_state.transcript)
+                                        enhanced_length = len(enhanced_text)
+                                        st.markdown("#### 処理の統計")
+                                        col1, col2 = st.columns(2)
+                                        with col1:
+                                            st.metric("元のテキスト文字数", f"{original_length:,}")
+                                        with col2:
+                                            st.metric("整形後の文字数", f"{enhanced_length:,}", 
+                                                     delta=f"{enhanced_length - original_length:,}")
+                                    else:
+                                        update_enhancement_progress(1.0, "⚠️ テキストの整形に問題が発生しました")
+                                        st.error("テキストの整形に失敗しました。もう一度お試しください。")
                                 
                             except Exception as e:
+                                update_enhancement_progress(1.0, "❌ エラーが発生しました")
                                 st.error(f"テキストの整形中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error in text enhancement: {str(e)}")
                     else:
