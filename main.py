@@ -86,8 +86,23 @@ try:
 
     def check_features_completed():
         """Check if all required features are completed before PDF export"""
-        required_features = ['video_info', 'transcript', 'summary', 'mindmap']
-        return all(st.session_state.steps_completed[feature] for feature in required_features)
+        required_features = {
+            'video_info': '動画情報',
+            'transcript': '文字起こし',
+            'summary': '要約',
+            'mindmap': 'マインドマップ'
+        }
+        
+        # Check if enhancement was attempted and is complete
+        if st.session_state.get('enhanced_text') is not None:
+            required_features['proofread'] = 'テキスト整形'
+        
+        completion_status = {
+            feature: st.session_state.steps_completed.get(feature, False)
+            for feature in required_features.keys()
+        }
+        
+        return completion_status, required_features
 
     # Application Header
     st.markdown('''
@@ -380,44 +395,47 @@ try:
                 with tabs[4]:
                     st.markdown("### PDF Export")
                     
-                    features_completed = check_features_completed()
+                    completion_status, required_features = check_features_completed()
+                    all_features_complete = all(completion_status.values())
                     
-                    if not features_completed:
+                    if not all_features_complete:
                         missing_features = [
-                            feature for feature, completed in st.session_state.steps_completed.items()
-                            if not completed and feature in ['video_info', 'transcript', 'summary', 'mindmap']
+                            required_features[feature]
+                            for feature, completed in completion_status.items()
+                            if not completed
                         ]
-                        st.warning(f"以下の機能を完了してからPDFをエクスポートしてください: {', '.join(missing_features)}")
+                        st.warning(
+                            f"以下の機能を完了してからPDFをエクスポートしてください: {', '.join(missing_features)}")
                     else:
                         st.success("全ての必要な機能が完了しています。PDFをエクスポートできます。")
                         
-                        if st.button("📄 Generate PDF Report", disabled=not features_completed):
+                        if st.button("📄 PDFレポートを生成", disabled=not all_features_complete):
                             try:
                                 with st.spinner("PDFレポートを生成中..."):
                                     pdf_generator = PDFGenerator()
                                     
                                     # Prepare the data for PDF generation
-                                    proofread_text = st.session_state.enhanced_text if st.session_state.steps_completed.get('proofread', False) else ''
+                                    enhanced_text = st.session_state.enhanced_text if completion_status.get('proofread', False) else None
                                     
                                     pdf_data = pdf_generator.create_pdf(
                                         video_info=st.session_state.video_info,
                                         transcript=st.session_state.transcript,
                                         summary=st.session_state.summary,
-                                        proofread_text=proofread_text
+                                        proofread_text=enhanced_text
                                     )
                                     
                                     # Store PDF data in session state
                                     st.session_state.pdf_data = pdf_data
+                                    update_step_progress('pdf', True)
                                     
                                     # Offer download button
                                     st.download_button(
-                                        label="📥 Download PDF Report",
+                                        label="📥 PDFレポートをダウンロード",
                                         data=pdf_data,
-                                        file_name="youtube_analysis_report.pdf",
+                                        file_name=f"{st.session_state.video_info['title']}_analysis.pdf",
                                         mime="application/pdf"
                                     )
                                     
-                                    update_step_progress('pdf', True)
                                     st.success("PDFレポートが正常に生成されました！")
                             except Exception as e:
                                 st.error(f"PDFの生成中にエラーが発生しました: {str(e)}")
