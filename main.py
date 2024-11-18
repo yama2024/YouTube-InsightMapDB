@@ -1,8 +1,8 @@
-import streamlit as st
 from utils.youtube_helper import YouTubeHelper
 from utils.text_processor import TextProcessor
 from utils.mindmap_generator import MindMapGenerator
 from utils.pdf_generator import PDFGenerator
+import streamlit as st
 import os
 import time
 import logging
@@ -11,26 +11,25 @@ from streamlit_mermaid import st_mermaid
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 try:
     # Page configuration
-    st.set_page_config(
-        page_title="YouTube InsightMap",
-        page_icon="🎯",
-        layout="wide",
-        initial_sidebar_state="collapsed"
-    )
+    st.set_page_config(page_title="YouTube InsightMap",
+                       page_icon="🎯",
+                       layout="wide",
+                       initial_sidebar_state="collapsed")
 
     # Load CSS
     def load_css():
         try:
-            css_path = os.path.join(os.path.dirname(__file__), 'styles', 'custom.css')
+            css_path = os.path.join(os.path.dirname(__file__), 'styles',
+                                    'custom.css')
             if os.path.exists(css_path):
                 with open(css_path) as f:
-                    st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+                    st.markdown(f'<style>{f.read()}</style>',
+                                unsafe_allow_html=True)
             else:
                 logger.error("CSS file not found!")
         except Exception as e:
@@ -73,7 +72,10 @@ try:
     if 'enhanced_text' not in st.session_state:
         st.session_state.enhanced_text = None
     if 'enhancement_progress' not in st.session_state:
-        st.session_state.enhancement_progress = {'progress': 0.0, 'message': ''}
+        st.session_state.enhancement_progress = {
+            'progress': 0.0,
+            'message': ''
+        }
 
     def update_step_progress(step_name: str, completed: bool = True):
         """Update the completion status of a processing step"""
@@ -88,7 +90,8 @@ try:
         <div class="app-title">YouTube InsightMap</div>
         <div class="app-subtitle">Content Knowledge Visualization</div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''',
+                unsafe_allow_html=True)
 
     # Feature Introduction
     st.markdown('''
@@ -109,7 +112,8 @@ try:
             </div>
         </div>
     </div>
-    ''', unsafe_allow_html=True)
+    ''',
+                unsafe_allow_html=True)
 
     def get_step_status(step_number):
         try:
@@ -132,21 +136,23 @@ try:
                     {f'<div class="step-description">{description}</div>' if description else ''}
                 </div>
             </div>
-            ''', unsafe_allow_html=True)
+            ''',
+                        unsafe_allow_html=True)
         except Exception as e:
             logger.error(f"Error rendering step header: {str(e)}")
 
     # Main application logic
     try:
         # Step 1: Video Input
-        with st.expander("Step 1: Video Input", expanded=st.session_state.current_step == 1):
-            render_step_header(1, "Video Input", "🎥", "分析したいYouTube動画のURLを入力してください")
-            
+        with st.expander("Step 1: Video Input",
+                         expanded=st.session_state.current_step == 1):
+            render_step_header(1, "Video Input", "🎥",
+                               "分析したいYouTube動画のURLを入力してください")
+
             youtube_url = st.text_input(
                 "YouTube URL",
                 placeholder="https://www.youtube.com/watch?v=...",
-                help="分析したいYouTube動画のURLを入力してください"
-            )
+                help="分析したいYouTube動画のURLを入力してください")
 
             if youtube_url:
                 try:
@@ -162,11 +168,13 @@ try:
                     st.stop()
 
         # Step 2: Content Overview
-        with st.expander("Step 2: Content Overview", expanded=st.session_state.current_step == 2):
-            render_step_header(2, "Content Overview", "📊", "動画の基本情報と文字起こしを表示します")
+        with st.expander("Step 2: Content Overview",
+                         expanded=st.session_state.current_step == 2):
+            render_step_header(2, "Content Overview", "📊",
+                               "動画の基本情報と文字起こしを表示します")
             if st.session_state.video_info:
                 video_info = st.session_state.video_info
-                
+
                 st.markdown(f'''
                 <div class="glass-container video-info">
                     <div class="video-grid">
@@ -184,16 +192,17 @@ try:
                         </div>
                     </div>
                 </div>
-                ''', unsafe_allow_html=True)
+                ''',
+                            unsafe_allow_html=True)
 
                 if 'transcript' not in st.session_state or not st.session_state.transcript:
                     st.markdown('''
                     <div class="process-step">
-                        <div class="step-number">1</div>
                         <div class="step-content">文字起こしを生成します</div>
                     </div>
-                    ''', unsafe_allow_html=True)
-                    
+                    ''',
+                                unsafe_allow_html=True)
+
                     try:
                         text_processor = TextProcessor()
                         transcript = text_processor.get_transcript(youtube_url)
@@ -203,15 +212,20 @@ try:
                         time.sleep(0.5)
                     except Exception as e:
                         st.error(f"文字起こしの生成に失敗しました: {str(e)}")
-                        logger.error(f"Error in transcript generation: {str(e)}")
+                        logger.error(
+                            f"Error in transcript generation: {str(e)}")
                         st.stop()
 
         # Step 3: Content Analysis
-        with st.expander("Step 3: Content Analysis", expanded=st.session_state.current_step == 3):
-            render_step_header(3, "Content Analysis", "🔍", "文字起こし、要約、マインドマップを生成します")
+        with st.expander("Step 3: Content Analysis",
+                         expanded=st.session_state.current_step == 3):
+            render_step_header(3, "Content Analysis", "🔍",
+                               "文字起こし、要約、マインドマップを生成します")
             if st.session_state.transcript:
-                tabs = st.tabs(["📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Enhancement"])
-                
+                tabs = st.tabs([
+                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Enhancement"
+                ])
+
                 with tabs[0]:
                     st.markdown("### Original Transcript")
                     copy_text_block(st.session_state.transcript)
@@ -221,58 +235,59 @@ try:
                         with st.spinner("AI要約を生成中..."):
                             try:
                                 text_processor = TextProcessor()
-                                summary = text_processor.generate_summary(st.session_state.transcript)
+                                summary = text_processor.generate_summary(
+                                    st.session_state.transcript)
                                 st.session_state.summary = summary
                                 update_step_progress('summary')
                                 time.sleep(0.5)
                             except Exception as e:
                                 st.error(f"AI要約の生成に失敗しました: {str(e)}")
-                                logger.error(f"Error in summary generation: {str(e)}")
+                                logger.error(
+                                    f"Error in summary generation: {str(e)}")
                                 st.stop()
-                    
+
                     if st.session_state.summary:
                         st.markdown("### AI Summary")
                         st.markdown(st.session_state.summary)
-                
+
                 with tabs[2]:
                     st.markdown("### Mind Map Visualization")
-                    
+
                     if 'mindmap' not in st.session_state or not st.session_state.mindmap:
                         with st.spinner("マインドマップを生成中..."):
                             try:
                                 mindmap_gen = MindMapGenerator()
-                                mermaid_syntax = mindmap_gen.generate_mindmap(st.session_state.transcript)
+                                mermaid_syntax = mindmap_gen.generate_mindmap(
+                                    st.session_state.transcript)
                                 st.session_state.mindmap = mermaid_syntax
                                 st.session_state.current_step = 4
                                 update_step_progress('mindmap')
                                 time.sleep(0.5)
                             except Exception as e:
                                 st.error(f"マインドマップの生成に失敗しました: {str(e)}")
-                                logger.error(f"Error in mindmap generation: {str(e)}")
+                                logger.error(
+                                    f"Error in mindmap generation: {str(e)}")
                                 st.stop()
-                    
+
                     if st.session_state.mindmap:
                         col1, col2 = st.columns([2, 1])
-                        
+
                         with col1:
                             st.markdown("### Mind Map")
-                            st_mermaid(st.session_state.mindmap, height="400px")
-                        
+                            st_mermaid(st.session_state.mindmap,
+                                       height="400px")
+
                         with col2:
                             st.markdown("### Mermaid Syntax")
-                            st.text_area(
-                                "",
-                                value=st.session_state.mindmap,
-                                height=200
-                            )
-                            
-                            st.download_button(
-                                "📥 Download Mermaid Syntax",
-                                data=st.session_state.mindmap,
-                                file_name="mindmap.mmd",
-                                mime="text/plain"
-                            )
-                            
+                            st.text_area("",
+                                         value=st.session_state.mindmap,
+                                         height=200)
+
+                            st.download_button("📥 Download Mermaid Syntax",
+                                               data=st.session_state.mindmap,
+                                               file_name="mindmap.mmd",
+                                               mime="text/plain")
+
                             if st.button("🔄 マインドマップを再生成"):
                                 st.session_state.mindmap = None
                                 st.rerun()
@@ -280,23 +295,29 @@ try:
                 with tabs[3]:
                     st.markdown("### テキスト整形")
                     if st.session_state.mindmap:  # Only show enhancement after mindmap is generated
-                        st.markdown('<div class="glass-container">', unsafe_allow_html=True)
+                        st.markdown('<div class="glass-container">',
+                                    unsafe_allow_html=True)
                         st.markdown("#### 元のテキスト")
-                        st.markdown(st.session_state.transcript.replace('\n', '  \n'))
+                        st.markdown(
+                            st.session_state.transcript.replace('\n', '  \n'))
                         st.markdown('</div>', unsafe_allow_html=True)
 
-                        if st.button("✨ テキストを整形", help="AIを使用して文章を校正し、読みやすく整形します"):
+                        if st.button("✨ テキストを整形",
+                                     help="AIを使用して文章を校正し、読みやすく整形します"):
                             try:
                                 # Create a container for progress tracking
                                 progress_container = st.container()
                                 with progress_container:
-                                    st.markdown('<div class="progress-container">', unsafe_allow_html=True)
+                                    st.markdown(
+                                        '<div class="progress-container">',
+                                        unsafe_allow_html=True)
                                     progress_bar = st.progress(0)
                                     status_text = st.empty()
                                     # Add stats columns
                                     stats_cols = st.columns(2)
-                                    
-                                    def update_enhancement_progress(progress: float, message: str):
+
+                                    def update_enhancement_progress(
+                                            progress: float, message: str):
                                         """Update enhancement progress in session state and UI"""
                                         st.session_state.enhancement_progress = {
                                             'progress': progress,
@@ -305,11 +326,11 @@ try:
                                         progress_bar.progress(progress)
                                         status_text.markdown(
                                             f'<div class="progress-message">{message}</div>',
-                                            unsafe_allow_html=True
-                                        )
-                                        
+                                            unsafe_allow_html=True)
+
                                         # Update stats
-                                        if progress == 1.0 and message.startswith("✨"):
+                                        if progress == 1.0 and message.startswith(
+                                                "✨"):
                                             with stats_cols[0]:
                                                 st.metric(
                                                     "処理済み文字数",
@@ -320,41 +341,41 @@ try:
                                                     "処理時間",
                                                     f"{(time.time() - start_time):.1f}秒"
                                                 )
-                                    
+
                                     start_time = time.time()
                                     text_processor = TextProcessor()
-                                    
+
                                     # Start enhancement process
                                     enhanced_text = text_processor.proofread_text(
                                         st.session_state.transcript,
-                                        progress_callback=update_enhancement_progress
-                                    )
-                                    
+                                        progress_callback=update_enhancement_progress)
+
                                     if enhanced_text:
                                         st.session_state.enhanced_text = enhanced_text
-                                        update_step_progress('proofread')
-                                        
-                                        # Display enhanced text with improved formatting
+                                        st.markdown('<div class="glass-container">',
+                                                    unsafe_allow_html=True)
                                         st.markdown("#### 整形済みテキスト")
-                                        st.markdown(enhanced_text.replace('\n', '  \n'))
-                                        
+                                        st.markdown(
+                                            enhanced_text.replace('\n', '  \n'))
+
                                         # Download button for enhanced text
                                         st.download_button(
                                             "📥 整形済みテキストをダウンロード",
-                                            data=enhanced_text,
+                                            enhanced_text,
                                             file_name="enhanced_text.txt",
-                                            mime="text/plain"
-                                        )
-                                    else:
-                                        st.error("テキストの整形中にエラーが発生しました")
+                                            mime="text/plain")
+
+                                        # Update progress container
+                                        st.markdown('</div>', unsafe_allow_html=True)
+
                             except Exception as e:
-                                st.error(f"テキストの整形中にエラーが発生しました: {str(e)}")
+                                st.error(f"テキスト整形中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error in text enhancement: {str(e)}")
 
     except Exception as e:
-        st.error(f"アプリケーションエラー: {str(e)}")
-        logger.error(f"Application error: {str(e)}")
+        st.error(f"初期化エラー: {str(e)}")
+        logger.error(f"Initialization error: {str(e)}")
 
 except Exception as e:
-    st.error(f"アプリケーションエラー: {str(e)}")
-    logger.error(f"Application error: {str(e)}")
+    st.error(f"初期化エラー: {str(e)}")
+    logger.error(f"Initialization error: {str(e)}")
