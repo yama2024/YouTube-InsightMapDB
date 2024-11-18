@@ -5,6 +5,7 @@ import re
 import os
 import time
 from typing import List, Optional, Dict, Any
+from retrying import retry
 
 # Enhanced logging setup
 logging.basicConfig(
@@ -52,7 +53,7 @@ class TextProcessor:
             'line_noise': r'^[\s　]*(?:[=\-~]{3,}|[・×※]{2,})[\s　]*$'
         }
         
-        # Enhanced Japanese text normalization patterns
+        # Japanese text normalization patterns
         self.jp_patterns = {
             'normalize_periods': {
                 '．': '。',
@@ -88,6 +89,87 @@ class TextProcessor:
             },
             'remove_emphasis': r'[﹅﹆゛゜]'
         }
+
+    def _get_subtitles_with_priority(self, video_id: str) -> Optional[str]:
+        language_priority = [
+            ['ja'],
+            ['ja-JP'],
+            ['en-JP'],
+            ['en'],
+            ['en-US'],
+            None  # Auto-generated captions
+        ]
+        
+        for lang in language_priority:
+            try:
+                logger.info(f"Attempting to fetch subtitles: {lang if lang else 'auto-generated'}")
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                
+                # Try manual subtitles first
+                if lang:
+                    try:
+                        transcript = transcript_list.find_manually_created_transcript(lang)
+                    except:
+                        try:
+                            transcript = transcript_list.find_generated_transcript(lang)
+                        except:
+                            continue
+                else:
+                    # Try any available transcript
+                    try:
+                        transcript = transcript_list.find_generated_transcript(['ja', 'en'])
+                    except:
+                        try:
+                            transcript = transcript_list.find_manually_created_transcript(['ja', 'en'])
+                        except:
+                            continue
+                
+                transcript_data = transcript.fetch()
+                
+                # Process transcript data
+                transcript_segments = []
+                current_segment = []
+                
+                for entry in transcript_data:
+                    text = entry['text'].strip()
+                    if not text:
+                        continue
+                    
+                    # Clean up text
+                    text = re.sub(r'\[.*?\]', '', text)
+                    text = text.strip()
+                    
+                    if re.search(r'[。．.！!？?]$', text):
+                        current_segment.append(text)
+                        if current_segment:
+                            transcript_segments.append(' '.join(current_segment))
+                            current_segment = []
+                    else:
+                        current_segment.append(text)
+                
+                if current_segment:
+                    transcript_segments.append(' '.join(current_segment))
+                
+                if transcript_segments:
+                    return '\n'.join(transcript_segments)
+                    
+            except Exception as e:
+                logger.error(f"Failed to fetch subtitles ({lang if lang else 'auto-generated'}): {str(e)}")
+                continue
+        
+        return None
+
+    @retry(stop_max_attempt_number=3, wait_fixed=2000)
+    def get_transcript(self, url: str) -> str:
+        video_id = self._extract_video_id(url)
+        if not video_id:
+            raise ValueError("無効なYouTube URLです")
+        
+        transcript = self._get_subtitles_with_priority(video_id)
+        if not transcript:
+            raise ValueError("字幕を取得できませんでした。手動字幕と自動字幕のどちらも利用できません。")
+        
+        return self._clean_text(transcript)
 
     def _clean_text(self, text: str) -> str:
         """Enhanced text cleaning with improved noise removal and Japanese text handling"""
@@ -248,74 +330,6 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"Error in paragraph formatting: {str(e)}")
             return text
-
-    def get_transcript(self, url: str) -> str:
-        """Enhanced transcript retrieval with improved fallback handling"""
-        video_id = self._extract_video_id(url)
-        if not video_id:
-            raise ValueError("無効なYouTube URLです")
-        
-        transcript = self._get_subtitles_with_priority(video_id)
-        if not transcript:
-            raise ValueError("字幕を取得できませんでした")
-        
-        return self._clean_text(transcript)
-
-    def _get_subtitles_with_priority(self, video_id: str) -> Optional[str]:
-        """Get subtitles with enhanced language priority handling"""
-        language_priority = [
-            ['ja'],
-            ['ja-JP'],
-            ['en-JP'],
-            ['en'],
-            ['en-US'],
-            None  # Auto-generated captions
-        ]
-        
-        for lang in language_priority:
-            try:
-                logger.debug(f"字幕を試行中: {lang if lang else '自動生成'}")
-                transcript_list = YouTubeTranscriptApi.get_transcript(
-                    video_id,
-                    languages=[lang] if lang else None
-                )
-                
-                # Enhanced transcript processing with context preservation
-                transcript_segments = []
-                current_segment = []
-                
-                for entry in transcript_list:
-                    if entry.get('duration', 0) <= 0.5:  # Skip very short segments
-                        continue
-                    
-                    text = entry['text']
-                    text = re.sub(r'\[.*?\]', '', text)  # Remove bracketed content
-                    text = text.strip()
-                    
-                    if not text:
-                        continue
-                    
-                    # Check if this segment ends with sentence-ending punctuation
-                    if re.search(r'[。．.！!？?]$', text):
-                        current_segment.append(text)
-                        if current_segment:
-                            transcript_segments.append(' '.join(current_segment))
-                            current_segment = []
-                    else:
-                        current_segment.append(text)
-                
-                # Add any remaining segments
-                if current_segment:
-                    transcript_segments.append(' '.join(current_segment))
-                
-                if transcript_segments:
-                    return '\n'.join(transcript_segments)
-                    
-            except Exception as e:
-                logger.debug(f"字幕取得失敗 ({lang if lang else '自動生成'}): {str(e)}")
-                continue
-        
-        return None
 
     def _extract_video_id(self, url: str) -> Optional[str]:
         """Extract video ID from YouTube URL with enhanced validation"""
