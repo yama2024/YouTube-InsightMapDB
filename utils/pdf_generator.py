@@ -10,6 +10,7 @@ import os
 import io
 import requests
 import logging
+import glob
 
 # ロギングの設定
 logging.basicConfig(level=logging.INFO)
@@ -22,41 +23,51 @@ class PDFGenerator:
 
     def _setup_fonts(self):
         try:
-            # Use system-installed Noto CJK fonts
+            # Additional font paths for Nix and common Linux distributions
             font_paths = [
+                "/nix/store/*/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
                 "/nix/store/*/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc"
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+                "/usr/local/share/fonts/noto/NotoSansCJK-Regular.ttc"
             ]
             
             font_found = False
-            for font_path in font_paths:
+            for font_path_pattern in font_paths:
                 try:
-                    import glob
-                    matching_fonts = glob.glob(font_path)
+                    matching_fonts = glob.glob(font_path_pattern)
                     if matching_fonts:
-                        pdfmetrics.registerFont(TTFont('NotoSansCJK', matching_fonts[0]))
+                        font_path = matching_fonts[0]
+                        pdfmetrics.registerFont(TTFont('NotoSansCJK', font_path))
                         addMapping('NotoSansCJK', 0, 0, 'NotoSansCJK')
                         font_found = True
-                        logger.info(f"日本語フォントを正常に設定しました: {matching_fonts[0]}")
+                        logger.info(f"日本語フォントを正常に設定しました: {font_path}")
                         break
                 except Exception as e:
-                    logger.debug(f"Font path {font_path} not available: {str(e)}")
+                    logger.debug(f"Font path {font_path_pattern} not available: {str(e)}")
                     continue
             
-            self.use_fallback_fonts = not font_found
-            if self.use_fallback_fonts:
-                logger.warning("日本語フォントが見つからないため、代替フォントを使用します")
+            if not font_found:
+                logger.warning("日本語フォントが見つかりません。代替フォントを使用します。")
+                # Register a basic fallback font
+                self.use_fallback_fonts = True
+            else:
+                self.use_fallback_fonts = False
             
         except Exception as e:
             logger.error(f"フォントの設定中にエラーが発生しました: {str(e)}")
             self.use_fallback_fonts = True
 
     def _encode_text(self, text):
+        """Ensure text is properly encoded for PDF generation"""
         try:
-            return text.encode('utf-8').decode('utf-8')
+            # Try UTF-8 encoding/decoding
+            return text.encode('utf-8', errors='ignore').decode('utf-8')
         except Exception as e:
             logger.error(f"テキストエンコーディングエラー: {str(e)}")
+            # Return original text if encoding fails
             return text
 
     def _setup_styles(self):
@@ -73,7 +84,7 @@ class PDFGenerator:
             fontName=base_font,
             fontSize=10,
             leading=14,
-            wordWrap='CJK',
+            wordWrap='CJK' if not self.use_fallback_fonts else 'RTL',
             encoding='utf-8'
         ))
         
@@ -83,7 +94,7 @@ class PDFGenerator:
             fontName=base_font,
             fontSize=14,
             leading=16,
-            wordWrap='CJK',
+            wordWrap='CJK' if not self.use_fallback_fonts else 'RTL',
             encoding='utf-8',
             spaceAfter=20
         ))
@@ -147,7 +158,7 @@ class PDFGenerator:
             elements.append(Spacer(1, 20))
 
             # サムネイル
-            if 'thumbnail_url' in video_info:
+            if 'thumbnail_url' in video_info and video_info['thumbnail_url']:
                 try:
                     logger.info("サムネイル画像の取得を開始します")
                     response = requests.get(video_info['thumbnail_url'])
@@ -164,7 +175,7 @@ class PDFGenerator:
             # 文字起こし
             logger.info("文字起こしの追加を開始します")
             elements.append(Paragraph("文字起こし", self.styles['JapaneseHeading']))
-            max_chars = 1000
+            max_chars = 1000  # Chunk size for text processing
             transcript_chunks = [transcript[i:i+max_chars] for i in range(0, len(transcript), max_chars)]
             for chunk in transcript_chunks:
                 elements.append(Paragraph(self._encode_text(chunk), self.styles['JapaneseBody']))
