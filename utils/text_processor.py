@@ -4,10 +4,13 @@ import google.generativeai as genai
 import re
 import os
 import time
+import random
 from typing import List, Optional, Dict, Any, Tuple, Callable
 from cachetools import TTLCache
 import json
 from datetime import datetime
+from threading import Lock
+import math
 
 # Enhanced logging setup with more detailed formatting
 logging.basicConfig(
@@ -18,17 +21,55 @@ logger = logging.getLogger(__name__)
 
 class RateLimitError(Exception):
     """Custom exception for rate limit errors"""
-    pass
+    def __init__(self, message: str, retry_after: Optional[int] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 class YouTubeURLError(Exception):
     """Custom exception for YouTube URL related errors"""
     pass
+
+class TokenBucket:
+    """Token bucket rate limiter implementation"""
+    def __init__(self, tokens_per_second: float, max_tokens: int):
+        self.tokens_per_second = tokens_per_second
+        self.max_tokens = max_tokens
+        self.tokens = max_tokens
+        self.last_update = time.time()
+        self.lock = Lock()
+
+    def _add_new_tokens(self):
+        """Add new tokens based on time elapsed"""
+        now = time.time()
+        time_passed = now - self.last_update
+        new_tokens = time_passed * self.tokens_per_second
+        self.tokens = min(self.tokens + new_tokens, self.max_tokens)
+        self.last_update = now
+
+    def try_consume(self, tokens: int = 1) -> bool:
+        """Try to consume tokens from the bucket"""
+        with self.lock:
+            self._add_new_tokens()
+            if self.tokens >= tokens:
+                self.tokens -= tokens
+                return True
+            return False
+
+    def get_wait_time(self, tokens: int = 1) -> float:
+        """Calculate wait time until enough tokens are available"""
+        with self.lock:
+            self._add_new_tokens()
+            additional_tokens_needed = tokens - self.tokens
+            if additional_tokens_needed <= 0:
+                return 0
+            return additional_tokens_needed / self.tokens_per_second
 
 class TextProcessor:
     def __init__(self):
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
             raise ValueError("Gemini API key is not set in environment variables")
+        
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
@@ -41,6 +82,10 @@ class TextProcessor:
         self.max_retries = 5
         self.base_delay = 2  # Base delay in seconds
         self.max_delay = 64  # Maximum delay in seconds
+        self.jitter_factor = 0.1  # Maximum jitter as a fraction of delay
+        
+        # Token bucket rate limiter (5 requests per second, max 10 burst)
+        self.rate_limiter = TokenBucket(tokens_per_second=0.2, max_tokens=10)
         
         # Maximum chunk size for text processing (in characters)
         self.max_chunk_size = 8000
@@ -69,6 +114,62 @@ class TextProcessor:
             'system_messages': r'(?:システム|エラー|通知)(?:：|:).*?(?:\n|$)',
             'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音)\]'
         }
+
+    def _retry_with_backoff(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute a function with exponential backoff retry logic and jitter"""
+        last_error = None
+        operation_name = func.__name__
+        logger.info(f"Starting operation: {operation_name}")
+        
+        for attempt in range(self.max_retries):
+            # Check rate limiter
+            wait_time = self.rate_limiter.get_wait_time()
+            if wait_time > 0:
+                logger.warning(f"Rate limit approached. Waiting {wait_time:.2f}s before attempt")
+                time.sleep(wait_time)
+            
+            if not self.rate_limiter.try_consume():
+                logger.error("Rate limit exceeded")
+                raise RateLimitError(
+                    "API呼び出しの制限に達しました。しばらく待ってから再試行してください。",
+                    retry_after=math.ceil(wait_time)
+                )
+            
+            try:
+                logger.debug(f"Attempt {attempt + 1}/{self.max_retries} for {operation_name}")
+                result = func(*args, **kwargs)
+                logger.info(f"Operation {operation_name} completed successfully")
+                return result
+            
+            except Exception as e:
+                last_error = e
+                if "429" in str(e) or "Resource has been exhausted" in str(e):
+                    delay = min(self.max_delay, self.base_delay * (2 ** attempt))
+                    jitter = random.uniform(0, delay * self.jitter_factor)
+                    total_delay = delay + jitter
+                    
+                    logger.warning(
+                        f"API rate limit hit. Attempt {attempt + 1}/{self.max_retries}. "
+                        f"Base delay: {delay:.2f}s, Jitter: {jitter:.2f}s, "
+                        f"Total delay: {total_delay:.2f}s"
+                    )
+                    
+                    time.sleep(total_delay)
+                    continue
+                
+                logger.error(f"Non-rate-limit error in {operation_name}: {str(e)}")
+                raise e
+
+        logger.error(
+            f"Operation {operation_name} failed after {self.max_retries} attempts. "
+            f"Last error: {str(last_error)}"
+        )
+        
+        raise RateLimitError(
+            f"APIの呼び出し制限を超過しました。{self.max_retries}回の再試行後も失敗しました。"
+            "しばらく時間をおいてから再度お試しください。",
+            retry_after=self.max_delay
+        )
 
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from various YouTube URL formats"""
@@ -144,25 +245,6 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"Error fetching transcript: {str(e)}")
             raise ValueError(f"Failed to fetch transcript: {str(e)}")
-
-    def _retry_with_backoff(self, func: Callable, *args, **kwargs) -> Any:
-        """Execute a function with exponential backoff retry logic"""
-        last_error = None
-        for attempt in range(self.max_retries):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                last_error = e
-                if "429" in str(e) or "Resource has been exhausted" in str(e):
-                    delay = min(self.max_delay, self.base_delay * (2 ** attempt))
-                    logger.warning(f"API rate limit hit. Attempt {attempt + 1}/{self.max_retries}. "
-                                f"Waiting {delay} seconds before retry.")
-                    time.sleep(delay)
-                    continue
-                raise e
-        
-        logger.error(f"Failed after {self.max_retries} attempts. Last error: {str(last_error)}")
-        raise RateLimitError(f"API rate limit exceeded after {self.max_retries} attempts")
 
     def _get_cache_key(self, text: str, operation: str) -> str:
         """Generate a unique cache key for the given text and operation"""
