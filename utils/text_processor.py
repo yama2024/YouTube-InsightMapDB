@@ -22,9 +22,10 @@ logger = logging.getLogger(__name__)
 
 # Enhanced error messages in Japanese
 ERROR_MESSAGES = {
-    'rate_limit': "APIトークンを使い切りました。{retry_after}秒後に再試行してください。",
-    'retry_failed': "複数回再試行しましたが失敗しました。後ほど再度お試しください。",
-    'processing': "要約を生成中です。しばらくお待ちください。",
+    'rate_limit': "APIの制限に達しました。{retry_after}秒後に再試行します...",
+    'retry_failed': "複数回再試行しましたが失敗しました。別の動画をお試しください。",
+    'processing': "要約を生成中です（{progress}%完了）...",
+    'chunk_processing': "テキストチャンク {current}/{total} を処理中...",
     'token_exhausted': "APIトークンを使い切りました。{retry_after}秒後に再試行してください。",
     'api_error': "APIエラーが発生しました: {error_message}",
     'general_error': "予期せぬエラーが発生しました: {error_message}"
@@ -91,18 +92,18 @@ class TextProcessor:
         
         # Rate limiting configuration with adjusted settings
         self.max_retries = 5
-        self.base_delay = 64  # Base delay in seconds (increased from 2)
-        self.max_delay = 300  # Maximum delay in seconds (increased from 64)
+        self.base_delay = 2  # Base delay in seconds
+        self.max_delay = 30  # Maximum delay in seconds
         self.jitter_factor = 0.1  # Maximum jitter as a fraction of delay
         
-        # Updated token bucket configuration
+        # Updated token bucket configuration for more frequent requests
         self.rate_limiter = TokenBucket(
-            tokens_per_second=0.016,  # One request per 64 seconds
-            max_tokens=3  # Limit concurrent requests
+            tokens_per_second=0.2,  # One request per 5 seconds
+            max_tokens=5  # Allow more concurrent requests
         )
         
-        # Reduced chunk size for text processing
-        self.max_chunk_size = 4000  # Reduced from 8000
+        # Reduced chunk size for faster processing
+        self.max_chunk_size = 2000  # Reduced from 4000
         
         # URL patterns for video ID extraction
         self.url_patterns = [
@@ -164,40 +165,33 @@ class TextProcessor:
     def _retry_with_backoff(self, func: Callable, *args, **kwargs) -> Any:
         """Execute a function with exponential backoff retry logic and jitter"""
         last_error = None
+        operation_name = func.__name__
+        
         for attempt in range(self.max_retries):
             try:
-                # Check rate limiter
-                wait_time = self.rate_limiter.get_wait_time()
+                # Check rate limiter with shorter wait time
+                wait_time = min(self.rate_limiter.get_wait_time(), 10)  # Max 10 second wait
                 if wait_time > 0:
                     logger.warning(f"Rate limit cooldown. Waiting {wait_time:.2f}s")
                     time.sleep(wait_time)
-                    
-                if not self.rate_limiter.try_consume():
-                    retry_after = math.ceil(wait_time)
-                    raise RateLimitError(
-                        ERROR_MESSAGES['rate_limit'].format(retry_after=retry_after),
-                        retry_after=retry_after
-                    )
                 
                 return func(*args, **kwargs)
                 
             except Exception as e:
                 last_error = e
-                if isinstance(e, RateLimitError) or "429" in str(e) or "Resource has been exhausted" in str(e):
-                    delay = min(self.max_delay, self.base_delay * (2 ** attempt))
-                    jitter = random.uniform(0, delay * self.jitter_factor)
+                if isinstance(e, RateLimitError) or "429" in str(e):
+                    delay = min(30, self.base_delay * (1.5 ** attempt))  # Reduced exponential factor
+                    jitter = random.uniform(0, delay * 0.1)
                     total_delay = delay + jitter
-                    logger.warning(
-                        f"Rate limit hit. Attempt {attempt + 1}/{self.max_retries}. "
-                        f"Waiting {total_delay:.2f}s"
-                    )
+                    logger.warning(f"Rate limit hit. Attempt {attempt + 1}/{self.max_retries}. "
+                                 f"Waiting {total_delay:.2f}s")
                     time.sleep(total_delay)
                     continue
                 raise e
         
         raise RateLimitError(
             ERROR_MESSAGES['retry_failed'],
-            retry_after=self.max_delay
+            retry_after=30  # Reduced maximum retry delay
         )
 
     def _extract_video_id(self, url: str) -> str:
@@ -275,15 +269,43 @@ class TextProcessor:
             logger.error(f"Error fetching transcript: {str(e)}")
             raise ValueError(f"字幕の取得に失敗しました: {str(e)}")
 
+    def _combine_summaries(self, summaries: List[str]) -> str:
+        """Combine multiple chunk summaries into a cohesive final summary"""
+        if not summaries:
+            return ""
+            
+        prompt = f"""
+        以下の要約をまとめて、より簡潔で一貫性のある要約を作成してください。
+
+        # 入力要約：
+        {' '.join(summaries)}
+
+        # 要件：
+        1. 重要なポイントを保持
+        2. 一貫性のある文章にまとめる
+        3. 重複を除去
+        4. 論理的な流れを維持
+        """
+        
+        try:
+            response = self.model.generate_content(prompt)
+            if not response or not response.text:
+                raise ValueError("APIからの応答が空でした")
+            
+            return response.text.strip()
+            
+        except Exception as e:
+            logger.error(f"Error combining summaries: {str(e)}")
+            raise ValueError(f"要約の結合中にエラーが発生しました: {str(e)}")
+
     def generate_summary(self, text: str, progress_callback: Optional[Callable] = None) -> str:
-        """Generate a summary with enhanced error handling and caching"""
+        """Generate a summary with enhanced error handling and progress tracking"""
         logger.info("Starting summary generation process")
         
         try:
             # Input validation
-            is_valid, error_msg = self._validate_text(text)
-            if not is_valid:
-                raise ValueError(f"無効な入力テキスト: {error_msg}")
+            if not text:
+                raise ValueError("入力テキストが空です")
             
             # Check cache first
             cache_key = self._get_cache_key(text, "summary")
@@ -295,21 +317,29 @@ class TextProcessor:
             # Clean and chunk the text
             cleaned_text = self._clean_text(text)
             text_chunks = self._chunk_text(cleaned_text)
-            logger.info(f"Text split into {len(text_chunks)} chunks")
+            total_chunks = len(text_chunks)
+            logger.info(f"Text split into {total_chunks} chunks")
 
             # Process chunks with progress tracking
             chunk_summaries = []
             for i, chunk in enumerate(text_chunks):
                 if progress_callback:
-                    progress = (i + 1) / len(text_chunks)
-                    progress_callback(progress, ERROR_MESSAGES['processing'])
+                    progress = (i + 1) / total_chunks * 100
+                    progress_callback(progress / 100, ERROR_MESSAGES['processing'].format(
+                        progress=int(progress)
+                    ))
+                
+                logger.info(ERROR_MESSAGES['chunk_processing'].format(
+                    current=i + 1,
+                    total=total_chunks
+                ))
                 
                 try:
                     summary = self._retry_with_backoff(
                         self._generate_chunk_summary,
                         chunk,
                         i,
-                        len(text_chunks)
+                        total_chunks
                     )
                     chunk_summaries.append(summary)
                 except RateLimitError as e:
@@ -331,21 +361,14 @@ class TextProcessor:
                 logger.info("Summary generation completed successfully")
                 return combined_summary
             else:
-                raise ValueError(ERROR_MESSAGES['general_error'].format(
-                    error_message="チャンクから要約を生成できませんでした"
-                ))
+                raise ValueError("要約を生成できませんでした")
 
         except RateLimitError as e:
             logger.error(f"Rate limit error: {str(e)}")
-            raise RateLimitError(
-                ERROR_MESSAGES['token_exhausted'].format(
-                    retry_after=e.retry_after or self.max_delay
-                ),
-                retry_after=e.retry_after
-            )
+            raise
         except Exception as e:
             logger.error(f"Error in summary generation: {str(e)}")
-            raise ValueError(ERROR_MESSAGES['general_error'].format(error_message=str(e)))
+            raise ValueError(str(e))
 
     def _generate_chunk_summary(self, chunk: str, chunk_index: int, total_chunks: int) -> str:
         """Generate summary for a single chunk with enhanced error handling"""

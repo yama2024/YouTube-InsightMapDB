@@ -1,7 +1,19 @@
 [server]
 headless = true
 address = "0.0.0.0"
-port = 5000
+port = 8501
+maxMessageSize = 400
+enableCORS = true
+enableXsrfProtection = false
+enableWebsocketCompression = true
+runOnSave = true
+maxUploadSize = 200
+connectTimeout = 20
+
+[browser]
+gatherUsageStats = false
+serverAddress = "0.0.0.0"
+serverPort = 8501
 
 [theme]
 primaryColor = "#1B365D"
@@ -9,3 +21,7 @@ backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F0F2F6"
 textColor = "#262730"
 font = "sans serif"
+
+[logger]
+level = "info"
+messageFormat = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

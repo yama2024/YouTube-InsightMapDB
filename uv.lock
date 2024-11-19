@@ -1242,7 +1242,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31.0" },
     { name = "retrying", specifier = ">=1.3.4" },
     { name = "stqdm", specifier = ">=0.0.5" },
-    { name = "streamlit", specifier = ">=1.40.1" },
+    { name = "streamlit", specifier = ">=1.28.0" },
     { name = "streamlit-mermaid", specifier = ">=0.2.0" },
     { name = "svglib", specifier = ">=1.5.1" },
     { name = "watchdog", specifier = ">=6.0.0" },
