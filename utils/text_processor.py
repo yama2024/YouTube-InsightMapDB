@@ -20,6 +20,10 @@ class RateLimitError(Exception):
     """Custom exception for rate limit errors"""
     pass
 
+class YouTubeURLError(Exception):
+    """Custom exception for YouTube URL related errors"""
+    pass
+
 class TextProcessor:
     def __init__(self):
         api_key = os.environ.get('GEMINI_API_KEY')
@@ -41,6 +45,14 @@ class TextProcessor:
         # Maximum chunk size for text processing (in characters)
         self.max_chunk_size = 8000
         
+        # URL patterns for video ID extraction
+        self.url_patterns = [
+            r'(?:https?://)?(?:www\.)?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?youtu\.be/([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?(?:www\.)?youtube\.com/v/([a-zA-Z0-9_-]{11})',
+            r'(?:https?://)?(?:www\.)?youtube\.com/embed/([a-zA-Z0-9_-]{11})'
+        ]
+        
         # Enhanced noise patterns for Japanese text
         self.noise_patterns = {
             'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',
@@ -58,14 +70,87 @@ class TextProcessor:
             'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音)\]'
         }
 
-    async def _retry_with_exponential_backoff(self, func: Callable, *args, **kwargs) -> Any:
-        """
-        Execute a function with exponential backoff retry logic
-        """
+    def _extract_video_id(self, url: str) -> str:
+        """Extract video ID from various YouTube URL formats"""
+        if not url:
+            raise YouTubeURLError("URLが空です")
+            
+        # Remove any leading/trailing whitespace and normalize
+        url = url.strip()
+        
+        # Try each pattern
+        for pattern in self.url_patterns:
+            match = re.match(pattern, url)
+            if match:
+                video_id = match.group(1)
+                if self._validate_video_id(video_id):
+                    return video_id
+                    
+        # If no pattern matched or video ID was invalid
+        raise YouTubeURLError(
+            "無効なYouTube URLです。以下の形式がサポートされています:\n"
+            "- https://www.youtube.com/watch?v=VIDEO_ID\n"
+            "- https://youtu.be/VIDEO_ID\n"
+            "- youtube.com/watch?v=VIDEO_ID"
+        )
+
+    def _validate_video_id(self, video_id: str) -> bool:
+        """Validate YouTube video ID format"""
+        if not video_id:
+            return False
+            
+        # YouTube video IDs are 11 characters long and contain only alphanumeric chars, underscores, and hyphens
+        video_id_pattern = r'^[a-zA-Z0-9_-]{11}$'
+        return bool(re.match(video_id_pattern, video_id))
+
+    def get_transcript(self, url: str) -> str:
+        """Get transcript with improved URL handling, caching, and error handling"""
+        try:
+            # Check cache first
+            cache_key = self._get_cache_key(url, "transcript")
+            cached_transcript = self.subtitle_cache.get(cache_key)
+            if cached_transcript:
+                logger.info("Using cached transcript")
+                return cached_transcript
+
+            # Extract and validate video ID
+            try:
+                video_id = self._extract_video_id(url)
+                logger.info(f"Successfully extracted video ID: {video_id}")
+            except YouTubeURLError as e:
+                logger.error(f"Invalid YouTube URL: {str(e)}")
+                raise
+
+            # Fetch transcript with language fallback
+            try:
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja'])
+            except Exception as e:
+                logger.warning(f"Japanese transcript not found, trying English: {str(e)}")
+                try:
+                    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+                except Exception as e:
+                    logger.error(f"Failed to fetch transcript: {str(e)}")
+                    raise ValueError("字幕を取得できませんでした。動画に字幕が設定されていないか、アクセスできない可能性があります。")
+
+            # Process and combine transcript entries
+            transcript = " ".join([entry['text'] for entry in transcript_list])
+            
+            # Cache the result
+            self.subtitle_cache[cache_key] = transcript
+            return transcript
+
+        except YouTubeURLError as e:
+            raise YouTubeURLError(str(e))
+        except Exception as e:
+            logger.error(f"Error fetching transcript: {str(e)}")
+            raise ValueError(f"Failed to fetch transcript: {str(e)}")
+
+    def _retry_with_backoff(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute a function with exponential backoff retry logic"""
         last_error = None
         for attempt in range(self.max_retries):
             try:
-                return await func(*args, **kwargs)
+                return func(*args, **kwargs)
             except Exception as e:
                 last_error = e
                 if "429" in str(e) or "Resource has been exhausted" in str(e):
@@ -74,10 +159,8 @@ class TextProcessor:
                                 f"Waiting {delay} seconds before retry.")
                     time.sleep(delay)
                     continue
-                # Re-raise non-rate-limit errors immediately
                 raise e
         
-        # If we've exhausted all retries
         logger.error(f"Failed after {self.max_retries} attempts. Last error: {str(last_error)}")
         raise RateLimitError(f"API rate limit exceeded after {self.max_retries} attempts")
 
@@ -86,7 +169,7 @@ class TextProcessor:
         text_hash = hash(text)
         return f"{operation}:{text_hash}"
 
-    async def generate_summary(self, text: str, progress_callback: Optional[Callable] = None) -> str:
+    def generate_summary(self, text: str, progress_callback: Optional[Callable] = None) -> str:
         """Generate a summary with enhanced error handling and caching"""
         logger.info("Starting summary generation process")
         
@@ -116,7 +199,7 @@ class TextProcessor:
                     progress_callback(progress, f"Processing chunk {i + 1}/{len(text_chunks)}")
                 
                 try:
-                    summary = await self._retry_with_exponential_backoff(
+                    summary = self._retry_with_backoff(
                         self._generate_chunk_summary,
                         chunk,
                         i,
@@ -132,7 +215,7 @@ class TextProcessor:
 
             # Combine summaries
             if chunk_summaries:
-                combined_summary = await self._retry_with_exponential_backoff(
+                combined_summary = self._retry_with_backoff(
                     self._combine_summaries,
                     chunk_summaries
                 )
@@ -151,7 +234,7 @@ class TextProcessor:
             logger.error(f"Error in summary generation: {str(e)}")
             raise
 
-    async def _generate_chunk_summary(self, chunk: str, chunk_index: int, total_chunks: int) -> str:
+    def _generate_chunk_summary(self, chunk: str, chunk_index: int, total_chunks: int) -> str:
         """Generate summary for a single chunk with enhanced error handling"""
         logger.info(f"Processing chunk {chunk_index + 1}/{total_chunks}")
         
@@ -170,7 +253,7 @@ class TextProcessor:
         {chunk}
         """
 
-        response = await self.model.generate_content(prompt)
+        response = self.model.generate_content(prompt)
         if not response or not response.text:
             raise ValueError("Empty response from API")
         
@@ -226,33 +309,8 @@ class TextProcessor:
         
         return chunks
 
-    def get_transcript(self, url: str) -> str:
-        """Get transcript with improved caching and error handling"""
-        try:
-            # Check cache first
-            cache_key = self._get_cache_key(url, "transcript")
-            cached_transcript = self.subtitle_cache.get(cache_key)
-            if cached_transcript:
-                logger.info("Using cached transcript")
-                return cached_transcript
-
-            # Extract video ID and fetch transcript
-            video_id = url.split("v=")[-1]
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja', 'en'])
-            
-            # Process and combine transcript entries
-            transcript = " ".join([entry['text'] for entry in transcript_list])
-            
-            # Cache the result
-            self.subtitle_cache[cache_key] = transcript
-            return transcript
-
-        except Exception as e:
-            logger.error(f"Error fetching transcript: {str(e)}")
-            raise ValueError(f"Failed to fetch transcript: {str(e)}")
-
     def _combine_summaries(self, chunk_summaries: List[str]) -> str:
-        """Combine multiple chunk summaries into a coherent final summary with enhanced error handling"""
+        """Combine multiple chunk summaries into a coherent final summary"""
         if not chunk_summaries:
             return ""
 
