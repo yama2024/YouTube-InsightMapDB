@@ -82,7 +82,7 @@ class TextProcessor:
         }
 
     def _manage_request_limits(self):
-        """Manage API request limits and implement adaptive backoff"""
+        """Manage API request limits with enhanced logging and exponential backoff"""
         current_time = datetime.now()
         
         # Reset counters if reset interval has passed
@@ -92,18 +92,25 @@ class TextProcessor:
             self.failed_attempts = 0
             self.last_reset_time = current_time
         
-        # Increase base delay and add progressive backoff
-        base_delay = 2.0  # Increased from 1.0
+        # Enhanced delay calculation with exponential backoff
+        base_delay = 3.0  # Increased base delay
         if self.request_counter > 0:
-            delay = base_delay * (1 + (self.request_counter * 0.5))
+            # Exponential backoff based on request counter
+            exponential_factor = min(5, 2 ** (self.request_counter // 5))  # Cap at 32x
+            delay = base_delay * exponential_factor
+            logger.info(f"Applying delay of {delay:.2f} seconds (factor: {exponential_factor}x)")
             time.sleep(delay)
         
         # Update request tracking
         self.request_counter += 1
         self.last_request_time = current_time
         
-        # Log request statistics
-        logger.debug(f"Request counter: {self.request_counter}, Failed attempts: {self.failed_attempts}")
+        # Enhanced logging
+        logger.info(
+            f"Request stats - Counter: {self.request_counter}, "
+            f"Failed attempts: {self.failed_attempts}, "
+            f"Time since last reset: {(current_time - self.last_reset_time).seconds}s"
+        )
 
     def _calculate_backoff_time(self, attempt: int) -> float:
         """Calculate adaptive backoff time based on failure history"""
@@ -116,82 +123,96 @@ class TextProcessor:
         return min(300, base_backoff)  # Cap at 5 minutes
 
     def _process_request_queue(self):
-        """Process requests in the queue with rate limiting"""
+        """Process requests in the queue with enhanced error handling and logging"""
         with self.request_lock:
             if self.active_requests >= self.max_concurrent_requests:
-                return False
+                logger.info("Maximum concurrent requests reached, adding delay")
+                time.sleep(2)  # Add delay if too many requests
+                return None
             self.active_requests += 1
         
         try:
             while not self.request_queue.empty():
                 request_data = self.request_queue.get()
-                chunk = request_data['chunk']
-                chunk_index = request_data['index']
-                total_chunks = request_data['total']
-                
-                # Manage request limits
-                self._manage_request_limits()
-                
-                # Generate summary for this chunk
-                response = self.model.generate_content(
-                    self._create_summary_prompt(chunk, chunk_index, total_chunks)
+                # Add more detailed logging
+                logger.info(
+                    f"Processing chunk {request_data['index'] + 1}/{request_data['total']} "
+                    f"(size: {len(request_data['chunk'])} chars)"
                 )
                 
-                if not response or not response.text:
-                    raise ValueError("AIモデルからの応答が空でした")
+                # Manage request limits with increased delays
+                self._manage_request_limits()
                 
-                self.request_queue.task_done()
-                return response.text.strip()
-                
+                try:
+                    response = self.model.generate_content(
+                        self._create_summary_prompt(
+                            request_data['chunk'],
+                            request_data['index'],
+                            request_data['total']
+                        )
+                    )
+                    
+                    if not response or not response.text:
+                        raise ValueError("Empty response from AI model")
+                    
+                    self.request_queue.task_done()
+                    return response.text.strip()
+                    
+                except Exception as e:
+                    logger.error(f"Chunk processing error: {str(e)}")
+                    self.failed_attempts += 1
+                    raise
         finally:
             with self.request_lock:
                 self.active_requests -= 1
+                logger.debug(f"Active requests decreased to {self.active_requests}")
 
     def generate_summary(self, text: str) -> str:
-        """Generate a summary with enhanced rate limit handling and error reporting"""
-        logger.info("要約生成を開始します")
+        """Generate a summary with enhanced error handling and logging"""
+        logger.info("Starting summary generation process")
         
         try:
-            # Input validation
+            # Input validation with detailed logging
             is_valid, error_msg = self._validate_text(text)
             if not is_valid:
+                logger.error(f"Input text validation failed: {error_msg}")
                 raise ValueError(f"入力テキストが無効です: {error_msg}")
             
-            # Check cache first
+            # Check cache with logging
             cache_key = hash(text)
             cached_summary = self.summary_cache.get(cache_key)
             if cached_summary:
-                logger.info("キャッシュされた要約を使用します")
+                logger.info("Using cached summary")
                 return cached_summary
             
-            # Clean and chunk the text
+            # Clean and chunk the text with improved size calculation
             cleaned_text = self._clean_text(text)
             text_chunks = self._chunk_text(cleaned_text)
-            logger.info(f"テキストを{len(text_chunks)}チャンクに分割しました")
+            logger.info(f"Text split into {len(text_chunks)} chunks (avg size: {sum(len(c) for c in text_chunks)/len(text_chunks):.0f} chars)")
             
             chunk_summaries = []
-            max_retries = 5  # Increased from 3 to 5
+            max_retries = 5
             
-            # Add all chunks to request queue
+            # Add all chunks to request queue with logging
             for i, chunk in enumerate(text_chunks):
+                logger.info(f"Queuing chunk {i+1}/{len(text_chunks)} (size: {len(chunk)} chars)")
                 self.request_queue.put({
                     'chunk': chunk,
                     'index': i,
                     'total': len(text_chunks)
                 })
             
-            # Process chunks with queuing and rate limiting
+            # Process chunks with enhanced error handling
             for i in range(len(text_chunks)):
-                logger.info(f"チャンク {i+1}/{len(text_chunks)} の処理を開始")
+                logger.info(f"Processing chunk {i+1}/{len(text_chunks)}")
                 
                 for attempt in range(max_retries):
                     try:
                         summary = self._process_request_queue()
                         if summary:
                             chunk_summaries.append(summary)
-                            # Reset failed attempts counter on success
+                            logger.info(f"Successfully processed chunk {i+1}/{len(text_chunks)}")
                             self.failed_attempts = 0
-                            # Add delay between chunk processing
                             time.sleep(2.0)  # Base delay between chunks
                             break
                         
@@ -200,31 +221,35 @@ class TextProcessor:
                         wait_time = self._calculate_backoff_time(attempt)
                         
                         if "429" in str(e) or "Resource has been exhausted" in str(e):
-                            error_msg = f"API制限に達しました。待機時間: {wait_time}秒"
+                            error_msg = f"Rate limit reached. Waiting {wait_time} seconds"
                             logger.error(f"{error_msg}: {str(e)}")
                             if attempt < max_retries - 1:
-                                logger.info(f"待機中... {wait_time}秒後に再試行 ({attempt + 1}/{max_retries})")
+                                logger.info(f"Retrying in {wait_time} seconds (attempt {attempt + 1}/{max_retries})")
                                 time.sleep(wait_time)
                             else:
-                                raise ValueError(f"{error_msg}。しばらく待ってから再試行してください。")
+                                raise ValueError(f"{error_msg}. Please try again later.")
                         else:
-                            logger.warning(f"生成エラー (試行 {attempt + 1}/{max_retries}): {str(e)}")
+                            logger.error(f"Error processing chunk {i+1} (attempt {attempt + 1}/{max_retries}): {str(e)}")
                             if attempt == max_retries - 1:
-                                raise ValueError(f"要約の生成に失敗しました: {str(e)}")
-                            logger.info(f"待機中... {wait_time}秒後に再試行")
+                                raise ValueError(f"Failed to generate summary: {str(e)}")
+                            logger.info(f"Retrying in {wait_time} seconds")
                             time.sleep(wait_time)
             
-            # Combine chunk summaries
+            # Combine summaries with validation
             if chunk_summaries:
+                logger.info("Combining chunk summaries")
                 combined_summary = self._combine_summaries(chunk_summaries)
+                if not combined_summary:
+                    raise ValueError("Failed to combine chunk summaries")
+                
                 self.summary_cache[cache_key] = combined_summary
-                logger.info("要約の生成が正常に完了しました")
+                logger.info("Successfully generated and cached summary")
                 return combined_summary
             else:
-                raise ValueError("チャンクの要約生成に失敗しました")
+                raise ValueError("No chunk summaries generated")
                 
         except Exception as e:
-            error_msg = f"要約生成中にエラーが発生しました: {str(e)}"
+            error_msg = f"Summary generation failed: {str(e)}"
             logger.error(error_msg)
             raise Exception(error_msg)
 
@@ -281,32 +306,32 @@ class TextProcessor:
                 try:
                     response = self.model.generate_content(combine_prompt)
                     if not response or not response.text:
-                        raise ValueError("AIモデルからの応答が空でした")
+                        raise ValueError("Empty response from AI model")
                     
                     final_summary = response.text.strip()
                     is_valid, error_msg = self._validate_summary_response(final_summary)
                     if not is_valid:
-                        raise ValueError(f"生成された要約が無効です: {error_msg}")
+                        raise ValueError(f"Generated summary is invalid: {error_msg}")
                     
                     return final_summary
 
                 except Exception as e:
                     if "429" in str(e) or "Resource has been exhausted" in str(e):
-                        logger.error(f"API制限に達しました: {str(e)}")
+                        logger.error(f"Rate limit reached: {str(e)}")
                         wait_time = self._calculate_backoff_time(attempt)
                         time.sleep(wait_time)
                         if attempt == 2:
-                            raise ValueError("API制限に達しました。しばらく待ってから再試行してください。")
+                            raise ValueError("Rate limit reached. Please try again later.")
                     else:
-                        logger.warning(f"要約の結合中にエラーが発生 (試行 {attempt + 1}/3): {str(e)}")
+                        logger.warning(f"Error combining summaries (attempt {attempt + 1}/3): {str(e)}")
                         if attempt == 2:
                             raise
                         wait_time = self._calculate_backoff_time(attempt)
                         time.sleep(wait_time)
 
         except Exception as e:
-            logger.error(f"要約の結合中にエラーが発生しました: {str(e)}")
-            raise ValueError(f"要約の結合に失敗しました: {str(e)}")
+            logger.error(f"Error combining summaries: {str(e)}")
+            raise ValueError(f"Failed to combine summaries: {str(e)}")
 
     def _validate_text(self, text: str) -> Tuple[bool, str]:
         """Validate input text and return validation status and error message"""
@@ -332,8 +357,8 @@ class TextProcessor:
             return True, ""
             
         except Exception as e:
-            logger.error(f"テキスト検証中にエラーが発生: {str(e)}")
-            return False, f"テキスト検証エラー: {str(e)}"
+            logger.error(f"Error validating text: {str(e)}")
+            return False, f"Text validation error: {str(e)}"
 
     def _validate_summary_response(self, response: str) -> Tuple[bool, str]:
         """Validate the generated summary response"""
@@ -362,27 +387,42 @@ class TextProcessor:
             return True, ""
             
         except Exception as e:
-            logger.error(f"要約の検証中にエラーが発生: {str(e)}")
-            return False, f"要約の検証エラー: {str(e)}"
+            logger.error(f"Error validating summary: {str(e)}")
+            return False, f"Summary validation error: {str(e)}"
 
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into manageable chunks"""
+        """Split text into manageable chunks with improved size calculation"""
+        if not text:
+            return []
+        
+        # Calculate optimal chunk size based on text characteristics
+        avg_char_per_sentence = sum(len(s) for s in re.split('[。！？]', text)) / max(1, len(re.split('[。！？]', text)))
+        optimal_chunk_size = min(
+            self.max_chunk_size,
+            max(2000, int(avg_char_per_sentence * 5))  # At least 5 sentences per chunk
+        )
+        
+        logger.info(f"Using optimal chunk size of {optimal_chunk_size} characters")
+        
         sentences = re.split(r'([。！？])', text)
         chunks = []
         current_chunk = ""
         
         for i in range(0, len(sentences), 2):
             sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
-            if len(current_chunk) + len(sentence) <= self.max_chunk_size:
+            if len(current_chunk) + len(sentence) <= optimal_chunk_size:
                 current_chunk += sentence
             else:
                 if current_chunk:
                     chunks.append(current_chunk)
+                    logger.debug(f"Created chunk of size {len(current_chunk)} characters")
                 current_chunk = sentence
         
         if current_chunk:
             chunks.append(current_chunk)
+            logger.debug(f"Added final chunk of size {len(current_chunk)} characters")
         
+        logger.info(f"Split text into {len(chunks)} chunks")
         return chunks
 
     def _clean_text(self, text: str) -> str:
