@@ -43,25 +43,61 @@ class MindMapGenerator:
         jitter = random.uniform(0.8, 1.2)  # Add randomness to prevent thundering herd
         return base_backoff * jitter
 
+    def _validate_text(self, text: str) -> Tuple[bool, str]:
+        """Validate input text"""
+        if not text:
+            return False, "入力テキストが空です"
+        if len(text) < 10:
+            return False, "テキストが短すぎます"
+        if len(text) > 50000:
+            return False, "テキストが長すぎます"
+        return True, ""
+
+    def _clean_japanese_text(self, text: str) -> str:
+        """Clean and normalize Japanese text"""
+        try:
+            # Convert to half-width when appropriate
+            text = jaconv.z2h(text, ascii=True, digit=True)
+            # Normalize Japanese characters
+            text = jaconv.normalize(text)
+            # Remove repetitive punctuation
+            text = re.sub(r'[！]{2,}', '！', text)
+            text = re.sub(r'[？]{2,}', '？', text)
+            text = re.sub(r'[。]{2,}', '。', text)
+            # Clean spaces
+            text = re.sub(r'[\u3000\s]+', ' ', text)
+            return text.strip()
+        except Exception as e:
+            logger.error(f"Japanese text cleaning error: {str(e)}")
+            return text
+
     def _validate_node_text(self, text: str, level: int) -> Optional[str]:
         """Validate and clean node text with enhanced Mermaid syntax compliance"""
         if not text:
             return None
         try:
-            # Remove problematic characters
-            text = re.sub(r'[<>{}()[\]`]', '', text)
+            # Clean Japanese text
+            text = self._clean_japanese_text(text)
             
-            # Clean spaces and normalize
+            # Remove problematic characters
+            text = re.sub(r'[<>{}()\[\]`"\'\\]', '', text)
+            text = re.sub(r'[:_]', ' ', text)
+            
+            # Clean spaces
             text = text.strip()
             text = re.sub(r'\s+', ' ', text)
             
-            # Format based on level
+            # Level-specific processing
             if level == 0:  # Root node
                 text = text.replace('root(', '').replace(')', '')
+                if len(text) > 30:  # Shorter limit for root
+                    text = text[:27] + '...'
                 return f'root({text})'
             else:
-                # Additional safety checks for other levels
-                text = re.sub(r'[:"\'\\]', '', text)  # Remove characters that might break Mermaid
+                # Length limits for other levels
+                max_length = 40 if level == 1 else 50
+                if len(text) > max_length:
+                    text = text[:max_length-3] + '...'
                 return text
                 
         except Exception as e:
@@ -216,40 +252,27 @@ class MindMapGenerator:
     def _generate_mindmap_internal(self, text: str) -> str:
         """Generate mindmap with enhanced prompt and error handling"""
         prompt = f'''
-GeminiのAPIを利用してYouTube動画のトランススクリプトを元に、高品質な要約を行い、それを視覚的に整理したマインドマップを生成してください。
+以下の要件に従ってマインドマップを生成してください：
 
-# 入力テキスト
+入力テキスト：
 {text}
 
-# 手順
-1. トランススクリプト解析
-   - 主要テーマ: 動画全体を通しての主要なメッセージや目的を抽出
-   - サブテーマ: 主要テーマを補足する具体的なサブトピックを列挙
-   - キーポイント: 各サブテーマに関連する重要なポイントやデータを抽出
-   - アクション項目: 視聴者に行動を促す提案や具体例があればそれを明記
+出力規則：
+1. 最初の行は必ず「mindmap」
+2. インデントは半角スペース2個を使用
+3. ルートノードは「root(テーマ)」形式で記述
+4. 子ノードは単純なテキストで記述
+5. 特殊文字は使用しない
+6. 階層は最大3レベルまで
 
-2. マインドマップ構造
-   - 中心: 主要テーマ
-   - 第1レベル: サブテーマ（3-5個）
-   - 第2レベル: キーポイント（各サブテーマに2-4個）
-   - 第3レベル: 詳細・具体例（必要に応じて）
-
-3. 出力要件
-   - インデントは半角スペース2個を使用
-   - 各ノードは50文字以内の簡潔な表現
-   - 日本語での表記を優先
-   - 専門用語には簡単な説明を付記
-
-# 出力形式
-## マインドマップ（Mermaid形式）
+出力例：
 mindmap
   root(メインテーマ)
-    サブテーマ1
-      キーポイント1-1
-      キーポイント1-2
-    サブテーマ2
-      キーポイント2-1
-      キーポイント2-2
+    トピック1
+      サブトピック1
+      サブトピック2
+    トピック2
+      サブトピック3
 '''
 
         # Check cache
@@ -318,31 +341,23 @@ mindmap
         return self._generate_fallback_mindmap()
 
     def _generate_fallback_mindmap(self) -> str:
-        """Generate an improved fallback mindmap"""
+        """Generate a fallback mindmap when the main generation fails"""
         current_time = time.strftime("%Y-%m-%d %H:%M:%S")
         return f'''mindmap
   root(コンテンツ解析エラー)
     エラー情報
       生成時刻: {current_time}
       再試行回数: {self.failed_attempts}
-      エラー状態: 一時的な問題
-    代替アクション
-      データの確認
-        入力テキストの確認
-        API状態の確認
-      再試行オプション
-        数分後に再試行
-        手動での生成
-    トラブルシューティング
-      ログの確認
-      設定の見直し
-      サポートへの連絡'''
+    対応方法
+      データ確認
+      再度実行
+      サポート連絡'''
 
     def generate_mindmap(self, text: str) -> str:
         """Main method to generate mindmap with enhanced error handling"""
         try:
             # Input validation
-            is_valid, error_msg = self._validate_input_text(text)
+            is_valid, error_msg = self._validate_text(text)
             if not is_valid:
                 logger.error(f"Input validation failed: {error_msg}")
                 return self._generate_fallback_mindmap()
