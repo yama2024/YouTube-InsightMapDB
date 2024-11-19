@@ -27,14 +27,18 @@ class MindMapGenerator:
         self.max_retries = 3
         self.rate_limit_wait_time = 60  # Base wait time for rate limits
         
-        # Topic coverage thresholds
+        # Enhanced topic coverage thresholds
         self.min_topics_per_level = {
             1: 3,  # At least 3 main topics
-            2: 2   # At least 2 subtopics per main topic
+            2: 3   # At least 3 subtopics per main topic (increased from 2)
+        }
+        self.max_topics_per_level = {
+            1: 5,  # Maximum 5 main topics
+            2: 5   # Maximum 5 subtopics per main topic
         }
 
     def _validate_topic_coverage(self, mindmap_lines: list) -> Tuple[bool, str]:
-        """Validate comprehensive topic coverage"""
+        """Validate comprehensive topic coverage with enhanced requirements"""
         topics_count = {0: 0, 1: 0, 2: 0}  # Level: count
         current_l1_topic = None
         l1_subtopics = {}
@@ -56,7 +60,7 @@ class MindMapGenerator:
                 topics_count[2] += 1
                 l1_subtopics[current_l1_topic] += 1
         
-        # Validate coverage requirements
+        # Validate minimum coverage requirements
         if topics_count[1] < self.min_topics_per_level[1]:
             return False, f"メインレベルのトピックが不足しています (必要: {self.min_topics_per_level[1]}, 現在: {topics_count[1]})"
         
@@ -69,10 +73,18 @@ class MindMapGenerator:
         if insufficient_topics:
             return False, f"以下のトピックのサブトピックが不足しています: {', '.join(insufficient_topics)}"
         
+        # Validate maximum limits
+        if topics_count[1] > self.max_topics_per_level[1]:
+            return False, f"メインレベルのトピックが多すぎます (最大: {self.max_topics_per_level[1]}, 現在: {topics_count[1]})"
+        
+        for topic, count in l1_subtopics.items():
+            if count > self.max_topics_per_level[2]:
+                return False, f"トピック '{topic}' のサブトピックが多すぎます (最大: {self.max_topics_per_level[2]}, 現在: {count})"
+        
         return True, ""
 
     def _validate_input_text(self, text: str) -> Tuple[bool, str]:
-        """Validate input text with enhanced checks"""
+        """Validate input text with enhanced Japanese support"""
         if not text:
             return False, "入力テキストが空です"
         
@@ -87,15 +99,18 @@ class MindMapGenerator:
         if not cleaned_text:
             return False, "有効なテキストコンテンツがありません"
         
-        # Validate Japanese text content
+        # Enhanced Japanese text validation
         jp_pattern = r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]'
-        if not re.search(jp_pattern, text):
+        jp_content = re.findall(jp_pattern, text)
+        if not jp_content:
             logger.warning("日本語のコンテンツが見つかりません")
+        elif len(jp_content) < len(cleaned_text) * 0.3:
+            logger.warning("日本語のコンテンツが少なめです")
         
         return True, ""
 
     def _normalize_japanese_text(self, text: str) -> str:
-        """Normalize Japanese text for better processing"""
+        """Enhanced Japanese text normalization with error handling"""
         try:
             # Convert all forms of Japanese characters to their standard form
             text = jaconv.normalize(text)
@@ -111,9 +126,14 @@ class MindMapGenerator:
             text = re.sub(r'[？]{2,}', '？', text)
             text = re.sub(r'[。]{2,}', '。', text)
             
+            # Normalize Japanese quotation marks
+            text = text.replace('『', '「').replace('』', '」')
+            text = text.replace('【', '「').replace('】', '」')
+            
             return text.strip()
         except Exception as e:
             logger.error(f"Japanese text normalization error: {str(e)}")
+            # Return original text if normalization fails
             return text
 
     def _validate_node_text(self, text: str) -> Optional[str]:
@@ -132,20 +152,21 @@ class MindMapGenerator:
             text = text.strip()
             text = re.sub(r'\s+', ' ', text)
             
-            # Ensure proper length (considering Japanese characters)
+            # Enhanced length validation for Japanese text
             text_length = sum(2 if '\u4e00' <= c <= '\u9fff' else 1 for c in text)
             if text_length > 50:
-                # Truncate while preserving meaning
+                # Intelligent truncation preserving meaning
                 current_length = 0
                 truncated_text = ''
-                for char in text:
-                    char_length = 2 if '\u4e00' <= char <= '\u9fff' else 1
-                    if current_length + char_length > 47:
-                        truncated_text += '...'
+                words = text.split()
+                for word in words:
+                    word_length = sum(2 if '\u4e00' <= c <= '\u9fff' else 1 for c in word)
+                    if current_length + word_length > 47:
+                        truncated_text = truncated_text.rstrip() + '...'
                         break
-                    truncated_text += char
-                    current_length += char_length
-                text = truncated_text
+                    truncated_text += word + ' '
+                    current_length += word_length
+                text = truncated_text.strip()
             
             return text
             
@@ -154,7 +175,7 @@ class MindMapGenerator:
             return None
 
     def _format_mindmap_syntax(self, syntax: str) -> str:
-        """Format and validate Mermaid mindmap syntax"""
+        """Format and validate Mermaid mindmap syntax with enhanced error checking"""
         try:
             if not syntax or not isinstance(syntax, str):
                 logger.warning("Invalid mindmap syntax received")
@@ -180,7 +201,7 @@ class MindMapGenerator:
                     indent_level = current_indent + 1
                 
                 # Check node count at this level
-                if node_count[indent_level] >= 5:  # Maximum 5 items per level
+                if node_count[indent_level] >= self.max_topics_per_level.get(indent_level, 5):
                     continue
                 
                 # Clean and validate node text
@@ -217,43 +238,46 @@ class MindMapGenerator:
     def _generate_mindmap_internal(self, text: str) -> str:
         """Generate mindmap with enhanced prompt and error handling"""
         prompt = f'''
-        以下のテキストから包括的で詳細なマインドマップを生成してください。
+        以下のテキストから高度に構造化されたマインドマップを生成してください。
 
         入力テキスト：
         {text}
 
         必須要件：
-        1. 構造
-           - メインテーマを中心に、主要な概念を論理的に展開
-           - 3階層構造を最大限活用
-           - 各トピックに2-3個の具体的なサブトピック
-        
-        2. コンテンツ
-           - 技術的な詳細や具体例を含める
-           - 重要な概念の定義や説明
-           - 実践的な応用例や使用方法
+        1. 構造設計
+           - 中心テーマを核とした放射状の展開
+           - 最大3階層の論理的な構造化
+           - 各主要トピックに3-5個の具体的なサブトピック
+           - バランスの取れた情報分布
+
+        2. コンテンツ要素
+           - 重要な概念の定義と説明
+           - 具体的な実装例や使用事例
+           - 技術的詳細とベストプラクティス
            - メリット・デメリットの分析
-        
-        3. 表現形式
-           - 簡潔かつ具体的な表現
-           - 専門用語は説明付きで記載
-           - 論理的な接続を明確に
-        
+           - 関連する技術や概念の関係性
+
+        3. 表現方法
+           - 簡潔で分かりやすい日本語表現
+           - 重要な専門用語の説明付き記載
+           - 階層関係を明確にした構造化
+           - キーポイントの強調
+
         出力形式：
         mindmap
           root(メインテーマ - 核となる概念)
-            概念の定義と背景
-              技術的な詳細
+            概念の基礎
+              定義と原理
               重要な特徴
-              適用範囲
-            実装と応用
-              具体的な使用例
-              実践的なヒント
-              注意点
-            発展と展望
+              技術的背景
+            実装と活用
+              具体的な実装方法
+              ユースケース
+              注意点と制約
+            応用と発展
+              実践的な活用例
               将来の可能性
-              改善案
-              関連技術
+              関連技術との連携
         '''
 
         # Check cache
@@ -327,16 +351,22 @@ class MindMapGenerator:
         """Generate an improved fallback mindmap"""
         current_time = time.strftime("%Y-%m-%d %H:%M:%S")
         return f'''mindmap
-  root(コンテンツ解析結果)
+  root(コンテンツ解析エラー)
     エラー情報
       生成時刻: {current_time}
       再試行回数: {self.failed_attempts}
-    代替表示
-      主要ポイント
-      重要キーワード
-    アクション
-      内容を確認
-      再生成を試行'''
+      エラー状態: 一時的な問題
+    代替アクション
+      データの確認
+        入力テキストの確認
+        API状態の確認
+      再試行オプション
+        数分後に再試行
+        手動での生成
+    トラブルシューティング
+      ログの確認
+      設定の見直し
+      サポートへの連絡'''
 
     def generate_mindmap(self, text: str) -> str:
         """Main method to generate mindmap with enhanced error handling"""
