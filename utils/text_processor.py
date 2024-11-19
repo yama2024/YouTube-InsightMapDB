@@ -71,13 +71,14 @@ class TextProcessor:
             raise ValueError("入力テキストが空です")
         
         try:
-            chunks = self._chunk_text(text, chunk_size=800, overlap=100)
+            # Smaller chunks and larger delays
+            chunks = self._chunk_text(text, chunk_size=500, overlap=50)
             summaries = []
             
             for i, chunk in enumerate(chunks):
-                if i > 0:
-                    time.sleep(2)  # Rate limiting
-                    
+                # Increase delay between chunks
+                time.sleep(3 if i == 0 else 5)
+                
                 prompt = f'''
                 以下のテキストを要約してください：
                 
@@ -89,8 +90,11 @@ class TextProcessor:
                 - 文脈を維持
                 '''
                 
-                for attempt in range(3):
+                for attempt in range(5):  # Increased retry attempts
                     try:
+                        if attempt > 0:
+                            time.sleep(5 * attempt)  # Progressive backoff
+                        
                         response = self.model.generate_content(
                             prompt,
                             safety_settings=self.safety_settings,
@@ -98,7 +102,7 @@ class TextProcessor:
                                 temperature=0.3,
                                 top_p=0.8,
                                 top_k=40,
-                                max_output_tokens=1024,
+                                max_output_tokens=800,
                             )
                         )
                         
@@ -107,16 +111,18 @@ class TextProcessor:
                             break
                             
                     except Exception as e:
-                        if attempt < 2:
-                            wait_time = (2 ** attempt) + 1
-                            time.sleep(wait_time)
+                        if 'Resource has been exhausted' in str(e) and attempt < 4:
                             continue
                         raise Exception(f"チャンク {i+1} の処理に失敗: {str(e)}")
+                
+                # Add extra delay after successful chunk processing
+                time.sleep(2)
                         
             if not summaries:
                 raise ValueError("要約を生成できませんでした")
                 
-            # Generate final summary
+            # Combine summaries with increased delays
+            time.sleep(5)
             combined = "\n\n".join(summaries)
             final_prompt = f'''
             以下の要約をさらに整理して、簡潔にまとめてください：
@@ -124,8 +130,11 @@ class TextProcessor:
             {combined}
             '''
             
-            for attempt in range(3):
+            for attempt in range(5):
                 try:
+                    if attempt > 0:
+                        time.sleep(5 * attempt)
+                    
                     final_response = self.model.generate_content(
                         final_prompt,
                         safety_settings=self.safety_settings,
@@ -133,17 +142,19 @@ class TextProcessor:
                             temperature=0.3,
                             top_p=0.8,
                             top_k=40,
-                            max_output_tokens=1024,
+                            max_output_tokens=800,
                         )
                     )
+                    
                     if final_response and final_response.text:
                         return final_response.text.strip()
+                        
                 except Exception as e:
-                    if attempt < 2:
-                        wait_time = 2 ** attempt
-                        time.sleep(wait_time)
+                    if 'Resource has been exhausted' in str(e) and attempt < 4:
                         continue
                     raise Exception(f"最終要約の生成に失敗しました: {str(e)}")
+            
+            raise ValueError("要約の生成に失敗しました")
             
         except Exception as e:
             logger.error(f"要約生成エラー: {str(e)}")
