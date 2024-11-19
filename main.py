@@ -254,20 +254,23 @@ try:
                     st.markdown("### Mind Map Visualization")
 
                     if 'mindmap' not in st.session_state or not st.session_state.mindmap:
-                        with st.spinner("マインドマップを生成中..."):
-                            try:
-                                mindmap_gen = MindMapGenerator()
-                                mermaid_syntax = mindmap_gen.generate_mindmap(
-                                    st.session_state.transcript)
-                                st.session_state.mindmap = mermaid_syntax
-                                st.session_state.current_step = 4
-                                update_step_progress('mindmap')
-                                time.sleep(0.5)
-                            except Exception as e:
-                                st.error(f"マインドマップの生成に失敗しました: {str(e)}")
-                                logger.error(
-                                    f"Error in mindmap generation: {str(e)}")
-                                st.stop()
+                        if not st.session_state.summary:
+                            st.warning("マインドマップを生成するには、まず要約を生成してください。")
+                        else:
+                            with st.spinner("マインドマップを生成中..."):
+                                try:
+                                    mindmap_gen = MindMapGenerator()
+                                    mermaid_syntax = mindmap_gen.generate_mindmap(
+                                        st.session_state.summary)
+                                    st.session_state.mindmap = mermaid_syntax
+                                    st.session_state.current_step = 4
+                                    update_step_progress('mindmap')
+                                    time.sleep(0.5)
+                                except Exception as e:
+                                    st.error(f"マインドマップの生成に失敗しました: {str(e)}")
+                                    logger.error(
+                                        f"Error in mindmap generation: {str(e)}")
+                                    st.stop()
 
                     if st.session_state.mindmap:
                         col1, col2 = st.columns([2, 1])
