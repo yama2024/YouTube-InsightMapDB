@@ -43,131 +43,92 @@ class MindMapGenerator:
         jitter = random.uniform(0.8, 1.2)  # Add randomness to prevent thundering herd
         return base_backoff * jitter
 
-    def _validate_input_text(self, text: str) -> Tuple[bool, str]:
-        """Validate input text with enhanced Japanese support"""
-        if not text:
-            return False, "入力テキストが空です"
-        
-        if len(text) < 10:
-            return False, "テキストが短すぎます (最小10文字)"
-        
-        if len(text) > 50000:
-            return False, "テキストが長すぎます (最大50000文字)"
-        
-        # Check for meaningful content
-        cleaned_text = re.sub(r'\s+', '', text)
-        if not cleaned_text:
-            return False, "有効なテキストコンテンツがありません"
-        
-        # Enhanced Japanese text validation
-        jp_pattern = r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]'
-        jp_content = re.findall(jp_pattern, text)
-        if not jp_content:
-            logger.warning("日本語のコンテンツが見つかりません")
-        elif len(jp_content) < len(cleaned_text) * 0.3:
-            logger.warning("日本語のコンテンツが少なめです")
-        
-        return True, ""
-
-    def _normalize_japanese_text(self, text: str) -> str:
-        """Enhanced Japanese text normalization"""
-        try:
-            # Convert all forms of Japanese characters to their standard form
-            text = jaconv.normalize(text)
-            
-            # Convert full-width to half-width where appropriate
-            text = jaconv.z2h(text, ascii=True, digit=True)
-            
-            # Normalize whitespace
-            text = re.sub(r'[\u3000\s]+', ' ', text)
-            
-            # Remove repetitive punctuation
-            text = re.sub(r'[！]{2,}', '！', text)
-            text = re.sub(r'[？]{2,}', '？', text)
-            text = re.sub(r'[。]{2,}', '。', text)
-            
-            # Normalize Japanese quotation marks
-            text = text.replace('『', '「').replace('』', '」')
-            text = text.replace('【', '「').replace('】', '」')
-            
-            return text.strip()
-        except Exception as e:
-            logger.error(f"Japanese text normalization error: {str(e)}")
-            return text
-
     def _validate_node_text(self, text: str, level: int) -> Optional[str]:
-        """Validate and clean node text with level-specific handling"""
+        """Validate and clean node text with enhanced Mermaid syntax compliance"""
         if not text:
             return None
-            
         try:
-            # Normalize Japanese text
-            text = self._normalize_japanese_text(text)
+            # Remove problematic characters
+            text = re.sub(r'[<>{}()[\]`]', '', text)
             
-            # Remove Mermaid syntax characters
-            text = re.sub(r'[[\](){}「」『』（）｛｝［］]', '', text)
-            
-            # Clean spaces
+            # Clean spaces and normalize
             text = text.strip()
             text = re.sub(r'\s+', ' ', text)
             
-            # Level-specific processing
+            # Format based on level
             if level == 0:  # Root node
-                max_length = 30
-            elif level == 1:  # Main topics
-                max_length = 40
-            else:  # Subtopics and details
-                max_length = 50
-            
-            # Truncate long text
-            if len(text) > max_length:
-                text = text[:max_length-3] + '...'
-            
-            return text
-            
+                text = text.replace('root(', '').replace(')', '')
+                return f'root({text})'
+            else:
+                # Additional safety checks for other levels
+                text = re.sub(r'[:"\'\\]', '', text)  # Remove characters that might break Mermaid
+                return text
+                
         except Exception as e:
             logger.error(f"Node text validation error: {str(e)}")
             return None
 
     def _validate_hierarchy(self, lines: list) -> bool:
-        """Validate the mindmap hierarchy structure"""
+        """Validate the mindmap hierarchy structure with enhanced checks"""
         try:
+            if not lines or lines[0] != 'mindmap':
+                logger.warning("Missing or invalid mindmap declaration")
+                return False
+
             level_counts = {0: 0, 1: 0, 2: 0}
             current_level1 = None
             level1_subtopics = {}
+            last_indent = -1
             
-            for line in lines:
+            for i, line in enumerate(lines[1:], 1):  # Skip 'mindmap' line
                 if not line.strip():
                     continue
-                    
-                indent = len(line) - len(line.lstrip())
-                level = indent // 2
                 
-                if level > 2:  # Max 3 levels allowed
+                # Check indentation consistency
+                indent = len(line) - len(line.lstrip())
+                if indent % 2 != 0:
+                    logger.warning(f"Invalid indentation at line {i}: {indent}")
                     return False
                 
-                if level == 0:  # Root node
-                    if level_counts[0] > 0:  # Only one root allowed
+                level = indent // 2
+                if level > 2:
+                    logger.warning(f"Invalid nesting level at line {i}: {level}")
+                    return False
+                
+                # Check for proper level progression
+                if level > last_indent + 1:
+                    logger.warning(f"Invalid level jump at line {i}")
+                    return False
+                last_indent = level
+                
+                # Process node based on level
+                clean_line = line.strip()
+                if level == 0:
+                    if not clean_line.startswith('root(') or not clean_line.endswith(')'):
+                        logger.warning(f"Invalid root node format at line {i}")
+                        return False
+                    if level_counts[0] > 0:
+                        logger.warning("Multiple root nodes detected")
                         return False
                     level_counts[0] += 1
-                elif level == 1:  # Main topics
-                    current_level1 = line.strip()
+                elif level == 1:
+                    current_level1 = clean_line
                     level_counts[1] += 1
                     level1_subtopics[current_level1] = 0
-                elif level == 2 and current_level1:  # Subtopics
+                elif level == 2 and current_level1:
                     level_counts[2] += 1
                     level1_subtopics[current_level1] += 1
             
-            # Validate counts
+            # Validate structure requirements
             if level_counts[0] != 1:
                 logger.warning("Invalid root node count")
                 return False
-                
+            
             if not (self.min_topics_per_level[1] <= level_counts[1] <= self.max_topics_per_level[1]):
                 logger.warning(f"Invalid main topic count: {level_counts[1]}")
                 return False
-                
-            # Check subtopics distribution
+            
+            # Validate subtopic distribution
             for topic, count in level1_subtopics.items():
                 if not (self.min_topics_per_level[2] <= count <= self.max_topics_per_level[2]):
                     logger.warning(f"Invalid subtopic count for {topic}: {count}")
@@ -180,63 +141,71 @@ class MindMapGenerator:
             return False
 
     def _format_mindmap_syntax(self, syntax: str) -> str:
-        """Format and validate Mermaid mindmap syntax with enhanced structure validation"""
+        """Format and validate Mermaid mindmap syntax with strict compliance checks"""
         try:
             # Basic validation
             if not syntax or not isinstance(syntax, str):
                 logger.warning("Invalid mindmap syntax received")
                 return self._generate_fallback_mindmap()
             
-            # Process lines
+            # Process lines with strict formatting
             lines = ['mindmap']
             current_indent = 0
-            node_count = {0: 0, 1: 0, 2: 0}  # Track nodes at each level
+            node_count = {0: 0, 1: 0, 2: 0}
             current_level1_topic = None
             level1_subtopics = {}
             
-            for line in syntax.strip().split('\n')[1:]:  # Skip first 'mindmap' line
-                if not line.strip():
+            # Split and clean lines
+            syntax_lines = [line.rstrip() for line in syntax.strip().split('\n')]
+            
+            for line in syntax_lines:
+                if not line.strip() or line.strip() == 'mindmap':
                     continue
                 
-                # Calculate indentation
+                # Calculate and validate indentation
                 indent = len(line) - len(line.lstrip())
-                indent_level = min(indent // 2, 2)  # Maximum 3 levels (0, 1, 2)
-                
-                # Validate indentation
-                if indent_level > current_indent + 1:
-                    logger.warning(f"Invalid indentation level: {indent_level}")
-                    indent_level = current_indent + 1
-                
-                # Check node count limits
-                if node_count[indent_level] >= self.max_topics_per_level.get(indent_level, 5):
+                if indent % 2 != 0:
+                    logger.warning(f"Invalid indentation: {indent}")
                     continue
                 
-                # Clean and validate node text
+                indent_level = min(indent // 2, 2)
+                
+                # Validate level progression
+                if indent_level > current_indent + 1:
+                    logger.warning(f"Invalid level progression: {indent_level}")
+                    continue
+                
+                # Process node text
                 clean_line = self._validate_node_text(line.strip(), indent_level)
                 if clean_line:
-                    # Format root node
+                    # Format line with proper indentation and track node counts
                     if indent_level == 0:
-                        if not clean_line.startswith('root('):
-                            clean_line = f'root({clean_line})'
+                        if node_count[0] > 0:
+                            continue  # Skip additional root nodes
                         node_count[0] += 1
                     elif indent_level == 1:
+                        if node_count[1] >= self.max_topics_per_level[1]:
+                            continue
                         current_level1_topic = clean_line
                         level1_subtopics[clean_line] = 0
                         node_count[1] += 1
                     elif indent_level == 2 and current_level1_topic:
+                        if level1_subtopics[current_level1_topic] >= self.max_topics_per_level[2]:
+                            continue
                         level1_subtopics[current_level1_topic] += 1
                         node_count[2] += 1
                     
-                    # Format line with proper indentation
+                    # Add formatted line with proper indentation
                     formatted_line = '  ' * indent_level + clean_line
                     lines.append(formatted_line)
                     current_indent = indent_level
             
-            # Validate hierarchy
+            # Validate final structure
             if not self._validate_hierarchy(lines):
                 logger.warning("Invalid mindmap hierarchy")
                 return self._generate_fallback_mindmap()
             
+            # Join lines with proper line endings
             result = '\n'.join(lines)
             return result
             
