@@ -22,6 +22,12 @@ class TextProcessor:
             raise ValueError("Gemini API key is not set in environment variables")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
+        self.safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        ]
         
         # Initialize caches
         self.subtitle_cache = TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL
@@ -59,6 +65,89 @@ class TextProcessor:
                 '､': '、'
             }
         }
+
+    def generate_summary(self, text: str) -> str:
+        if not text:
+            raise ValueError("入力テキストが空です")
+        
+        try:
+            chunks = self._chunk_text(text, chunk_size=800, overlap=100)
+            summaries = []
+            
+            for i, chunk in enumerate(chunks):
+                if i > 0:
+                    time.sleep(2)  # Rate limiting
+                    
+                prompt = f'''
+                以下のテキストを要約してください：
+                
+                {chunk}
+                
+                ポイント：
+                - 重要な情報を保持
+                - 簡潔に表現
+                - 文脈を維持
+                '''
+                
+                for attempt in range(3):
+                    try:
+                        response = self.model.generate_content(
+                            prompt,
+                            safety_settings=self.safety_settings,
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=0.3,
+                                top_p=0.8,
+                                top_k=40,
+                                max_output_tokens=1024,
+                            )
+                        )
+                        
+                        if response and response.text:
+                            summaries.append(response.text.strip())
+                            break
+                            
+                    except Exception as e:
+                        if attempt < 2:
+                            wait_time = (2 ** attempt) + 1
+                            time.sleep(wait_time)
+                            continue
+                        raise Exception(f"チャンク {i+1} の処理に失敗: {str(e)}")
+                        
+            if not summaries:
+                raise ValueError("要約を生成できませんでした")
+                
+            # Generate final summary
+            combined = "\n\n".join(summaries)
+            final_prompt = f'''
+            以下の要約をさらに整理して、簡潔にまとめてください：
+            
+            {combined}
+            '''
+            
+            for attempt in range(3):
+                try:
+                    final_response = self.model.generate_content(
+                        final_prompt,
+                        safety_settings=self.safety_settings,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.3,
+                            top_p=0.8,
+                            top_k=40,
+                            max_output_tokens=1024,
+                        )
+                    )
+                    if final_response and final_response.text:
+                        return final_response.text.strip()
+                except Exception as e:
+                    if attempt < 2:
+                        wait_time = 2 ** attempt
+                        time.sleep(wait_time)
+                        continue
+                    raise Exception(f"最終要約の生成に失敗しました: {str(e)}")
+            
+        except Exception as e:
+            logger.error(f"要約生成エラー: {str(e)}")
+            raise Exception(f"要約の生成に失敗しました: {str(e)}")
 
     def _clean_text(self, text: str, progress_callback=None) -> str:
         """Enhanced text cleaning with progress tracking"""
@@ -126,109 +215,26 @@ class TextProcessor:
             
         return chunks
 
-    def generate_summary(self, text: str) -> str:
-        """Generate summary with improved chunking and error handling"""
+    def _improve_sentence_structure(self, text: str) -> str:
+        """Improve Japanese sentence structure and readability"""
         try:
-            # Smaller chunks for better processing
-            chunk_size = 800  # Reduced from 1500
-            overlap = 100
-            chunks = self._chunk_text(text, chunk_size, overlap)
+            # Fix sentence endings
+            text = re.sub(r'([。！？])\s*(?=[^」』）])', r'\1\n', text)
             
-            summaries = []
-            for i, chunk in enumerate(chunks):
-                try:
-                    # Add delay between chunks
-                    if i > 0:
-                        time.sleep(2)
-                    
-                    prompt = f'''
-                    以下のテキストを要約してください：
-                    
-                    {chunk}
-                    
-                    ポイント：
-                    - 重要な情報を保持
-                    - 簡潔に表現
-                    - 文脈を維持
-                    '''
-                    
-                    # Improved retry logic
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            logger.info(f"チャンク {i+1}/{len(chunks)} の処理を試行中 (試行 {attempt+1}/{max_retries})")
-                            response = self.model.generate_content(
-                                prompt,
-                                generation_config=genai.types.GenerationConfig(
-                                    temperature=0.3,
-                                    top_p=0.8,
-                                    top_k=40,
-                                    max_output_tokens=1024,
-                                )
-                            )
-                            
-                            if response and response.text:
-                                summaries.append(response.text.strip())
-                                logger.info(f"チャンク {i+1} の要約が成功しました")
-                                break
-                            
-                        except Exception as e:
-                            logger.warning(f"チャンク {i+1} の処理中にエラーが発生 (試行 {attempt+1}): {str(e)}")
-                            if attempt < max_retries - 1:
-                                wait_time = (2 ** attempt) + 1  # Exponential backoff
-                                logger.info(f"再試行まで {wait_time} 秒待機します")
-                                time.sleep(wait_time)
-                                continue
-                            raise
-                            
-                except Exception as e:
-                    logger.error(f"チャンク {i+1} の処理に失敗: {str(e)}")
-                    continue
-
-            if not summaries:
-                logger.error("要約の生成に失敗: 有効な要約が生成されませんでした")
-                raise ValueError("要約を生成できませんでした")
+            # Improve paragraph breaks
+            text = re.sub(r'([。！？])\s*\n\s*([^「『（])', r'\1\n\n\2', text)
             
-            # Combine summaries with better formatting
-            logger.info("個別の要約を結合して最終要約を生成します")
-            combined = "\n\n".join(summaries)
-            final_prompt = f'''
-            以下の要約をさらに整理して、簡潔にまとめてください：
+            # Fix spacing around Japanese punctuation
+            text = re.sub(r'\s+([。、！？」』）])', r'\1', text)
+            text = re.sub(r'([「『（])\s+', r'\1', text)
             
-            {combined}
-            '''
+            # Clean up list items
+            text = re.sub(r'^[-・]\s*', '• ', text, flags=re.MULTILINE)
             
-            # Final summary with retry
-            for attempt in range(3):
-                try:
-                    logger.info(f"最終要約の生成を試行中 (試行 {attempt+1}/3)")
-                    final_response = self.model.generate_content(
-                        final_prompt,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.3,
-                            top_p=0.8,
-                            top_k=40,
-                            max_output_tokens=1024,
-                        )
-                    )
-                    if final_response and final_response.text:
-                        logger.info("最終要約の生成が完了しました")
-                        return final_response.text.strip()
-                except Exception as e:
-                    logger.warning(f"最終要約の生成中にエラーが発生 (試行 {attempt+1}): {str(e)}")
-                    if attempt < 2:
-                        wait_time = 2 ** attempt
-                        logger.info(f"再試行まで {wait_time} 秒待機します")
-                        time.sleep(wait_time)
-                        continue
-                    raise
-
-            logger.error("最終要約の生成に失敗しました")
-            raise ValueError("最終要約の生成に失敗しました")
-            
+            return text
         except Exception as e:
-            logger.error(f"要約生成エラー: {str(e)}")
-            raise Exception(f"要約の生成に失敗しました: {str(e)}")
+            logger.error(f"文章構造の改善中にエラーが発生しました: {str(e)}")
+            return text
 
     def proofread_text(self, text: str, progress_callback=None) -> str:
         """Proofread and enhance text readability with progress tracking"""
@@ -257,52 +263,33 @@ class TextProcessor:
             if progress_callback:
                 progress_callback(0.5, "🤖 AIモデルによる文章校正を準備中...")
             
-            # AI Processing steps
+            # AI Processing with safety settings
             prompt = f"""
-# あなたの目的:
-「Original Transcript」のテキストを全文校閲します。
-
-文字起こししたYouTubeの動画について、元の文章の意味を絶対に変更せずに文字起こしと校閲を行います。
-あなたが文脈として不自然と感じた文章は全て誤字脱字が含まれており、正確に修正する必要があります。
-ステップバイステップで思考しながら校閲を行い、正確に修正して文章を出力してください。
-
-# ルール:
-1.校閲した文章以外の出力は決して行ってはいけません。
-2.校閲した文章のみを出力します。
-3.改行の位置が不自然だった場合は文章と共に適切に改行位置も修正してください。
-4.時間を意味するような表示として"(00:00)"といった記載がある場合がありますが、それは文章ではないので、文章から削除して校閲を行ってください。
-5.スピーチtoテキストで文章を入力している場合、「えー」、「まあ」、「あのー」といったフィラーが含まれている場合があります。こちらも削除して校閲を行ってください。
-6.テキストを出力するときには、「。」で改行を行って見やすい文章を出力してください。
-
-入力テキスト：
-{text}
-"""
+            以下のテキストを校閲し、文章を整形してください：
             
-            if progress_callback:
-                progress_callback(0.6, "🧠 AIによる文章解析中...")
-                time.sleep(0.3)
-                progress_callback(0.7, "📝 文章の校正を実行中...")
+            {text}
+            """
             
-            response = self.model.generate_content(prompt)
-            if not response.text:
+            response = self.model.generate_content(
+                prompt,
+                safety_settings=self.safety_settings,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    top_p=0.8,
+                    top_k=40,
+                    max_output_tokens=1024,
+                )
+            )
+            
+            if not response or not response.text:
                 logger.error("AIモデルからの応答が空でした")
                 if progress_callback:
                     progress_callback(1.0, "❌ エラー: AIモデルからの応答が空です")
                 return text
             
-            if progress_callback:
-                progress_callback(0.8, "🎨 文章の最終調整中...")
-            
-            enhanced_text = response.text
+            enhanced_text = response.text.strip()
             enhanced_text = self._clean_text(enhanced_text)
-            
-            if progress_callback:
-                progress_callback(0.9, "📊 文章構造を最適化中...")
-            
             enhanced_text = self._improve_sentence_structure(enhanced_text)
-            enhanced_text = re.sub(r'([。])', r'\1\n', enhanced_text)
-            enhanced_text = re.sub(r'\n{3,}', '\n\n', enhanced_text)
-            enhanced_text = enhanced_text.strip()
             
             if progress_callback:
                 progress_callback(1.0, "✨ 校正処理が完了しました!")
@@ -313,27 +300,6 @@ class TextProcessor:
             logger.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
             if progress_callback:
                 progress_callback(1.0, f"❌ エラー: {str(e)}")
-            return text
-
-    def _improve_sentence_structure(self, text: str) -> str:
-        """Improve Japanese sentence structure and readability"""
-        try:
-            # Fix sentence endings
-            text = re.sub(r'([。！？])\s*(?=[^」』）])', r'\1\n', text)
-            
-            # Improve paragraph breaks
-            text = re.sub(r'([。！？])\s*\n\s*([^「『（])', r'\1\n\n\2', text)
-            
-            # Fix spacing around Japanese punctuation
-            text = re.sub(r'\s+([。、！？」』）])', r'\1', text)
-            text = re.sub(r'([「『（])\s+', r'\1', text)
-            
-            # Clean up list items
-            text = re.sub(r'^[-・]\s*', '• ', text, flags=re.MULTILINE)
-            
-            return text
-        except Exception as e:
-            logger.error(f"文章構造の改善中にエラーが発生しました: {str(e)}")
             return text
 
     @retry(stop_max_attempt_number=3, wait_fixed=2000)
@@ -363,48 +329,18 @@ class TextProcessor:
             raise ValueError(error_msg)
 
     def _extract_video_id(self, url: str) -> Optional[str]:
-        """Extract video ID from YouTube URL"""
-        try:
-            patterns = [
-                r'(?:v=|/v/|youtu\.be/)([^&?/]+)',
-                r'(?:embed/|v/)([^/?]+)',
-                r'(?:watch\?v=|/v/|youtu\.be/)([^&?/]+)'
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, url)
-                if match:
-                    return match.group(1)
+        """Extract YouTube video ID from URL"""
+        if not url:
             return None
             
-        except Exception as e:
-            logger.error(f"動画ID抽出エラー: {str(e)}")
-            return None
-
-    def generate_summary(self, text: str) -> str:
-        """Generate summary with improved error handling"""
-        if not text:
-            return ""
-            
-        try:
-            prompt = f"""以下のテキストを要約してください。重要なポイントを箇条書きで示し、
-            その後に簡潔な要約を作成してください：
-
-            {text}
-
-            出力形式：
-            ■ 主なポイント：
-            • ポイント1
-            • ポイント2
-            • ポイント3
-
-            ■ 要約：
-            [簡潔な要約文]
-            """
-            
-            response = self.model.generate_content(prompt)
-            return response.text if response.text else "要約を生成できませんでした。"
-            
-        except Exception as e:
-            logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
-            return "要約の生成中にエラーが発生しました。"
+        patterns = [
+            r'(?:v=|/v/|^)([a-zA-Z0-9_-]{11})',
+            r'(?:youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
+            r'(?:youtube\.com/shorts/)([a-zA-Z0-9_-]{11})'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return None
