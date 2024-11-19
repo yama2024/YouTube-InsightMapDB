@@ -19,6 +19,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Enhanced error messages in Japanese
+ERROR_MESSAGES = {
+    'rate_limit': "APIトークンを使い切りました。{retry_after}秒後に再試行してください。",
+    'retry_failed': "複数回再試行しましたが失敗しました。後ほど再度お試しください。",
+    'processing': "要約を生成中です。しばらくお待ちください。",
+    'token_exhausted': "APIトークンを使い切りました。{retry_after}秒後に再試行してください。",
+    'api_error': "APIエラーが発生しました: {error_message}",
+    'general_error': "予期せぬエラーが発生しました: {error_message}"
+}
+
 class RateLimitError(Exception):
     """Custom exception for rate limit errors"""
     def __init__(self, message: str, retry_after: Optional[int] = None):
@@ -84,8 +94,11 @@ class TextProcessor:
         self.max_delay = 64  # Maximum delay in seconds
         self.jitter_factor = 0.1  # Maximum jitter as a fraction of delay
         
-        # Token bucket rate limiter (5 requests per second, max 10 burst)
-        self.rate_limiter = TokenBucket(tokens_per_second=0.2, max_tokens=10)
+        # Updated token bucket configuration
+        self.rate_limiter = TokenBucket(
+            tokens_per_second=0.016,  # One request per 64 seconds
+            max_tokens=3  # Limit concurrent requests
+        )
         
         # Maximum chunk size for text processing (in characters)
         self.max_chunk_size = 8000
@@ -118,56 +131,39 @@ class TextProcessor:
     def _retry_with_backoff(self, func: Callable, *args, **kwargs) -> Any:
         """Execute a function with exponential backoff retry logic and jitter"""
         last_error = None
-        operation_name = func.__name__
-        logger.info(f"Starting operation: {operation_name}")
-        
         for attempt in range(self.max_retries):
-            # Check rate limiter
-            wait_time = self.rate_limiter.get_wait_time()
-            if wait_time > 0:
-                logger.warning(f"Rate limit approached. Waiting {wait_time:.2f}s before attempt")
-                time.sleep(wait_time)
-            
-            if not self.rate_limiter.try_consume():
-                logger.error("Rate limit exceeded")
-                raise RateLimitError(
-                    "API呼び出しの制限に達しました。しばらく待ってから再試行してください。",
-                    retry_after=math.ceil(wait_time)
-                )
-            
             try:
-                logger.debug(f"Attempt {attempt + 1}/{self.max_retries} for {operation_name}")
-                result = func(*args, **kwargs)
-                logger.info(f"Operation {operation_name} completed successfully")
-                return result
-            
+                # Check rate limiter
+                wait_time = self.rate_limiter.get_wait_time()
+                if wait_time > 0:
+                    logger.warning(f"Rate limit cooldown. Waiting {wait_time:.2f}s")
+                    time.sleep(wait_time)
+                    
+                if not self.rate_limiter.try_consume():
+                    retry_after = math.ceil(wait_time)
+                    raise RateLimitError(
+                        f"APIトークンを使い切りました。{retry_after}秒後に再試行してください。",
+                        retry_after=retry_after
+                    )
+                
+                return func(*args, **kwargs)
+                
             except Exception as e:
                 last_error = e
                 if "429" in str(e) or "Resource has been exhausted" in str(e):
                     delay = min(self.max_delay, self.base_delay * (2 ** attempt))
                     jitter = random.uniform(0, delay * self.jitter_factor)
                     total_delay = delay + jitter
-                    
                     logger.warning(
-                        f"API rate limit hit. Attempt {attempt + 1}/{self.max_retries}. "
-                        f"Base delay: {delay:.2f}s, Jitter: {jitter:.2f}s, "
-                        f"Total delay: {total_delay:.2f}s"
+                        f"Rate limit hit. Attempt {attempt + 1}/{self.max_retries}. "
+                        f"Waiting {total_delay:.2f}s"
                     )
-                    
                     time.sleep(total_delay)
                     continue
-                
-                logger.error(f"Non-rate-limit error in {operation_name}: {str(e)}")
                 raise e
-
-        logger.error(
-            f"Operation {operation_name} failed after {self.max_retries} attempts. "
-            f"Last error: {str(last_error)}"
-        )
         
         raise RateLimitError(
-            f"APIの呼び出し制限を超過しました。{self.max_retries}回の再試行後も失敗しました。"
-            "しばらく時間をおいてから再度お試しください。",
+            "複数回再試行しましたが失敗しました。後ほど再度お試しください。",
             retry_after=self.max_delay
         )
 
@@ -244,7 +240,7 @@ class TextProcessor:
             raise YouTubeURLError(str(e))
         except Exception as e:
             logger.error(f"Error fetching transcript: {str(e)}")
-            raise ValueError(f"Failed to fetch transcript: {str(e)}")
+            raise ValueError(f"字幕の取得に失敗しました: {str(e)}")
 
     def _get_cache_key(self, text: str, operation: str) -> str:
         """Generate a unique cache key for the given text and operation"""
@@ -259,7 +255,7 @@ class TextProcessor:
             # Input validation
             is_valid, error_msg = self._validate_text(text)
             if not is_valid:
-                raise ValueError(f"Invalid input text: {error_msg}")
+                raise ValueError(f"無効な入力テキスト: {error_msg}")
             
             # Check cache first
             cache_key = self._get_cache_key(text, "summary")
@@ -278,7 +274,7 @@ class TextProcessor:
             for i, chunk in enumerate(text_chunks):
                 if progress_callback:
                     progress = (i + 1) / len(text_chunks)
-                    progress_callback(progress, f"Processing chunk {i + 1}/{len(text_chunks)}")
+                    progress_callback(progress, ERROR_MESSAGES['processing'])
                 
                 try:
                     summary = self._retry_with_backoff(
@@ -307,14 +303,21 @@ class TextProcessor:
                 logger.info("Summary generation completed successfully")
                 return combined_summary
             else:
-                raise ValueError("No summaries generated from chunks")
+                raise ValueError(ERROR_MESSAGES['general_error'].format(
+                    error_message="チャンクから要約を生成できませんでした"
+                ))
 
         except RateLimitError as e:
             logger.error(f"Rate limit error: {str(e)}")
-            raise RateLimitError("API rate limit exceeded. Please try again later.")
+            raise RateLimitError(
+                ERROR_MESSAGES['token_exhausted'].format(
+                    retry_after=e.retry_after or self.max_delay
+                ),
+                retry_after=e.retry_after
+            )
         except Exception as e:
             logger.error(f"Error in summary generation: {str(e)}")
-            raise
+            raise ValueError(ERROR_MESSAGES['general_error'].format(error_message=str(e)))
 
     def _generate_chunk_summary(self, chunk: str, chunk_index: int, total_chunks: int) -> str:
         """Generate summary for a single chunk with enhanced error handling"""
@@ -335,11 +338,18 @@ class TextProcessor:
         {chunk}
         """
 
-        response = self.model.generate_content(prompt)
-        if not response or not response.text:
-            raise ValueError("Empty response from API")
-        
-        return response.text.strip()
+        try:
+            response = self.model.generate_content(prompt)
+            if not response or not response.text:
+                raise ValueError(ERROR_MESSAGES['api_error'].format(
+                    error_message="APIからの応答が空でした"
+                ))
+            
+            return response.text.strip()
+            
+        except Exception as e:
+            logger.error(f"Error in chunk summary generation: {str(e)}")
+            raise ValueError(ERROR_MESSAGES['api_error'].format(error_message=str(e)))
 
     def _clean_text(self, text: str) -> str:
         """Clean text with enhanced noise removal"""
@@ -352,116 +362,188 @@ class TextProcessor:
         """Validate input text with enhanced checks"""
         try:
             if not text:
-                return False, "Empty input text"
+                return False, "テキストが空です"
             
             if len(text) < 100:
-                return False, "Text too short (minimum 100 characters required)"
+                return False, "テキストが短すぎます（最低100文字必要です）"
             
             try:
                 text.encode('utf-8').decode('utf-8')
             except UnicodeError:
-                return False, "Invalid text encoding"
+                return False, "テキストのエンコーディングが無効です"
             
             noise_ratio = len(re.findall(r'[^\w\s。、！？」』）「『（]', text)) / len(text)
             if noise_ratio > 0.3:
-                return False, "Too much noise in text (>30% special characters)"
+                return False, "テキストにノイズが多すぎます（特殊文字が30%以上）"
             
             return True, ""
+            
         except Exception as e:
             logger.error(f"Text validation error: {str(e)}")
-            return False, f"Validation error: {str(e)}"
+            return False, f"テキスト検証エラー: {str(e)}"
 
-    def _chunk_text(self, text: str) -> List[str]:
+    def _chunk_text(self, text: str, max_chunk_size: int = 8000) -> List[str]:
         """Split text into manageable chunks with improved sentence boundary detection"""
-        sentences = re.split(r'([。！？])', text)
-        chunks = []
-        current_chunk = ""
-        
-        for i in range(0, len(sentences), 2):
-            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
-            if len(current_chunk) + len(sentence) <= self.max_chunk_size:
-                current_chunk += sentence
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = sentence
-        
-        if current_chunk:
-            chunks.append(current_chunk)
-        
-        return chunks
-
-    def _combine_summaries(self, chunk_summaries: List[str]) -> str:
-        """Combine multiple chunk summaries into a coherent final summary"""
-        if not chunk_summaries:
-            return ""
-
         try:
-            combine_prompt = f"""
-            # 目的
-            複数のテキストチャンクの要約を1つの包括的な要約にまとめます。
+            sentences = re.split(r'([。！？])', text)
+            chunks = []
+            current_chunk = ""
+            
+            for i in range(0, len(sentences), 2):
+                sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else "")
+                if len(current_chunk) + len(sentence) < max_chunk_size:
+                    current_chunk += sentence
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    current_chunk = sentence
+                    
+            if current_chunk:
+                chunks.append(current_chunk)
+                
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error in chunking text: {str(e)}")
+            raise ValueError(ERROR_MESSAGES['general_error'].format(error_message=str(e)))
 
-            # 出力フォーマット
-            以下の構造で最終的な要約を作成してください：
+    def _combine_summaries(self, summaries: List[str]) -> str:
+        """Combine chunk summaries into a cohesive final summary"""
+        try:
+            combined_text = "\n\n".join(summaries)
+            
+            prompt = f"""
+            以下の要約をより簡潔で一貫性のある一つの要約にまとめてください：
 
-            # 概要
-            [全体の要点を2-3文で簡潔に説明]
-
-            ## 主なポイント
-            • [重要なポイント1 - 具体的な例や数値を含める]
-            • [重要なポイント2 - 技術用語がある場合は説明を付記]
-            • [重要なポイント3 - 実践的な示唆や応用点を含める]
-
-            ## 詳細な解説
-            [本文の詳細な解説]
-
-            ## まとめ
-            [主要な発見や示唆を1-2文で結論付け]
-
-            # 入力テキスト（チャンク要約）：
-            {' '.join(chunk_summaries)}
+            {combined_text}
+            
+            # 要件：
+            1. 重複する情報を統合
+            2. 一貫した文体を維持
+            3. 論理的な流れを保持
+            4. 重要なポイントを強調
             """
-
-            response = self.model.generate_content(combine_prompt)
+            
+            response = self._retry_with_backoff(
+                self.model.generate_content,
+                prompt
+            )
+            
             if not response or not response.text:
-                raise ValueError("Empty response from AI model")
+                raise ValueError(ERROR_MESSAGES['api_error'].format(
+                    error_message="APIからの応答が空でした"
+                ))
             
-            final_summary = response.text.strip()
-            is_valid, error_msg = self._validate_summary_response(final_summary)
-            if not is_valid:
-                raise ValueError(f"Generated summary is invalid: {error_msg}")
+            return response.text.strip()
             
-            return final_summary
-
         except Exception as e:
             logger.error(f"Error combining summaries: {str(e)}")
-            raise ValueError(f"Failed to combine summaries: {str(e)}")
+            raise ValueError(ERROR_MESSAGES['general_error'].format(error_message=str(e)))
 
-    def _validate_summary_response(self, response: str) -> Tuple[bool, str]:
-        """Validate the generated summary response"""
+    def enhance_text(self, text: str, progress_callback: Optional[Callable] = None) -> str:
+        """Enhance text with proper formatting and structure"""
         try:
-            if not response:
-                return False, "Generated summary is empty"
+            if not text:
+                return ""
+
+            cache_key = self._get_cache_key(text, "enhance")
+            cached_result = self.processed_text_cache.get(cache_key)
+            if cached_result:
+                return cached_result
+
+            # Clean and chunk text
+            cleaned_text = self._clean_text(text)
+            chunks = self._chunk_text(cleaned_text)
             
-            # Check for required sections
-            required_sections = ['概要', '主なポイント', '詳細な解説', 'まとめ']
-            for section in required_sections:
-                if section not in response:
-                    return False, f"Required section '{section}' not found"
-            
-            # Check for minimum content length in each section
-            sections_content = re.split(r'#{1,2}\s+(?:概要|主なポイント|詳細な解説|まとめ)', response)
-            if any(len(section.strip()) < 50 for section in sections_content[1:]):
-                return False, "Some sections have insufficient content"
-            
-            # Verify bullet points in main points section
-            main_points_match = re.search(r'##\s*主なポイント\n(.*?)(?=##|$)', response, re.DOTALL)
-            if main_points_match:
-                main_points = main_points_match.group(1)
-                if len(re.findall(r'•|\*|\-', main_points)) < 2:
-                    return False, "Insufficient bullet points in main points section"
-            
-            return True, ""
+            enhanced_chunks = []
+            for i, chunk in enumerate(chunks):
+                if progress_callback:
+                    progress = (i + 1) / len(chunks)
+                    progress_callback(progress, "テキストを整形中...")
+                
+                prompt = f"""
+                以下のテキストを整形・改善してください：
+
+                {chunk}
+
+                要件：
+                1. 文章を段落に分割
+                2. 読点、句点を適切に配置
+                3. 冗長な表現を簡潔に
+                4. 専門用語には説明を追加
+                5. 文体を統一
+                """
+
+                try:
+                    response = self._retry_with_backoff(
+                        self.model.generate_content,
+                        prompt
+                    )
+                    
+                    if response and response.text:
+                        enhanced_chunks.append(response.text.strip())
+                    else:
+                        raise ValueError("空の応答を受け取りました")
+                        
+                except Exception as e:
+                    logger.error(f"Error enhancing chunk {i + 1}: {str(e)}")
+                    raise
+
+            # Combine enhanced chunks
+            result = "\n\n".join(enhanced_chunks)
+            self.processed_text_cache[cache_key] = result
+            return result
+
         except Exception as e:
-            logger.error(f"Error validating summary: {str(e)}")
-            return False, f"Summary validation error: {str(e)}"
+            logger.error(f"Error in text enhancement: {str(e)}")
+            raise ValueError(ERROR_MESSAGES['general_error'].format(error_message=str(e)))
+
+    def proofread_text(self, text: str, progress_callback: Optional[Callable] = None) -> str:
+        """Proofread and enhance text with proper formatting and structure"""
+        try:
+            if not text:
+                return ""
+
+            cache_key = self._get_cache_key(text, "proofread")
+            cached_result = self.processed_text_cache.get(cache_key)
+            if cached_result:
+                return cached_result
+
+            prompt = f"""
+            以下のテキストを校正・整形してください：
+
+            {text}
+
+            要件：
+            1. 文章を段落に分割
+            2. 読点、句点を適切に配置
+            3. 冗長な表現を簡潔に
+            4. 専門用語には説明を追加
+            5. 文体を統一
+            """
+
+            response = self._retry_with_backoff(
+                self.model.generate_content,
+                prompt
+            )
+
+            if not response or not response.text:
+                raise ValueError(ERROR_MESSAGES['api_error'].format(
+                    error_message="校正処理の応答が空でした"
+                ))
+
+            result = response.text.strip()
+            self.processed_text_cache[cache_key] = result
+            return result
+
+        except RateLimitError as e:
+            logger.error(f"Rate limit error during proofreading: {str(e)}")
+            raise RateLimitError(
+                ERROR_MESSAGES['token_exhausted'].format(
+                    retry_after=e.retry_after or self.max_delay
+                ),
+                retry_after=e.retry_after
+            )
+        except Exception as e:
+            logger.error(f"Error in text proofreading: {str(e)}")
+            raise ValueError(ERROR_MESSAGES['general_error'].format(error_message=str(e)))

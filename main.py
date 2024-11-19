@@ -347,38 +347,35 @@ try:
 
                                     start_time = time.time()
                                     text_processor = TextProcessor()
-
+                                    
                                     # Start enhancement process
                                     enhanced_text = text_processor.proofread_text(
                                         st.session_state.transcript,
-                                        progress_callback=update_enhancement_progress)
-
-                                    if enhanced_text:
-                                        st.session_state.enhanced_text = enhanced_text
-                                        st.markdown('<div class="glass-container">',
-                                                    unsafe_allow_html=True)
-                                        st.markdown("#### 整形済みテキスト")
-                                        st.markdown(
-                                            enhanced_text.replace('\n', '  \n'))
-
-                                        # Download button for enhanced text
-                                        st.download_button(
-                                            "📥 整形済みテキストをダウンロード",
-                                            enhanced_text,
-                                            file_name="enhanced_text.txt",
-                                            mime="text/plain")
-
-                                        # Update progress container
-                                        st.markdown('</div>', unsafe_allow_html=True)
+                                        progress_callback=update_enhancement_progress
+                                    )
+                                    st.session_state.enhanced_text = enhanced_text
+                                    update_enhancement_progress(
+                                        1.0, "✨ テキストの整形が完了しました")
+                                    
+                                    st.markdown("#### 整形済みテキスト")
+                                    st.markdown(enhanced_text)
+                                    
+                                    st.download_button(
+                                        "📥 整形済みテキストをダウンロード",
+                                        enhanced_text,
+                                        file_name="enhanced_text.txt",
+                                        mime="text/plain"
+                                    )
 
                             except Exception as e:
                                 st.error(f"テキスト整形中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error in text enhancement: {str(e)}")
+                                st.stop()
 
     except Exception as e:
-        st.error(f"初期化エラー: {str(e)}")
-        logger.error(f"Initialization error: {str(e)}")
+        st.error(f"アプリケーションの初期化中にエラーが発生しました: {str(e)}")
+        logger.error(f"Error in application initialization: {str(e)}")
 
 except Exception as e:
     st.error(f"初期化エラー: {str(e)}")
-    logger.error(f"Initialization error: {str(e)}")
+    logger.error(f"Fatal initialization error: {str(e)}")
