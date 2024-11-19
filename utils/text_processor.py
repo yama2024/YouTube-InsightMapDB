@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 from threading import Lock
 import math
+import hashlib
 
 # Enhanced logging setup with more detailed formatting
 logging.basicConfig(
@@ -84,14 +85,14 @@ class TextProcessor:
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
         # Enhanced caching with longer TTL for frequently accessed data
-        self.subtitle_cache = TTLCache(maxsize=200, ttl=7200)  # 2 hours TTL
-        self.processed_text_cache = TTLCache(maxsize=200, ttl=3600)  # 1 hour TTL
-        self.summary_cache = TTLCache(maxsize=200, ttl=7200)  # 2 hours TTL for summaries
+        self.subtitle_cache = TTLCache(maxsize=300, ttl=14400)  # 4 hours TTL
+        self.processed_text_cache = TTLCache(maxsize=300, ttl=7200)  # 2 hours TTL
+        self.summary_cache = TTLCache(maxsize=300, ttl=14400)  # 4 hours TTL for summaries
         
-        # Rate limiting configuration
+        # Rate limiting configuration with adjusted settings
         self.max_retries = 5
-        self.base_delay = 2  # Base delay in seconds
-        self.max_delay = 64  # Maximum delay in seconds
+        self.base_delay = 64  # Base delay in seconds (increased from 2)
+        self.max_delay = 300  # Maximum delay in seconds (increased from 64)
         self.jitter_factor = 0.1  # Maximum jitter as a fraction of delay
         
         # Updated token bucket configuration
@@ -100,8 +101,8 @@ class TextProcessor:
             max_tokens=3  # Limit concurrent requests
         )
         
-        # Maximum chunk size for text processing (in characters)
-        self.max_chunk_size = 8000
+        # Reduced chunk size for text processing
+        self.max_chunk_size = 4000  # Reduced from 8000
         
         # URL patterns for video ID extraction
         self.url_patterns = [
@@ -128,6 +129,38 @@ class TextProcessor:
             'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音)\]'
         }
 
+    def _get_cache_key(self, text: str, operation: str) -> str:
+        """Generate a unique cache key for the given text and operation"""
+        # Create a more unique hash using SHA-256
+        text_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+        timestamp = datetime.now().strftime('%Y%m%d')
+        return f"{operation}:{timestamp}:{text_hash}"
+
+    def _chunk_text(self, text: str) -> List[str]:
+        """Split text into chunks with improved handling of Japanese text"""
+        if not text:
+            return []
+
+        # Split text at sentence boundaries
+        sentences = re.split(r'([。！？])', text)
+        chunks = []
+        current_chunk = ""
+
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i] + (sentences[i + 1] if i + 1 < len(sentences) else "")
+            
+            if len(current_chunk) + len(sentence) <= self.max_chunk_size:
+                current_chunk += sentence
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = sentence
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
     def _retry_with_backoff(self, func: Callable, *args, **kwargs) -> Any:
         """Execute a function with exponential backoff retry logic and jitter"""
         last_error = None
@@ -142,7 +175,7 @@ class TextProcessor:
                 if not self.rate_limiter.try_consume():
                     retry_after = math.ceil(wait_time)
                     raise RateLimitError(
-                        f"APIトークンを使い切りました。{retry_after}秒後に再試行してください。",
+                        ERROR_MESSAGES['rate_limit'].format(retry_after=retry_after),
                         retry_after=retry_after
                     )
                 
@@ -150,7 +183,7 @@ class TextProcessor:
                 
             except Exception as e:
                 last_error = e
-                if "429" in str(e) or "Resource has been exhausted" in str(e):
+                if isinstance(e, RateLimitError) or "429" in str(e) or "Resource has been exhausted" in str(e):
                     delay = min(self.max_delay, self.base_delay * (2 ** attempt))
                     jitter = random.uniform(0, delay * self.jitter_factor)
                     total_delay = delay + jitter
@@ -163,7 +196,7 @@ class TextProcessor:
                 raise e
         
         raise RateLimitError(
-            "複数回再試行しましたが失敗しました。後ほど再度お試しください。",
+            ERROR_MESSAGES['retry_failed'],
             retry_after=self.max_delay
         )
 
@@ -241,11 +274,6 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"Error fetching transcript: {str(e)}")
             raise ValueError(f"字幕の取得に失敗しました: {str(e)}")
-
-    def _get_cache_key(self, text: str, operation: str) -> str:
-        """Generate a unique cache key for the given text and operation"""
-        text_hash = hash(text)
-        return f"{operation}:{text_hash}"
 
     def generate_summary(self, text: str, progress_callback: Optional[Callable] = None) -> str:
         """Generate a summary with enhanced error handling and caching"""
