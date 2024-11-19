@@ -536,3 +536,81 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"文字起こしの取得に失敗しました: {str(e)}")
             raise Exception(f"文字起こしの取得に失敗しました: {str(e)}")
+    
+    def _process_chunk(self, chunk: str, index: int, total: int) -> Optional[str]:
+        for attempt in range(self.max_retries):
+            try:
+                self._manage_request_limits()
+                
+                response = self.model.generate_content(
+                    self._create_summary_prompt(chunk, index, total),
+                    timeout=60  # Add per-request timeout
+                )
+                
+                if response and response.text:
+                    return response.text.strip()
+                
+            except Exception as e:
+                wait_time = self._calculate_backoff_time(attempt)
+                logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(wait_time)
+                else:
+                    raise
+        
+        return None
+    
+    def generate_summary(self, text: str) -> str:
+        """Generate a summary with enhanced error handling and logging"""
+        logger.info("Starting summary generation process")
+        
+        try:
+            # Add overall timeout
+            timeout = time.time() + 300  # 5 minute timeout
+            
+            # Reduce chunk size further
+            self.max_chunk_size = 1500  # Reduced from 2000
+            self.chunk_overlap = 150    # Reduced overlap
+            
+            # Process chunks with enhanced timeout handling
+            chunk_summaries = []
+            text_chunks = self._chunk_text(self._clean_text(text))
+            
+            for i, chunk in enumerate(text_chunks):
+                if time.time() > timeout:
+                    raise TimeoutError("Summary generation timeout")
+                
+                try:
+                    summary = self._process_chunk(chunk, i, len(text_chunks))
+                    if summary:
+                        chunk_summaries.append(summary)
+                        time.sleep(2.0)  # Base delay between chunks
+                except Exception as e:
+                    logger.error(f"Chunk processing error: {str(e)}")
+                    raise
+            
+            if not chunk_summaries:
+                raise ValueError("No chunk summaries generated")
+            
+            return self._combine_summaries(chunk_summaries)
+            
+        except Exception as e:
+            error_msg = f"Summary generation failed: {str(e)}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+    
+    def _manage_request_limits(self):
+        current_time = datetime.now()
+        
+        # Increase delay between requests
+        if self.request_counter > 0:
+            delay = self.base_delay * (1.5 ** (self.request_counter // 2))
+            time.sleep(min(delay, 10.0))  # Cap at 10 seconds
+        
+        # Reset counters more frequently
+        if current_time - self.last_reset_time > timedelta(minutes=1):
+            self.request_counter = 0
+            self.failed_attempts = 0
+            self.last_reset_time = current_time
+        
+        self.request_counter += 1
