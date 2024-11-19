@@ -46,7 +46,8 @@ class TextProcessor:
         self.active_requests = 0
         
         # Maximum chunk size for text processing (in characters)
-        self.max_chunk_size = 8000
+        self.max_chunk_size = 4000  # Reduced from 8000
+        self.chunk_overlap = 500    # Added overlap between chunks
         
         # Enhanced noise patterns for Japanese text
         self.noise_patterns = {
@@ -123,45 +124,82 @@ class TextProcessor:
         return min(300, base_backoff)  # Cap at 5 minutes
 
     def _process_request_queue(self):
-        """Process requests in the queue with enhanced error handling and logging"""
+        """Process requests in the queue with enhanced error handling and batch processing"""
         with self.request_lock:
             if self.active_requests >= self.max_concurrent_requests:
-                logger.info("Maximum concurrent requests reached, adding delay")
-                time.sleep(2)  # Add delay if too many requests
+                logger.info(f"Active requests at limit ({self.active_requests}/{self.max_concurrent_requests})")
+                time.sleep(2)
                 return None
             self.active_requests += 1
         
         try:
-            while not self.request_queue.empty():
+            batch_size = min(3, self.request_queue.qsize())  # Process up to 3 requests at once
+            if batch_size == 0:
+                return None
+            
+            logger.info(f"Processing batch of {batch_size} requests")
+            batch_results = []
+            
+            for _ in range(batch_size):
+                if self.request_queue.empty():
+                    break
+                    
                 request_data = self.request_queue.get()
-                # Add more detailed logging
-                logger.info(
-                    f"Processing chunk {request_data['index'] + 1}/{request_data['total']} "
-                    f"(size: {len(request_data['chunk'])} chars)"
-                )
+                chunk_key = f"chunk_{request_data['index']}"
                 
-                # Manage request limits with increased delays
-                self._manage_request_limits()
+                # Check cache for this chunk
+                if chunk_key in self.processed_text_cache:
+                    logger.info(f"Using cached result for chunk {request_data['index'] + 1}")
+                    batch_results.append(self.processed_text_cache[chunk_key])
+                    continue
                 
                 try:
-                    response = self.model.generate_content(
-                        self._create_summary_prompt(
-                            request_data['chunk'],
-                            request_data['index'],
-                            request_data['total']
-                        )
-                    )
-                    
-                    if not response or not response.text:
-                        raise ValueError("Empty response from AI model")
-                    
-                    self.request_queue.task_done()
-                    return response.text.strip()
+                    # Enhanced request handling with timeouts and retries
+                    for attempt in range(3):
+                        try:
+                            self._manage_request_limits()
+                            
+                            response = self.model.generate_content(
+                                self._create_summary_prompt(
+                                    request_data['chunk'],
+                                    request_data['index'],
+                                    request_data['total']
+                                )
+                            )
+                            
+                            if not response or not response.text:
+                                raise ValueError("Empty response from AI model")
+                            
+                            result = response.text.strip()
+                            # Cache successful result
+                            self.processed_text_cache[chunk_key] = result
+                            batch_results.append(result)
+                            break
+                            
+                        except Exception as e:
+                            if "429" in str(e):
+                                logger.error(f"Rate limit reached on attempt {attempt + 1}")
+                                wait_time = self._calculate_backoff_time(attempt)
+                                time.sleep(wait_time)
+                            elif "timeout" in str(e).lower():
+                                logger.error(f"Request timeout on attempt {attempt + 1}")
+                                time.sleep(5 * (attempt + 1))
+                            else:
+                                logger.error(f"Error processing chunk: {str(e)}")
+                                if attempt == 2:
+                                    raise
+                                time.sleep(3 * (attempt + 1))
                     
                 except Exception as e:
-                    logger.error(f"Chunk processing error: {str(e)}")
+                    logger.error(f"Failed to process chunk after all retries: {str(e)}")
                     self.failed_attempts += 1
                     raise
+                
+                finally:
+                    self.request_queue.task_done()
+            
+            return batch_results[0] if batch_results else None
+            
         finally:
             with self.request_lock:
                 self.active_requests -= 1
@@ -329,6 +367,8 @@ class TextProcessor:
                         wait_time = self._calculate_backoff_time(attempt)
                         time.sleep(wait_time)
 
+            return ""  # Return empty string if all attempts fail
+
         except Exception as e:
             logger.error(f"Error combining summaries: {str(e)}")
             raise ValueError(f"Failed to combine summaries: {str(e)}")
@@ -391,38 +431,53 @@ class TextProcessor:
             return False, f"Summary validation error: {str(e)}"
 
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into manageable chunks with improved size calculation"""
+        """Split text into manageable chunks with overlap and smart sentence boundaries"""
         if not text:
             return []
         
-        # Calculate optimal chunk size based on text characteristics
-        avg_char_per_sentence = sum(len(s) for s in re.split('[。！？]', text)) / max(1, len(re.split('[。！？]', text)))
-        optimal_chunk_size = min(
-            self.max_chunk_size,
-            max(2000, int(avg_char_per_sentence * 5))  # At least 5 sentences per chunk
-        )
+        logger.info("Starting text chunking process")
         
-        logger.info(f"Using optimal chunk size of {optimal_chunk_size} characters")
-        
+        # Split text into sentences using Japanese-aware sentence boundaries
         sentences = re.split(r'([。！？])', text)
         chunks = []
         current_chunk = ""
+        last_sentence = ""  # Store the last sentence for overlap
         
         for i in range(0, len(sentences), 2):
             sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
-            if len(current_chunk) + len(sentence) <= optimal_chunk_size:
+            
+            # Calculate sizes including potential overlap
+            current_size = len(current_chunk)
+            sentence_size = len(sentence)
+            
+            if current_size + sentence_size <= self.max_chunk_size:
                 current_chunk += sentence
             else:
                 if current_chunk:
-                    chunks.append(current_chunk)
-                    logger.debug(f"Created chunk of size {len(current_chunk)} characters")
+                    # Add the chunk with overlap from previous chunk if available
+                    if chunks and last_sentence:
+                        overlap_text = last_sentence + current_chunk
+                        chunks.append(overlap_text)
+                    else:
+                        chunks.append(current_chunk)
+                    
+                    # Store last sentence for next chunk's overlap
+                    sentences_in_chunk = re.split(r'([。！？])', current_chunk)
+                    last_sentence = sentences_in_chunk[-2] + sentences_in_chunk[-1] if len(sentences_in_chunk) > 1 else ""
+                    
+                    logger.debug(f"Created chunk of size {len(current_chunk)} characters with {len(last_sentence)} overlap")
                 current_chunk = sentence
         
+        # Add the final chunk
         if current_chunk:
-            chunks.append(current_chunk)
+            if chunks and last_sentence:
+                overlap_text = last_sentence + current_chunk
+                chunks.append(overlap_text)
+            else:
+                chunks.append(current_chunk)
             logger.debug(f"Added final chunk of size {len(current_chunk)} characters")
         
-        logger.info(f"Split text into {len(chunks)} chunks")
+        logger.info(f"Split text into {len(chunks)} chunks with overlap")
         return chunks
 
     def _clean_text(self, text: str) -> str:
