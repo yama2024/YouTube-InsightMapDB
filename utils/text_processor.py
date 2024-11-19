@@ -127,70 +127,108 @@ class TextProcessor:
         return chunks
 
     def generate_summary(self, text: str) -> str:
+        """Generate summary with improved chunking and error handling"""
         try:
-            # Reduce chunk size and add overlap
-            chunk_size = 1500  # Reduced from previous size
-            overlap = 200
+            # Smaller chunks for better processing
+            chunk_size = 800  # Reduced from 1500
+            overlap = 100
             chunks = self._chunk_text(text, chunk_size, overlap)
             
             summaries = []
             for i, chunk in enumerate(chunks):
                 try:
+                    # Add delay between chunks
+                    if i > 0:
+                        time.sleep(2)
+                    
                     prompt = f'''
-                    以下のテキストを要約してください。
-                    重要なポイントを漏らさず、簡潔にまとめてください。
-
-                    テキスト:
+                    以下のテキストを要約してください：
+                    
                     {chunk}
+                    
+                    ポイント：
+                    - 重要な情報を保持
+                    - 簡潔に表現
+                    - 文脈を維持
                     '''
                     
-                    # Add exponential backoff retry
-                    for attempt in range(3):
+                    # Improved retry logic
+                    max_retries = 3
+                    for attempt in range(max_retries):
                         try:
+                            logger.info(f"チャンク {i+1}/{len(chunks)} の処理を試行中 (試行 {attempt+1}/{max_retries})")
                             response = self.model.generate_content(
                                 prompt,
                                 generation_config=genai.types.GenerationConfig(
                                     temperature=0.3,
                                     top_p=0.8,
                                     top_k=40,
-                                    max_output_tokens=2048,
+                                    max_output_tokens=1024,
                                 )
                             )
+                            
                             if response and response.text:
                                 summaries.append(response.text.strip())
-                                # Add delay between chunks
-                                time.sleep(2 * (attempt + 1))
+                                logger.info(f"チャンク {i+1} の要約が成功しました")
                                 break
+                            
                         except Exception as e:
-                            if attempt < 2:
-                                time.sleep(2 ** attempt)
+                            logger.warning(f"チャンク {i+1} の処理中にエラーが発生 (試行 {attempt+1}): {str(e)}")
+                            if attempt < max_retries - 1:
+                                wait_time = (2 ** attempt) + 1  # Exponential backoff
+                                logger.info(f"再試行まで {wait_time} 秒待機します")
+                                time.sleep(wait_time)
                                 continue
                             raise
                             
                 except Exception as e:
-                    logger.error(f"Chunk {i} processing failed: {str(e)}")
+                    logger.error(f"チャンク {i+1} の処理に失敗: {str(e)}")
                     continue
-                    
+
             if not summaries:
-                raise ValueError("No chunk summaries generated")
-                
-            # Combine summaries with proper formatting
+                logger.error("要約の生成に失敗: 有効な要約が生成されませんでした")
+                raise ValueError("要約を生成できませんでした")
+            
+            # Combine summaries with better formatting
+            logger.info("個別の要約を結合して最終要約を生成します")
             combined = "\n\n".join(summaries)
             final_prompt = f'''
-            以下の要約をさらに簡潔にまとめ、整理してください：
-
+            以下の要約をさらに整理して、簡潔にまとめてください：
+            
             {combined}
             '''
             
-            final_response = self.model.generate_content(final_prompt)
-            if not final_response or not final_response.text:
-                raise ValueError("Failed to generate final summary")
-                
-            return final_response.text.strip()
+            # Final summary with retry
+            for attempt in range(3):
+                try:
+                    logger.info(f"最終要約の生成を試行中 (試行 {attempt+1}/3)")
+                    final_response = self.model.generate_content(
+                        final_prompt,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.3,
+                            top_p=0.8,
+                            top_k=40,
+                            max_output_tokens=1024,
+                        )
+                    )
+                    if final_response and final_response.text:
+                        logger.info("最終要約の生成が完了しました")
+                        return final_response.text.strip()
+                except Exception as e:
+                    logger.warning(f"最終要約の生成中にエラーが発生 (試行 {attempt+1}): {str(e)}")
+                    if attempt < 2:
+                        wait_time = 2 ** attempt
+                        logger.info(f"再試行まで {wait_time} 秒待機します")
+                        time.sleep(wait_time)
+                        continue
+                    raise
+
+            logger.error("最終要約の生成に失敗しました")
+            raise ValueError("最終要約の生成に失敗しました")
             
         except Exception as e:
-            logger.error(f"Summary generation failed: {str(e)}")
-            raise Exception(f"Summary generation failed: {str(e)}")
+            logger.error(f"要約生成エラー: {str(e)}")
+            raise Exception(f"要約の生成に失敗しました: {str(e)}")
 
     def proofread_text(self, text: str, progress_callback=None) -> str:
         """Proofread and enhance text readability with progress tracking"""
@@ -312,9 +350,8 @@ class TextProcessor:
                 logger.info("キャッシュされた字幕を使用します")
                 return cached_transcript
             
-            transcript = self._get_subtitles_with_priority(video_id)
-            if not transcript:
-                raise ValueError("字幕を取得できませんでした。動画に字幕が設定されていないか、アクセスできない可能性があります。")
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja', 'ja-JP', 'en'])
+            transcript = ' '.join([entry['text'] for entry in transcript_list])
             
             cleaned_transcript = self._clean_text(transcript)
             self.subtitle_cache[video_id] = cleaned_transcript
@@ -331,7 +368,7 @@ class TextProcessor:
             patterns = [
                 r'(?:v=|/v/|youtu\.be/)([^&?/]+)',
                 r'(?:embed/|v/)([^/?]+)',
-                r'^([^/?]+)$'
+                r'(?:watch\?v=|/v/|youtu\.be/)([^&?/]+)'
             ]
             
             for pattern in patterns:
@@ -339,115 +376,9 @@ class TextProcessor:
                 if match:
                     return match.group(1)
             return None
-        except Exception as e:
-            logger.error(f"Video ID抽出エラー: {str(e)}")
-            return None
-
-    def _get_subtitles_with_priority(self, video_id: str) -> Optional[str]:
-        """Get subtitles with enhanced error handling and caching"""
-        try:
-            logger.debug(f"字幕取得を開始: video_id={video_id}")
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            logger.debug(f"TranscriptList オブジェクトの型: {type(transcript_list)}")
             
-            transcript = None
-            error_messages = []
-            
-            # Try Japanese subtitles first with detailed error logging
-            for lang in ['ja', 'ja-JP']:
-                try:
-                    logger.debug(f"{lang}の手動作成字幕を検索中...")
-                    transcript = transcript_list.find_manually_created_transcript([lang])
-                    logger.info(f"{lang}の手動作成字幕が見つかりました")
-                    break
-                except Exception as e:
-                    error_messages.append(f"{lang}の手動作成字幕の取得に失敗: {str(e)}")
-                    try:
-                        logger.debug(f"{lang}の自動生成字幕を検索中...")
-                        transcript = transcript_list.find_generated_transcript([lang])
-                        logger.info(f"{lang}の自動生成字幕が見つかりました")
-                        break
-                    except Exception as e:
-                        error_messages.append(f"{lang}の自動生成字幕の取得に失敗: {str(e)}")
-
-            # Fallback to English if Japanese is not available
-            if not transcript:
-                logger.debug("日本語字幕が見つからないため、英語字幕を検索中...")
-                try:
-                    transcript = transcript_list.find_manually_created_transcript(['en'])
-                    logger.info("英語の手動作成字幕が見つかりました")
-                except Exception as e:
-                    error_messages.append(f"英語の手動作成字幕の取得に失敗: {str(e)}")
-                    try:
-                        transcript = transcript_list.find_generated_transcript(['en'])
-                        logger.info("英語の自動生成字幕が見つかりました")
-                    except Exception as e:
-                        error_messages.append(f"英語の自動生成字幕の取得に失敗: {str(e)}")
-
-            if not transcript:
-                error_detail = "\n".join(error_messages)
-                logger.error(f"利用可能な字幕が見つかりませんでした:\n{error_detail}")
-                return None
-
-            # Process transcript segments with improved timing and logging
-            try:
-                transcript_data = transcript.fetch()
-                logger.debug(f"取得した字幕データの型: {type(transcript_data)}")
-                
-                if not isinstance(transcript_data, list):
-                    raise ValueError("字幕データが予期しない形式です")
-                
-                # Process transcript segments with improved timing and logging
-                transcript_segments = []
-                current_segment = []
-                current_time = 0
-                
-                for entry in transcript_data:
-                    if not isinstance(entry, dict):
-                        logger.warning(f"不正な字幕エントリ形式: {type(entry)}")
-                        continue
-                        
-                    text = entry.get('text', '').strip()
-                    start_time = entry.get('start', 0)
-                    
-                    # Handle time gaps and segment breaks
-                    if start_time - current_time > 5:  # Gap of more than 5 seconds
-                        if current_segment:
-                            transcript_segments.append(' '.join(current_segment))
-                            current_segment = []
-                    
-                    if text:
-                        # Clean up text
-                        text = re.sub(r'\[.*?\]', '', text)
-                        text = text.strip()
-                        
-                        # Handle sentence endings
-                        if re.search(r'[。．.！!？?]$', text):
-                            current_segment.append(text)
-                            transcript_segments.append(' '.join(current_segment))
-                            current_segment = []
-                        else:
-                            current_segment.append(text)
-                    
-                    current_time = start_time + entry.get('duration', 0)
-                
-                # Add remaining segment
-                if current_segment:
-                    transcript_segments.append(' '.join(current_segment))
-
-                if not transcript_segments:
-                    logger.warning("有効な字幕セグメントが見つかりませんでした")
-                    return None
-                    
-                return '\n'.join(transcript_segments)
-
-            except Exception as e:
-                logger.error(f"字幕データの処理中にエラーが発生しました: {str(e)}")
-                return None
-
         except Exception as e:
-            error_msg = f"字幕の取得に失敗しました: {str(e)}"
-            logger.error(error_msg)
+            logger.error(f"動画ID抽出エラー: {str(e)}")
             return None
 
     def generate_summary(self, text: str) -> str:
