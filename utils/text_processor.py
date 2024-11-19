@@ -9,6 +9,8 @@ from retrying import retry
 from cachetools import TTLCache, cached
 import json
 from datetime import datetime, timedelta
+from queue import Queue
+from threading import Lock
 
 # Enhanced logging setup
 logging.basicConfig(
@@ -35,7 +37,13 @@ class TextProcessor:
         self.last_request_time = datetime.now()
         self.failed_attempts = 0
         self.last_reset_time = datetime.now()
-        self.reset_interval = timedelta(minutes=15)  # Reset counters every 15 minutes
+        self.reset_interval = timedelta(minutes=5)  # Reset counters every 5 minutes
+        
+        # Request queue management
+        self.request_queue = Queue()
+        self.max_concurrent_requests = 3
+        self.request_lock = Lock()
+        self.active_requests = 0
         
         # Maximum chunk size for text processing (in characters)
         self.max_chunk_size = 8000
@@ -84,13 +92,11 @@ class TextProcessor:
             self.failed_attempts = 0
             self.last_reset_time = current_time
         
-        # Calculate delay based on request history
-        base_delay = 1.0  # Base delay in seconds
+        # Increase base delay and add progressive backoff
+        base_delay = 2.0  # Increased from 1.0
         if self.request_counter > 0:
-            # Add delay between consecutive requests
-            time_since_last = (current_time - self.last_request_time).total_seconds()
-            if time_since_last < base_delay:
-                time.sleep(base_delay - time_since_last)
+            delay = base_delay * (1 + (self.request_counter * 0.5))
+            time.sleep(delay)
         
         # Update request tracking
         self.request_counter += 1
@@ -101,13 +107,45 @@ class TextProcessor:
 
     def _calculate_backoff_time(self, attempt: int) -> float:
         """Calculate adaptive backoff time based on failure history"""
-        base_backoff = min(60, (2 ** attempt) * 10)  # New base calculation
+        base_backoff = min(120, (2 ** attempt) * 15)  # Increased values
         
         # Increase backoff if there have been multiple failures
         if self.failed_attempts > 2:
-            base_backoff *= (1 + (self.failed_attempts * 0.5))  # Increase by 50% per failure
+            base_backoff *= (1 + (self.failed_attempts * 0.75))  # Increased multiplier
         
         return min(300, base_backoff)  # Cap at 5 minutes
+
+    def _process_request_queue(self):
+        """Process requests in the queue with rate limiting"""
+        with self.request_lock:
+            if self.active_requests >= self.max_concurrent_requests:
+                return False
+            self.active_requests += 1
+        
+        try:
+            while not self.request_queue.empty():
+                request_data = self.request_queue.get()
+                chunk = request_data['chunk']
+                chunk_index = request_data['index']
+                total_chunks = request_data['total']
+                
+                # Manage request limits
+                self._manage_request_limits()
+                
+                # Generate summary for this chunk
+                response = self.model.generate_content(
+                    self._create_summary_prompt(chunk, chunk_index, total_chunks)
+                )
+                
+                if not response or not response.text:
+                    raise ValueError("AIモデルからの応答が空でした")
+                
+                self.request_queue.task_done()
+                return response.text.strip()
+                
+        finally:
+            with self.request_lock:
+                self.active_requests -= 1
 
     def generate_summary(self, text: str) -> str:
         """Generate a summary with enhanced rate limit handling and error reporting"""
@@ -134,24 +172,28 @@ class TextProcessor:
             chunk_summaries = []
             max_retries = 5  # Increased from 3 to 5
             
+            # Add all chunks to request queue
             for i, chunk in enumerate(text_chunks):
+                self.request_queue.put({
+                    'chunk': chunk,
+                    'index': i,
+                    'total': len(text_chunks)
+                })
+            
+            # Process chunks with queuing and rate limiting
+            for i in range(len(text_chunks)):
                 logger.info(f"チャンク {i+1}/{len(text_chunks)} の処理を開始")
                 
                 for attempt in range(max_retries):
                     try:
-                        # Manage request limits
-                        self._manage_request_limits()
-                        
-                        # Generate summary for this chunk
-                        response = self.model.generate_content(self._create_summary_prompt(chunk, i, len(text_chunks)))
-                        
-                        if not response or not response.text:
-                            raise ValueError("AIモデルからの応答が空でした")
-                        
-                        chunk_summaries.append(response.text.strip())
-                        # Reset failed attempts counter on success
-                        self.failed_attempts = 0
-                        break
+                        summary = self._process_request_queue()
+                        if summary:
+                            chunk_summaries.append(summary)
+                            # Reset failed attempts counter on success
+                            self.failed_attempts = 0
+                            # Add delay between chunk processing
+                            time.sleep(2.0)  # Base delay between chunks
+                            break
                         
                     except Exception as e:
                         self.failed_attempts += 1
@@ -251,7 +293,7 @@ class TextProcessor:
                 except Exception as e:
                     if "429" in str(e) or "Resource has been exhausted" in str(e):
                         logger.error(f"API制限に達しました: {str(e)}")
-                        wait_time = min(32, (2 ** attempt) * 5)
+                        wait_time = self._calculate_backoff_time(attempt)
                         time.sleep(wait_time)
                         if attempt == 2:
                             raise ValueError("API制限に達しました。しばらく待ってから再試行してください。")
@@ -259,7 +301,7 @@ class TextProcessor:
                         logger.warning(f"要約の結合中にエラーが発生 (試行 {attempt + 1}/3): {str(e)}")
                         if attempt == 2:
                             raise
-                        wait_time = min(32, (2 ** attempt) * 5)
+                        wait_time = self._calculate_backoff_time(attempt)
                         time.sleep(wait_time)
 
         except Exception as e:
@@ -288,6 +330,7 @@ class TextProcessor:
                 return False, "テキストにノイズが多すぎます"
             
             return True, ""
+            
         except Exception as e:
             logger.error(f"テキスト検証中にエラーが発生: {str(e)}")
             return False, f"テキスト検証エラー: {str(e)}"
@@ -317,6 +360,7 @@ class TextProcessor:
                     return False, "主なポイントの箇条書きが不十分です"
             
             return True, ""
+            
         except Exception as e:
             logger.error(f"要約の検証中にエラーが発生: {str(e)}")
             return False, f"要約の検証エラー: {str(e)}"
@@ -361,25 +405,6 @@ class TextProcessor:
         cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
         
         return cleaned_text
-
-    def _validate_text(self, text: str) -> Tuple[bool, str]:
-        """Validate input text"""
-        if not text:
-            return False, "入力テキストが空です"
-        
-        if len(text) < 100:
-            return False, "テキストが短すぎます（最小100文字必要）"
-        
-        try:
-            text.encode('utf-8').decode('utf-8')
-        except UnicodeError:
-            return False, "テキストのエンコーディングが無効です"
-        
-        noise_ratio = len(re.findall(r'[^\w\s。、！？」』）「『（]', text)) / len(text)
-        if noise_ratio > 0.3:
-            return False, "テキストにノイズが多すぎます"
-        
-        return True, ""
 
     def get_transcript(self, url: str) -> str:
         """Get transcript from YouTube video"""
