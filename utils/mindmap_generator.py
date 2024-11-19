@@ -4,6 +4,7 @@ import logging
 import re
 import json
 import time
+import random
 from typing import Tuple, Optional, Dict
 from cachetools import TTLCache
 import jaconv
@@ -29,11 +30,11 @@ class MindMapGenerator:
         # Topic coverage requirements
         self.min_topics_per_level = {
             1: 3,  # At least 3 main topics
-            2: 3   # At least 3 subtopics per main topic
+            2: 2   # At least 2 subtopics per main topic
         }
         self.max_topics_per_level = {
             1: 5,  # Maximum 5 main topics
-            2: 5   # Maximum 5 subtopics per main topic
+            2: 4   # Maximum 4 subtopics per main topic
         }
 
     def _calculate_backoff_time(self, attempt: int) -> float:
@@ -94,8 +95,8 @@ class MindMapGenerator:
             logger.error(f"Japanese text normalization error: {str(e)}")
             return text
 
-    def _validate_node_text(self, text: str) -> Optional[str]:
-        """Validate and clean node text"""
+    def _validate_node_text(self, text: str, level: int) -> Optional[str]:
+        """Validate and clean node text with level-specific handling"""
         if not text:
             return None
             
@@ -110,9 +111,17 @@ class MindMapGenerator:
             text = text.strip()
             text = re.sub(r'\s+', ' ', text)
             
+            # Level-specific processing
+            if level == 0:  # Root node
+                max_length = 30
+            elif level == 1:  # Main topics
+                max_length = 40
+            else:  # Subtopics and details
+                max_length = 50
+            
             # Truncate long text
-            if len(text) > 50:
-                text = text[:47] + '...'
+            if len(text) > max_length:
+                text = text[:max_length-3] + '...'
             
             return text
             
@@ -120,8 +129,58 @@ class MindMapGenerator:
             logger.error(f"Node text validation error: {str(e)}")
             return None
 
+    def _validate_hierarchy(self, lines: list) -> bool:
+        """Validate the mindmap hierarchy structure"""
+        try:
+            level_counts = {0: 0, 1: 0, 2: 0}
+            current_level1 = None
+            level1_subtopics = {}
+            
+            for line in lines:
+                if not line.strip():
+                    continue
+                    
+                indent = len(line) - len(line.lstrip())
+                level = indent // 2
+                
+                if level > 2:  # Max 3 levels allowed
+                    return False
+                
+                if level == 0:  # Root node
+                    if level_counts[0] > 0:  # Only one root allowed
+                        return False
+                    level_counts[0] += 1
+                elif level == 1:  # Main topics
+                    current_level1 = line.strip()
+                    level_counts[1] += 1
+                    level1_subtopics[current_level1] = 0
+                elif level == 2 and current_level1:  # Subtopics
+                    level_counts[2] += 1
+                    level1_subtopics[current_level1] += 1
+            
+            # Validate counts
+            if level_counts[0] != 1:
+                logger.warning("Invalid root node count")
+                return False
+                
+            if not (self.min_topics_per_level[1] <= level_counts[1] <= self.max_topics_per_level[1]):
+                logger.warning(f"Invalid main topic count: {level_counts[1]}")
+                return False
+                
+            # Check subtopics distribution
+            for topic, count in level1_subtopics.items():
+                if not (self.min_topics_per_level[2] <= count <= self.max_topics_per_level[2]):
+                    logger.warning(f"Invalid subtopic count for {topic}: {count}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Hierarchy validation error: {str(e)}")
+            return False
+
     def _format_mindmap_syntax(self, syntax: str) -> str:
-        """Format and validate Mermaid mindmap syntax"""
+        """Format and validate Mermaid mindmap syntax with enhanced structure validation"""
         try:
             # Basic validation
             if not syntax or not isinstance(syntax, str):
@@ -132,6 +191,8 @@ class MindMapGenerator:
             lines = ['mindmap']
             current_indent = 0
             node_count = {0: 0, 1: 0, 2: 0}  # Track nodes at each level
+            current_level1_topic = None
+            level1_subtopics = {}
             
             for line in syntax.strip().split('\n')[1:]:  # Skip first 'mindmap' line
                 if not line.strip():
@@ -151,28 +212,32 @@ class MindMapGenerator:
                     continue
                 
                 # Clean and validate node text
-                clean_line = self._validate_node_text(line.strip())
+                clean_line = self._validate_node_text(line.strip(), indent_level)
                 if clean_line:
                     # Format root node
-                    if indent_level == 0 and not clean_line.startswith('root('):
-                        clean_line = f'root({clean_line})'
+                    if indent_level == 0:
+                        if not clean_line.startswith('root('):
+                            clean_line = f'root({clean_line})'
+                        node_count[0] += 1
+                    elif indent_level == 1:
+                        current_level1_topic = clean_line
+                        level1_subtopics[clean_line] = 0
+                        node_count[1] += 1
+                    elif indent_level == 2 and current_level1_topic:
+                        level1_subtopics[current_level1_topic] += 1
+                        node_count[2] += 1
                     
                     # Format line with proper indentation
                     formatted_line = '  ' * indent_level + clean_line
                     lines.append(formatted_line)
-                    node_count[indent_level] += 1
                     current_indent = indent_level
             
-            # Validate minimum requirements
-            if node_count[1] < self.min_topics_per_level[1]:
-                logger.warning("Insufficient main topics")
+            # Validate hierarchy
+            if not self._validate_hierarchy(lines):
+                logger.warning("Invalid mindmap hierarchy")
                 return self._generate_fallback_mindmap()
             
             result = '\n'.join(lines)
-            if len(lines) < 3:  # Ensure at least root and one child node
-                logger.warning("Generated mindmap too short")
-                return self._generate_fallback_mindmap()
-            
             return result
             
         except Exception as e:
@@ -182,40 +247,40 @@ class MindMapGenerator:
     def _generate_mindmap_internal(self, text: str) -> str:
         """Generate mindmap with enhanced prompt and error handling"""
         prompt = f'''
-以下のテキストからマインドマップを生成してください。
+GeminiのAPIを利用してYouTube動画のトランススクリプトを元に、高品質な要約を行い、それを視覚的に整理したマインドマップを生成してください。
 
-入力テキスト：
+# 入力テキスト
 {text}
 
-必須規則：
-1. 基本構造
-   - 「mindmap」で開始
+# 手順
+1. トランススクリプト解析
+   - 主要テーマ: 動画全体を通しての主要なメッセージや目的を抽出
+   - サブテーマ: 主要テーマを補足する具体的なサブトピックを列挙
+   - キーポイント: 各サブテーマに関連する重要なポイントやデータを抽出
+   - アクション項目: 視聴者に行動を促す提案や具体例があればそれを明記
+
+2. マインドマップ構造
+   - 中心: 主要テーマ
+   - 第1レベル: サブテーマ（3-5個）
+   - 第2レベル: キーポイント（各サブテーマに2-4個）
+   - 第3レベル: 詳細・具体例（必要に応じて）
+
+3. 出力要件
    - インデントは半角スペース2個を使用
-   - 最大3階層まで（root→main topics→subtopics）
-   - 各トピックは3-5個のサブトピックを持つ
+   - 各ノードは50文字以内の簡潔な表現
+   - 日本語での表記を優先
+   - 専門用語には簡単な説明を付記
 
-2. コンテンツ要件
-   - メインテーマは内容を端的に表現
-   - トピック間の関連性を明確に
-   - 重要なキーワードや概念を強調
-   - 技術的な詳細は簡潔に説明
-
-3. 表現形式
-   - シンプルで分かりやすい日本語
-   - 専門用語は説明付きで記載
-   - 最大文字数は各ノード50文字まで
-
-出力例：
+# 出力形式
+## マインドマップ（Mermaid形式）
 mindmap
   root(メインテーマ)
-    トピック1
-      サブトピック1-1
-      サブトピック1-2
-      サブトピック1-3
-    トピック2
-      サブトピック2-1
-      サブトピック2-2
-      サブトピック2-3
+    サブテーマ1
+      キーポイント1-1
+      キーポイント1-2
+    サブテーマ2
+      キーポイント2-1
+      キーポイント2-2
 '''
 
         # Check cache
