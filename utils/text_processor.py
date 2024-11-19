@@ -27,19 +27,25 @@ class TextProcessor:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
-        # Initialize caches
+        # Initialize caches with optimized TTL
         self.subtitle_cache = TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL
         self.processed_text_cache = TTLCache(maxsize=100, ttl=1800)  # 30 minutes TTL
         self.summary_cache = TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL for summaries
+        
+        # Updated parameters for better performance
+        self.max_chunk_size = 2000  # Reduced from 4000
+        self.chunk_overlap = 200    # Reduced overlap
+        self.max_retries = 5        # Increased retries
+        self.base_delay = 3.0       # Increased base delay
         
         # Rate limiting and request tracking
         self.request_counter = 0
         self.last_request_time = datetime.now()
         self.failed_attempts = 0
         self.last_reset_time = datetime.now()
-        self.reset_interval = timedelta(minutes=5)  # Reset counters every 5 minutes
+        self.reset_interval = timedelta(minutes=5)
         
-        # Request queue management
+        # Enhanced request queue management
         self.request_queue = Queue()
         self.max_concurrent_requests = 3
         self.request_lock = Lock()
@@ -130,7 +136,7 @@ class TextProcessor:
             self.active_requests += 1
         
         try:
-            batch_size = min(3, self.request_queue.qsize())  # Process up to 3 requests at once
+            batch_size = min(3, self.request_queue.qsize())
             if batch_size == 0:
                 return None
             
@@ -152,7 +158,7 @@ class TextProcessor:
                 
                 try:
                     # Enhanced request handling with timeouts and retries
-                    for attempt in range(3):
+                    for attempt in range(self.max_retries):
                         try:
                             self._manage_request_limits()
                             
@@ -171,19 +177,21 @@ class TextProcessor:
                             # Cache successful result
                             self.processed_text_cache[chunk_key] = result
                             batch_results.append(result)
+                            logger.info(f"Successfully processed chunk {request_data['index'] + 1}")
                             break
                             
                         except Exception as e:
                             if "429" in str(e):
                                 logger.error(f"Rate limit reached on attempt {attempt + 1}")
                                 wait_time = self._calculate_backoff_time(attempt)
+                                logger.info(f"Waiting {wait_time} seconds before retry")
                                 time.sleep(wait_time)
                             elif "timeout" in str(e).lower():
                                 logger.error(f"Request timeout on attempt {attempt + 1}")
                                 time.sleep(5 * (attempt + 1))
                             else:
                                 logger.error(f"Error processing chunk: {str(e)}")
-                                if attempt == 2:
+                                if attempt == self.max_retries - 1:
                                     raise
                                 time.sleep(3 * (attempt + 1))
                     
