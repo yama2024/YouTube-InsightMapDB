@@ -4,7 +4,7 @@ import logging
 import re
 import json
 import random
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 from cachetools import TTLCache
 import time
 import jaconv  # For Japanese text normalization
@@ -26,6 +26,50 @@ class MindMapGenerator:
         self.failed_attempts = 0
         self.max_retries = 3
         self.rate_limit_wait_time = 60  # Base wait time for rate limits
+        
+        # Topic coverage thresholds
+        self.min_topics_per_level = {
+            1: 3,  # At least 3 main topics
+            2: 2   # At least 2 subtopics per main topic
+        }
+
+    def _validate_topic_coverage(self, mindmap_lines: list) -> Tuple[bool, str]:
+        """Validate comprehensive topic coverage"""
+        topics_count = {0: 0, 1: 0, 2: 0}  # Level: count
+        current_l1_topic = None
+        l1_subtopics = {}
+        
+        for line in mindmap_lines:
+            if not line.strip():
+                continue
+                
+            indent = len(line) - len(line.lstrip())
+            level = indent // 2
+            
+            if level == 0:  # Root node
+                topics_count[0] += 1
+            elif level == 1:  # Main topics
+                topics_count[1] += 1
+                current_l1_topic = line.strip()
+                l1_subtopics[current_l1_topic] = 0
+            elif level == 2 and current_l1_topic:  # Subtopics
+                topics_count[2] += 1
+                l1_subtopics[current_l1_topic] += 1
+        
+        # Validate coverage requirements
+        if topics_count[1] < self.min_topics_per_level[1]:
+            return False, f"メインレベルのトピックが不足しています (必要: {self.min_topics_per_level[1]}, 現在: {topics_count[1]})"
+        
+        # Check subtopic distribution
+        insufficient_topics = [
+            topic for topic, count in l1_subtopics.items()
+            if count < self.min_topics_per_level[2]
+        ]
+        
+        if insufficient_topics:
+            return False, f"以下のトピックのサブトピックが不足しています: {', '.join(insufficient_topics)}"
+        
+        return True, ""
 
     def _validate_input_text(self, text: str) -> Tuple[bool, str]:
         """Validate input text with enhanced checks"""
@@ -121,6 +165,7 @@ class MindMapGenerator:
             node_count = {0: 0, 1: 0, 2: 0}  # Track nodes at each level
             
             # Split and process each line
+            mindmap_lines = []
             for line in syntax.strip().split('\n')[1:]:
                 if not line.strip():
                     continue
@@ -147,13 +192,19 @@ class MindMapGenerator:
                     
                     # Ensure exactly 2 spaces per indent level
                     formatted_line = '  ' * indent_level + clean_line
-                    lines.append(formatted_line)
+                    mindmap_lines.append(formatted_line)
                     node_count[indent_level] += 1
                     current_indent = indent_level
             
-            # Validate minimum structure
-            result = '\n'.join(lines)
-            if len(lines) < 3:  # Ensure at least root and one child node
+            # Validate topic coverage
+            is_valid_coverage, coverage_error = self._validate_topic_coverage(mindmap_lines)
+            if not is_valid_coverage:
+                logger.warning(f"Topic coverage validation failed: {coverage_error}")
+                return self._generate_fallback_mindmap()
+            
+            # Combine lines and validate
+            result = '\n'.join(['mindmap'] + mindmap_lines)
+            if len(mindmap_lines) < 3:  # Ensure at least root and one child node
                 logger.warning("Generated mindmap too short")
                 return self._generate_fallback_mindmap()
             
@@ -166,37 +217,43 @@ class MindMapGenerator:
     def _generate_mindmap_internal(self, text: str) -> str:
         """Generate mindmap with enhanced prompt and error handling"""
         prompt = f'''
-        以下のテキストから詳細なマインドマップを生成してください。
+        以下のテキストから包括的で詳細なマインドマップを生成してください。
 
         入力テキスト：
         {text}
 
-        必須規則：
-        1. 最初の行は必ず「mindmap」で開始
-        2. インデントは半角スペース2個を使用
-        3. ルートノードは「root(メインテーマ)」形式
-        4. 階層構造：
-           - 最大3階層まで
-           - 各階層最大5項目
-           - 論理的な階層関係を維持
-        5. ノードテキスト：
-           - 簡潔で意味のある表現
-           - 50文字以内
-           - 特殊文字は使用しない
-        6. コンテンツ要件：
-           - メインテーマは内容を端的に表現
-           - トピック間の関連性を明確に
-           - 重要なキーワードや概念を強調
-
-        出力例：
+        必須要件：
+        1. 構造
+           - メインテーマを中心に、主要な概念を論理的に展開
+           - 3階層構造を最大限活用
+           - 各トピックに2-3個の具体的なサブトピック
+        
+        2. コンテンツ
+           - 技術的な詳細や具体例を含める
+           - 重要な概念の定義や説明
+           - 実践的な応用例や使用方法
+           - メリット・デメリットの分析
+        
+        3. 表現形式
+           - 簡潔かつ具体的な表現
+           - 専門用語は説明付きで記載
+           - 論理的な接続を明確に
+        
+        出力形式：
         mindmap
-          root(コンテンツの核心)
-            重要な概念
-              具体例1
-              具体例2
-            主要な論点
-              詳細な説明
-              重要な示唆
+          root(メインテーマ - 核となる概念)
+            概念の定義と背景
+              技術的な詳細
+              重要な特徴
+              適用範囲
+            実装と応用
+              具体的な使用例
+              実践的なヒント
+              注意点
+            発展と展望
+              将来の可能性
+              改善案
+              関連技術
         '''
 
         # Check cache
