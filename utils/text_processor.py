@@ -86,21 +86,18 @@ class TextProcessor:
         """Manage API request limits with enhanced logging and exponential backoff"""
         current_time = datetime.now()
         
-        # Reset counters if reset interval has passed
-        if current_time - self.last_reset_time > self.reset_interval:
-            logger.info("Resetting rate limit counters")
+        # Increase base delay and add progressive backoff
+        base_delay = 5.0  # Increased base delay
+        if self.request_counter > 0:
+            # Exponential backoff with progressive increase
+            delay = base_delay * (2 ** (self.request_counter // 3))
+            time.sleep(delay)
+        
+        # Reset counters more frequently
+        if current_time - self.last_reset_time > timedelta(minutes=2):
             self.request_counter = 0
             self.failed_attempts = 0
             self.last_reset_time = current_time
-        
-        # Enhanced delay calculation with exponential backoff
-        base_delay = 3.0  # Increased base delay
-        if self.request_counter > 0:
-            # Exponential backoff based on request counter
-            exponential_factor = min(5, 2 ** (self.request_counter // 5))  # Cap at 32x
-            delay = base_delay * exponential_factor
-            logger.info(f"Applying delay of {delay:.2f} seconds (factor: {exponential_factor}x)")
-            time.sleep(delay)
         
         # Update request tracking
         self.request_counter += 1
