@@ -1,6 +1,5 @@
 {pkgs}: {
   deps = [
-    pkgs.gdk-pixbuf
     pkgs.libffi
     pkgs.gtk3
     pkgs.librsvg
