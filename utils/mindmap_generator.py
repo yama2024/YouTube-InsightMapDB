@@ -50,44 +50,34 @@ class MindMapGenerator:
         return True, ""
 
     def _validate_node_text(self, text: str) -> Optional[str]:
-        """Validate and clean node text with enhanced Japanese support"""
+        """Validate and clean node text for Mermaid syntax"""
         if not text:
             return None
         
-        # Maximum length for a node (increased for Japanese characters)
-        MAX_NODE_LENGTH = 100
-        
         try:
-            # Normalize Japanese text
-            text = text.replace('　', ' ')  # Replace Japanese space with ASCII space
+            # Remove any existing Mermaid syntax characters
+            text = re.sub(r'[[\](){}]', '', text)
             
-            # Remove problematic characters while preserving Japanese text
-            cleaned_text = re.sub(
-                r'[^\w\s\u3000-\u9fff\u4e00-\u9faf\.,\-_()（）、。！？]',
-                '',
-                text
-            )
+            # Clean and normalize text
+            text = text.strip()
+            text = re.sub(r'\s+', ' ', text)
             
-            # Clean up whitespace
-            cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
-            cleaned_text = cleaned_text.strip()
+            # Ensure proper node format
+            if len(text) > 50:  # Shorter maximum length for better visualization
+                text = text[:47] + '...'
             
-            # Validate length
-            if len(cleaned_text) > MAX_NODE_LENGTH:
-                cleaned_text = cleaned_text[:MAX_NODE_LENGTH] + '...'
+            # Add proper node syntax for root and regular nodes
+            if text.lower().startswith('root'):
+                return f'root({text[4:].strip()})'
             
-            # Ensure the text contains actual content
-            if not re.search(r'[\w\u3000-\u9fff\u4e00-\u9faf]', cleaned_text):
-                return None
-            
-            return cleaned_text
+            return text
             
         except Exception as e:
             logger.error(f"Node text validation error: {str(e)}")
             return None
 
     def _format_mindmap_syntax(self, syntax: str) -> str:
-        """Format and validate Mermaid mindmap syntax with enhanced validation"""
+        """Format and validate Mermaid mindmap syntax"""
         try:
             if not syntax or not isinstance(syntax, str):
                 logger.warning("Invalid mindmap syntax received")
@@ -97,6 +87,7 @@ class MindMapGenerator:
             current_indent = 0
             node_count = {0: 0, 1: 0, 2: 0}  # Track nodes at each level
             
+            # Split and process each line
             for line in syntax.strip().split('\n')[1:]:
                 if not line.strip():
                     continue
@@ -117,11 +108,13 @@ class MindMapGenerator:
                 # Clean and validate node text
                 clean_line = self._validate_node_text(line.strip())
                 if clean_line:
+                    # Ensure exactly 2 spaces per indent level
                     formatted_line = '  ' * indent_level + clean_line
                     lines.append(formatted_line)
                     node_count[indent_level] += 1
                     current_indent = indent_level
             
+            # Validate minimum structure
             result = '\n'.join(lines)
             if len(lines) < 3:  # Ensure at least root and one child node
                 logger.warning("Generated mindmap too short")
@@ -148,14 +141,16 @@ class MindMapGenerator:
         {text}
 
         必須規則：
-        1. 最初の行は必ず「mindmap」
+        1. 最初の行は必ず「mindmap」のみ
         2. インデントは半角スペース2個を厳密に使用
-        3. ルートノードは「root(テーマ)」形式
-        4. 子ノードは簡潔な文で表現
-        5. 最大3階層まで
-        6. 各階層最大5項目まで
+        3. ルートノードは「root(テーマ)」形式で記述
+        4. 子ノードはシンプルなテキストで記述
+        5. 特殊文字は使用しない
+        6. 各ノードは50文字以内
+        7. 最大3階層まで
+        8. 各階層最大5項目まで
 
-        出力形式：
+        出力例：
         mindmap
           root(メインテーマ)
             トピック1
@@ -173,7 +168,6 @@ class MindMapGenerator:
 
         for attempt in range(self.max_retries):
             try:
-                # Set generation parameters using the correct type
                 generation_config = genai.types.GenerationConfig(
                     temperature=0.3,
                     top_p=0.8,
