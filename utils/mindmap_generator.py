@@ -3,11 +3,10 @@ import os
 import logging
 import re
 import json
-import random
+import time
 from typing import Tuple, Optional, Dict
 from cachetools import TTLCache
-import time
-import jaconv  # For Japanese text normalization
+import jaconv
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -21,67 +20,27 @@ class MindMapGenerator:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         
-        # Initialize cache for responses
+        # Initialize cache
         self.mindmap_cache = TTLCache(maxsize=100, ttl=3600)  # 1-hour cache
         self.failed_attempts = 0
         self.max_retries = 3
         self.rate_limit_wait_time = 60  # Base wait time for rate limits
         
-        # Enhanced topic coverage thresholds
+        # Topic coverage requirements
         self.min_topics_per_level = {
             1: 3,  # At least 3 main topics
-            2: 3   # At least 3 subtopics per main topic (increased from 2)
+            2: 3   # At least 3 subtopics per main topic
         }
         self.max_topics_per_level = {
             1: 5,  # Maximum 5 main topics
             2: 5   # Maximum 5 subtopics per main topic
         }
 
-    def _validate_topic_coverage(self, mindmap_lines: list) -> Tuple[bool, str]:
-        """Validate comprehensive topic coverage with enhanced requirements"""
-        topics_count = {0: 0, 1: 0, 2: 0}  # Level: count
-        current_l1_topic = None
-        l1_subtopics = {}
-        
-        for line in mindmap_lines:
-            if not line.strip():
-                continue
-                
-            indent = len(line) - len(line.lstrip())
-            level = indent // 2
-            
-            if level == 0:  # Root node
-                topics_count[0] += 1
-            elif level == 1:  # Main topics
-                topics_count[1] += 1
-                current_l1_topic = line.strip()
-                l1_subtopics[current_l1_topic] = 0
-            elif level == 2 and current_l1_topic:  # Subtopics
-                topics_count[2] += 1
-                l1_subtopics[current_l1_topic] += 1
-        
-        # Validate minimum coverage requirements
-        if topics_count[1] < self.min_topics_per_level[1]:
-            return False, f"メインレベルのトピックが不足しています (必要: {self.min_topics_per_level[1]}, 現在: {topics_count[1]})"
-        
-        # Check subtopic distribution
-        insufficient_topics = [
-            topic for topic, count in l1_subtopics.items()
-            if count < self.min_topics_per_level[2]
-        ]
-        
-        if insufficient_topics:
-            return False, f"以下のトピックのサブトピックが不足しています: {', '.join(insufficient_topics)}"
-        
-        # Validate maximum limits
-        if topics_count[1] > self.max_topics_per_level[1]:
-            return False, f"メインレベルのトピックが多すぎます (最大: {self.max_topics_per_level[1]}, 現在: {topics_count[1]})"
-        
-        for topic, count in l1_subtopics.items():
-            if count > self.max_topics_per_level[2]:
-                return False, f"トピック '{topic}' のサブトピックが多すぎます (最大: {self.max_topics_per_level[2]}, 現在: {count})"
-        
-        return True, ""
+    def _calculate_backoff_time(self, attempt: int) -> float:
+        """Calculate progressive backoff time with exponential increase"""
+        base_backoff = min(300, (2 ** attempt) * 30)  # Max 5 minutes
+        jitter = random.uniform(0.8, 1.2)  # Add randomness to prevent thundering herd
+        return base_backoff * jitter
 
     def _validate_input_text(self, text: str) -> Tuple[bool, str]:
         """Validate input text with enhanced Japanese support"""
@@ -110,7 +69,7 @@ class MindMapGenerator:
         return True, ""
 
     def _normalize_japanese_text(self, text: str) -> str:
-        """Enhanced Japanese text normalization with error handling"""
+        """Enhanced Japanese text normalization"""
         try:
             # Convert all forms of Japanese characters to their standard form
             text = jaconv.normalize(text)
@@ -133,40 +92,27 @@ class MindMapGenerator:
             return text.strip()
         except Exception as e:
             logger.error(f"Japanese text normalization error: {str(e)}")
-            # Return original text if normalization fails
             return text
 
     def _validate_node_text(self, text: str) -> Optional[str]:
-        """Validate and clean node text with enhanced Japanese support"""
+        """Validate and clean node text"""
         if not text:
             return None
-        
+            
         try:
             # Normalize Japanese text
             text = self._normalize_japanese_text(text)
             
-            # Remove Mermaid syntax characters and other special characters
+            # Remove Mermaid syntax characters
             text = re.sub(r'[[\](){}「」『』（）｛｝［］]', '', text)
             
-            # Clean and normalize spacing
+            # Clean spaces
             text = text.strip()
             text = re.sub(r'\s+', ' ', text)
             
-            # Enhanced length validation for Japanese text
-            text_length = sum(2 if '\u4e00' <= c <= '\u9fff' else 1 for c in text)
-            if text_length > 50:
-                # Intelligent truncation preserving meaning
-                current_length = 0
-                truncated_text = ''
-                words = text.split()
-                for word in words:
-                    word_length = sum(2 if '\u4e00' <= c <= '\u9fff' else 1 for c in word)
-                    if current_length + word_length > 47:
-                        truncated_text = truncated_text.rstrip() + '...'
-                        break
-                    truncated_text += word + ' '
-                    current_length += word_length
-                text = truncated_text.strip()
+            # Truncate long text
+            if len(text) > 50:
+                text = text[:47] + '...'
             
             return text
             
@@ -175,23 +121,23 @@ class MindMapGenerator:
             return None
 
     def _format_mindmap_syntax(self, syntax: str) -> str:
-        """Format and validate Mermaid mindmap syntax with enhanced error checking"""
+        """Format and validate Mermaid mindmap syntax"""
         try:
+            # Basic validation
             if not syntax or not isinstance(syntax, str):
                 logger.warning("Invalid mindmap syntax received")
                 return self._generate_fallback_mindmap()
             
+            # Process lines
             lines = ['mindmap']
             current_indent = 0
             node_count = {0: 0, 1: 0, 2: 0}  # Track nodes at each level
             
-            # Split and process each line
-            mindmap_lines = []
-            for line in syntax.strip().split('\n')[1:]:
+            for line in syntax.strip().split('\n')[1:]:  # Skip first 'mindmap' line
                 if not line.strip():
                     continue
                 
-                # Calculate indentation level
+                # Calculate indentation
                 indent = len(line) - len(line.lstrip())
                 indent_level = min(indent // 2, 2)  # Maximum 3 levels (0, 1, 2)
                 
@@ -200,7 +146,7 @@ class MindMapGenerator:
                     logger.warning(f"Invalid indentation level: {indent_level}")
                     indent_level = current_indent + 1
                 
-                # Check node count at this level
+                # Check node count limits
                 if node_count[indent_level] >= self.max_topics_per_level.get(indent_level, 5):
                     continue
                 
@@ -211,21 +157,19 @@ class MindMapGenerator:
                     if indent_level == 0 and not clean_line.startswith('root('):
                         clean_line = f'root({clean_line})'
                     
-                    # Ensure exactly 2 spaces per indent level
+                    # Format line with proper indentation
                     formatted_line = '  ' * indent_level + clean_line
-                    mindmap_lines.append(formatted_line)
+                    lines.append(formatted_line)
                     node_count[indent_level] += 1
                     current_indent = indent_level
             
-            # Validate topic coverage
-            is_valid_coverage, coverage_error = self._validate_topic_coverage(mindmap_lines)
-            if not is_valid_coverage:
-                logger.warning(f"Topic coverage validation failed: {coverage_error}")
+            # Validate minimum requirements
+            if node_count[1] < self.min_topics_per_level[1]:
+                logger.warning("Insufficient main topics")
                 return self._generate_fallback_mindmap()
             
-            # Combine lines and validate
-            result = '\n'.join(['mindmap'] + mindmap_lines)
-            if len(mindmap_lines) < 3:  # Ensure at least root and one child node
+            result = '\n'.join(lines)
+            if len(lines) < 3:  # Ensure at least root and one child node
                 logger.warning("Generated mindmap too short")
                 return self._generate_fallback_mindmap()
             
@@ -238,47 +182,41 @@ class MindMapGenerator:
     def _generate_mindmap_internal(self, text: str) -> str:
         """Generate mindmap with enhanced prompt and error handling"""
         prompt = f'''
-        以下のテキストから高度に構造化されたマインドマップを生成してください。
+以下のテキストからマインドマップを生成してください。
 
-        入力テキスト：
-        {text}
+入力テキスト：
+{text}
 
-        必須要件：
-        1. 構造設計
-           - 中心テーマを核とした放射状の展開
-           - 最大3階層の論理的な構造化
-           - 各主要トピックに3-5個の具体的なサブトピック
-           - バランスの取れた情報分布
+必須規則：
+1. 基本構造
+   - 「mindmap」で開始
+   - インデントは半角スペース2個を使用
+   - 最大3階層まで（root→main topics→subtopics）
+   - 各トピックは3-5個のサブトピックを持つ
 
-        2. コンテンツ要素
-           - 重要な概念の定義と説明
-           - 具体的な実装例や使用事例
-           - 技術的詳細とベストプラクティス
-           - メリット・デメリットの分析
-           - 関連する技術や概念の関係性
+2. コンテンツ要件
+   - メインテーマは内容を端的に表現
+   - トピック間の関連性を明確に
+   - 重要なキーワードや概念を強調
+   - 技術的な詳細は簡潔に説明
 
-        3. 表現方法
-           - 簡潔で分かりやすい日本語表現
-           - 重要な専門用語の説明付き記載
-           - 階層関係を明確にした構造化
-           - キーポイントの強調
+3. 表現形式
+   - シンプルで分かりやすい日本語
+   - 専門用語は説明付きで記載
+   - 最大文字数は各ノード50文字まで
 
-        出力形式：
-        mindmap
-          root(メインテーマ - 核となる概念)
-            概念の基礎
-              定義と原理
-              重要な特徴
-              技術的背景
-            実装と活用
-              具体的な実装方法
-              ユースケース
-              注意点と制約
-            応用と発展
-              実践的な活用例
-              将来の可能性
-              関連技術との連携
-        '''
+出力例：
+mindmap
+  root(メインテーマ)
+    トピック1
+      サブトピック1-1
+      サブトピック1-2
+      サブトピック1-3
+    トピック2
+      サブトピック2-1
+      サブトピック2-2
+      サブトピック2-3
+'''
 
         # Check cache
         cache_key = hash(text)
@@ -293,7 +231,7 @@ class MindMapGenerator:
             try:
                 # Exponential backoff with rate limit handling
                 if retry_count > 0:
-                    wait_time = min(300, self.rate_limit_wait_time * (2 ** (retry_count - 1)))
+                    wait_time = self._calculate_backoff_time(retry_count)
                     logger.info(f"Retrying in {wait_time} seconds (attempt {retry_count + 1}/{self.max_retries})")
                     time.sleep(wait_time)
 
@@ -320,31 +258,29 @@ class MindMapGenerator:
                 if '```' in mermaid_syntax:
                     mermaid_syntax = mermaid_syntax[:mermaid_syntax.rfind('```')]
                 
-                # Validate and format
-                if not mermaid_syntax.startswith('mindmap'):
-                    mermaid_syntax = 'mindmap\n' + mermaid_syntax
-
+                # Format and validate
+                formatted_syntax = self._format_mindmap_syntax(mermaid_syntax)
+                
                 # Cache successful response
-                self.mindmap_cache[cache_key] = mermaid_syntax
+                self.mindmap_cache[cache_key] = formatted_syntax
                 self.failed_attempts = 0
                 
-                logger.info(f"マインドマップの生成に成功しました (試行回数: {retry_count + 1})")
-                return mermaid_syntax
+                logger.info("Successfully generated mindmap")
+                return formatted_syntax
 
             except Exception as e:
                 self.failed_attempts += 1
                 last_error = str(e)
                 retry_count += 1
-
+                
                 if "429" in last_error:
-                    logger.error(f"APIレート制限に達しました (試行回数: {retry_count})")
-                    self.rate_limit_wait_time = min(300, self.rate_limit_wait_time * 2)
+                    logger.error(f"Rate limit reached (attempt {retry_count})")
                 elif "timeout" in last_error.lower():
-                    logger.error(f"リクエストがタイムアウトしました (試行回数: {retry_count})")
+                    logger.error(f"Request timeout (attempt {retry_count})")
                 else:
-                    logger.error(f"マインドマップ生成エラー: {last_error}")
+                    logger.error(f"Mindmap generation error: {last_error}")
 
-        logger.error(f"全ての試行が失敗しました。最後のエラー: {last_error}")
+        logger.error(f"All retry attempts failed. Last error: {last_error}")
         return self._generate_fallback_mindmap()
 
     def _generate_fallback_mindmap(self) -> str:
@@ -374,22 +310,19 @@ class MindMapGenerator:
             # Input validation
             is_valid, error_msg = self._validate_input_text(text)
             if not is_valid:
-                logger.error(f"入力検証に失敗しました: {error_msg}")
+                logger.error(f"Input validation failed: {error_msg}")
                 return self._generate_fallback_mindmap()
             
             # Generate mindmap
-            mermaid_syntax = self._generate_mindmap_internal(text)
-            
-            # Format and validate syntax
-            formatted_syntax = self._format_mindmap_syntax(mermaid_syntax)
+            mindmap = self._generate_mindmap_internal(text)
             
             # Final validation
-            if not formatted_syntax or len(formatted_syntax.split('\n')) < 3:
-                logger.warning("生成されたマインドマップが短すぎるか無効です")
+            if not mindmap or len(mindmap.split('\n')) < 3:
+                logger.warning("Generated mindmap is too short or invalid")
                 return self._generate_fallback_mindmap()
             
-            return formatted_syntax
+            return mindmap
             
         except Exception as e:
-            logger.error(f"マインドマップ生成エラー: {str(e)}")
+            logger.error(f"Mindmap generation failed: {str(e)}")
             return self._generate_fallback_mindmap()
