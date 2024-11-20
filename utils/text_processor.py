@@ -1,7 +1,7 @@
 import os
 import json
 import google.generativeai as genai
-from youtube_transcript_api import YouTubeTranscript
+from youtube_transcript_api import YouTubeTranscriptApi
 import logging
 
 # Set up logging
@@ -28,7 +28,7 @@ class TextProcessor:
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
-            transcript_list = YouTubeTranscript.get_transcript(video_id, languages=['ja', 'en'])
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja', 'en'])
             transcript = ' '.join([entry['text'] for entry in transcript_list])
             
             # Cache the result
