@@ -34,7 +34,7 @@ try:
             if os.path.exists(css_path):
                 with open(css_path) as f:
                     st.markdown(f'<style>{f.read()}</style>',
-                                unsafe_allow_html=True)
+                               unsafe_allow_html=True)
             else:
                 logger.error("CSS file not found!")
         except Exception as e:
@@ -68,6 +68,8 @@ try:
         st.session_state.transcript = None
     if 'summary' not in st.session_state:
         st.session_state.summary = None
+    if 'quality_scores' not in st.session_state:
+        st.session_state.quality_scores = None
     if 'mindmap' not in st.session_state:
         st.session_state.mindmap = None
     if 'mindmap_svg' not in st.session_state:
@@ -145,6 +147,21 @@ try:
                         unsafe_allow_html=True)
         except Exception as e:
             logger.error(f"Error rendering step header: {str(e)}")
+
+    def render_quality_score(score: float, label: str):
+        """品質スコアを視覚的に表示"""
+        color = "red" if score < 5 else "orange" if score < 7 else "green"
+        st.markdown(f"""
+        <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span>{label}</span>
+                <span style="color: {color}; font-weight: bold;">{score:.1f}</span>
+            </div>
+            <div style="background: rgba(255,255,255,0.1); border-radius: 10px; height: 10px; width: 100%; overflow: hidden;">
+                <div style="background: {color}; width: {score*10}%; height: 100%; transition: width 0.5s ease;"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # Main application logic
     try:
@@ -240,9 +257,10 @@ try:
                         with st.spinner("AI要約を生成中..."):
                             try:
                                 text_processor = TextProcessor()
-                                summary = text_processor.generate_summary(
+                                summary, quality_scores = text_processor.generate_summary(
                                     st.session_state.transcript)
                                 st.session_state.summary = summary
+                                st.session_state.quality_scores = quality_scores
                                 update_step_progress('summary')
                                 time.sleep(0.5)
                             except Exception as e:
@@ -254,6 +272,24 @@ try:
                     if st.session_state.summary:
                         st.markdown("### AI Summary")
                         st.markdown(st.session_state.summary)
+                        
+                        # Display quality scores
+                        st.markdown("### 要約品質スコア")
+                        quality_scores = st.session_state.quality_scores
+                        
+                        with st.container():
+                            st.markdown("""
+                            <div style="background: rgba(255,255,255,0.1); border-radius: 15px; padding: 20px; margin: 10px 0;">
+                                <h4 style="margin-bottom: 15px;">品質評価指標</h4>
+                            """, unsafe_allow_html=True)
+                            
+                            render_quality_score(quality_scores["構造の完全性"], "構造の完全性")
+                            render_quality_score(quality_scores["情報量"], "情報量")
+                            render_quality_score(quality_scores["簡潔性"], "簡潔性")
+                            st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
+                            render_quality_score(quality_scores["総合スコア"], "総合スコア")
+                            
+                            st.markdown("</div>", unsafe_allow_html=True)
 
                 with tabs[2]:
                     st.markdown("### Mind Map Visualization")
@@ -263,7 +299,7 @@ try:
                             try:
                                 mindmap_gen = MindMapGenerator()
                                 mermaid_syntax = mindmap_gen.generate_mindmap(
-                                    st.session_state.transcript)
+                                    st.session_state.summary)
                                 st.session_state.mindmap = mermaid_syntax
                                 st.session_state.current_step = 4
                                 update_step_progress('mindmap')
@@ -316,58 +352,22 @@ try:
                                 # Create a container for progress tracking
                                 progress_container = st.container()
                                 with progress_container:
-                                    st.markdown(
-                                        '<div class="progress-container">',
-                                        unsafe_allow_html=True)
                                     progress_bar = st.progress(0)
                                     status_text = st.empty()
-                                    # Add stats columns
-                                    stats_cols = st.columns(2)
-
-                                    def update_enhancement_progress(
-                                            progress: float, message: str):
-                                        """Update enhancement progress in session state and UI"""
-                                        st.session_state.enhancement_progress = {
-                                            'progress': progress,
-                                            'message': message
-                                        }
-                                        progress_bar.progress(progress)
-                                        status_text.markdown(
-                                            f'<div class="progress-message">{message}</div>',
-                                            unsafe_allow_html=True)
-
-                                        # Update stats
-                                        if progress == 1.0 and message.startswith(
-                                                "✨"):
-                                            with stats_cols[0]:
-                                                st.metric(
-                                                    "処理済み文字数",
-                                                    f"{len(st.session_state.transcript):,}字"
-                                                )
-                                            with stats_cols[1]:
-                                                st.metric(
-                                                    "処理時間",
-                                                    f"{(time.time() - start_time):.1f}秒"
-                                                )
-
-                                    start_time = time.time()
-                                    
-                                    try:
-                                        text_processor = TextProcessor()
-                                        enhanced_text = text_processor.proofread_text(
-                                            st.session_state.transcript,
-                                            update_enhancement_progress)
-                                        st.session_state.enhanced_text = enhanced_text
-                                        update_step_progress('proofread')
-                                        st.markdown("#### 整形後のテキスト")
-                                        st.markdown(enhanced_text.replace('\n', '  \n'))
-                                    except Exception as e:
-                                        st.error(f"テキスト整形に失敗しました: {str(e)}")
-                                        logger.error(f"Error in text enhancement: {str(e)}")
-
+                                
+                                text_processor = TextProcessor()
+                                enhanced_text = text_processor.enhance_text(st.session_state.transcript)
+                                st.session_state.enhanced_text = enhanced_text
+                                
+                                # Show completion message
+                                progress_bar.progress(100)
+                                status_text.success("✨ テキストの整形が完了しました！")
+                                st.markdown("#### 整形後のテキスト")
+                                st.markdown(enhanced_text.replace('\n', '  \n'))
+                                
                             except Exception as e:
-                                st.error(f"エラーが発生しました: {str(e)}")
-                                logger.error(f"Error in enhancement process: {str(e)}")
+                                st.error(f"テキストの整形中にエラーが発生しました: {str(e)}")
+                                logger.error(f"Error in text enhancement: {str(e)}")
 
     except Exception as e:
         st.error(f"アプリケーションエラー: {str(e)}")

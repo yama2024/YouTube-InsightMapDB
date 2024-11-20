@@ -6,7 +6,7 @@ import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from youtube_transcript_api import YouTubeTranscriptApi
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -188,15 +188,82 @@ class TextProcessor:
                 
         return merged
 
-    def generate_summary(self, text: str) -> str:
-        """Generate a summary using parallel processing"""
+    def evaluate_summary_quality(self, original_text: str, summary_json: str) -> Dict[str, float]:
+        """Evaluate the quality of the generated summary"""
+        try:
+            summary_data = json.loads(summary_json)
+            quality_scores = {
+                "構造の完全性": 0.0,
+                "情報量": 0.0,
+                "簡潔性": 0.0,
+                "総合スコア": 0.0
+            }
+
+            # 構造の完全性をチェック (30%)
+            structure_score = 0.0
+            if isinstance(summary_data, dict) and "主要ポイント" in summary_data:
+                points = summary_data["主要ポイント"]
+                if isinstance(points, list) and points:
+                    required_fields = {"タイトル", "説明", "重要度"}
+                    field_scores = []
+                    for point in points:
+                        field_score = len(set(point.keys()) & required_fields) / len(required_fields)
+                        field_scores.append(field_score)
+                    structure_score = sum(field_scores) / len(field_scores)
+            quality_scores["構造の完全性"] = structure_score * 10
+
+            # 情報量を評価 (40%)
+            total_content = ""
+            for point in summary_data.get("主要ポイント", []):
+                total_content += point.get("タイトル", "") + " " + point.get("説明", "")
+            
+            # 情報量スコアを計算
+            original_length = len(original_text)
+            summary_length = len(total_content)
+            ideal_ratio = 0.3  # 理想的な要約は元のテキストの30%程度
+            actual_ratio = summary_length / original_length
+            information_score = max(0, 1 - abs(actual_ratio - ideal_ratio) / ideal_ratio)
+            quality_scores["情報量"] = information_score * 10
+
+            # 簡潔性を評価 (30%)
+            conciseness_score = 0.0
+            if summary_length > 0:
+                # 重複フレーズをチェック
+                phrases = re.findall(r'\b\w+(?:\s+\w+){2,}\b', total_content)
+                unique_phrases = set(phrases)
+                if phrases:
+                    conciseness_score = len(unique_phrases) / len(phrases)
+            quality_scores["簡潔性"] = conciseness_score * 10
+
+            # 総合スコアを計算
+            quality_scores["総合スコア"] = (
+                quality_scores["構造の完全性"] * 0.3 +
+                quality_scores["情報量"] * 0.4 +
+                quality_scores["簡潔性"] * 0.3
+            )
+
+            return quality_scores
+
+        except Exception as e:
+            logger.error(f"要約品質の評価中にエラーが発生しました: {str(e)}")
+            return {
+                "構造の完全性": 0.0,
+                "情報量": 0.0,
+                "簡潔性": 0.0,
+                "総合スコア": 0.0
+            }
+
+    def generate_summary(self, text: str) -> Tuple[str, Dict[str, float]]:
+        """Generate a summary using parallel processing and evaluate its quality"""
         try:
             if not text or len(text.strip()) < 10:
                 raise ValueError("テキストが短すぎるか空です")
                 
             cache_key = hash(text)
             if cache_key in self._cache:
-                return self._cache[cache_key]
+                summary = self._cache[cache_key]
+                quality_scores = self.evaluate_summary_quality(text, summary)
+                return summary, quality_scores
                 
             chunks = self._split_text(text)
             summaries = []
@@ -222,8 +289,11 @@ class TextProcessor:
             merged_summary = self._merge_summaries(summaries)
             formatted_summary = json.dumps(merged_summary, ensure_ascii=False, indent=2)
             
+            # Evaluate summary quality
+            quality_scores = self.evaluate_summary_quality(text, formatted_summary)
+            
             self._cache[cache_key] = formatted_summary
-            return formatted_summary
+            return formatted_summary, quality_scores
             
         except Exception as e:
             logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
