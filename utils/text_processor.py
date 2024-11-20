@@ -2,15 +2,19 @@ import os
 import json
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.formatters import TextFormatter
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict, Optional
 import logging
 import re
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class TextProcessor:
-    def __init__(self):
+    def __init__(self, chunk_size=1500, overlap_size=200):
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
             raise ValueError("Gemini API key is not set in environment variables")
@@ -18,45 +22,106 @@ class TextProcessor:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-pro')
         self._cache = {}
-
-    def get_transcript(self, url):
+        self.chunk_size = chunk_size
+        self.overlap_size = overlap_size
+        
+    def get_transcript(self, url: str) -> str:
         try:
-            # Extract video ID from URL
-            if "youtu.be" in url:
-                video_id = url.split("/")[-1].split("?")[0]
-            else:
-                # Try to extract ID from regular YouTube URL
-                patterns = [
-                    r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",
-                    r"(?:embed\/)([0-9A-Za-z_-]{11})",
-                    r"(?:watch\?v=)([0-9A-Za-z_-]{11})"
-                ]
-                video_id = None
-                for pattern in patterns:
-                    match = re.search(pattern, url)
-                    if match:
-                        video_id = match.group(1)
-                        break
+            video_id = self._extract_video_id(url)
             
-            if not video_id:
-                raise ValueError("Invalid YouTube URL format")
-                
             # Check cache first
             cache_key = f"transcript_{video_id}"
             if cache_key in self._cache:
                 return self._cache[cache_key]
-                
-            # Get transcript
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja', 'en'])
-            transcript = ' '.join([entry['text'] for entry in transcript_list])
             
-            # Cache the result
-            self._cache[cache_key] = transcript
-            return transcript
+            # Get transcript with better formatting
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            transcript = transcript_list.find_transcript(['ja', 'en'])
+            transcript_data = transcript.fetch()
+            formatter = TextFormatter()
+            formatted_transcript = formatter.format_transcript(transcript_data)
+            
+            # Cache and return
+            self._cache[cache_key] = formatted_transcript
+            return formatted_transcript
             
         except Exception as e:
             logger.error(f"字幕の取得中にエラーが発生しました: {str(e)}")
             raise Exception(f"字幕の取得に失敗しました: {str(e)}")
+            
+    def _extract_video_id(self, url: str) -> str:
+        match = re.search(r'(?:v=|/v/|youtu\.be/)([^&?/]+)', url)
+        if not match:
+            raise ValueError("無効なYouTube URL形式です")
+        return match.group(1)
+
+    def generate_summary(self, text: str) -> str:
+        try:
+            chunks = self._split_text_into_chunks(text)
+            
+            # Process chunks in parallel
+            with ThreadPoolExecutor() as executor:
+                summaries = list(executor.map(self._process_chunk, chunks))
+            
+            # Filter out None values and combine summaries
+            valid_summaries = [s for s in summaries if s is not None]
+            
+            if not valid_summaries:
+                raise ValueError("有効な要約が生成されませんでした")
+            
+            return self._format_summaries(valid_summaries)
+            
+        except Exception as e:
+            logger.error(f"要約生成中にエラーが発生しました: {str(e)}")
+            raise Exception(f"要約の生成に失敗しました: {str(e)}")
+
+    def _split_text_into_chunks(self, text: str) -> List[str]:
+        sentences = re.split(r'(?<=[。！？.!?])\s*', text)
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for sentence in sentences:
+            if current_length + len(sentence) > self.chunk_size:
+                chunks.append("".join(current_chunk))
+                # Keep overlap for context
+                current_chunk = current_chunk[-self.overlap_size:]
+                current_length = sum(len(s) for s in current_chunk)
+            current_chunk.append(sentence)
+            current_length += len(sentence)
+            
+        if current_chunk:
+            chunks.append("".join(current_chunk))
+            
+        return chunks
+
+    def _process_chunk(self, chunk: str) -> Optional[Dict]:
+        max_retries = 3
+        base_wait_time = 5
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.model.generate_content(
+                    self._create_summary_prompt(chunk, {}),
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.3,
+                        top_p=0.8,
+                        top_k=40,
+                        max_output_tokens=8192,
+                    )
+                )
+                
+                if response.text:
+                    result = self._validate_json_response(response.text)
+                    if result:
+                        return result
+                        
+            except Exception as e:
+                logger.warning(f"Chunk processing attempt {attempt + 1} failed: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(base_wait_time * (2 ** attempt))
+                    
+        return None
 
     def _validate_json_response(self, response_text: str) -> dict:
         """JSON responseのバリデーション"""
@@ -114,7 +179,7 @@ class TextProcessor:
                 for keyword in summary["キーワード"]:
                     context["importance_factors"].append({
                         "term": keyword["用語"],
-                        "weight": 1.0
+                        "weight": keyword.get("重要度", 1)
                     })
         
         # Remove duplicates and normalize weights
@@ -188,28 +253,6 @@ class TextProcessor:
         '''
         return prompt
 
-    def _chunk_text(self, text: str, chunk_size: int = 1500) -> list:
-        """テキストを適切なサイズのチャンクに分割"""
-        words = text.split()
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        
-        for word in words:
-            word_length = len(word)
-            if current_length + word_length + 1 <= chunk_size:
-                current_chunk.append(word)
-                current_length += word_length + 1
-            else:
-                chunks.append(' '.join(current_chunk))
-                current_chunk = [word]
-                current_length = word_length
-                
-        if current_chunk:
-            chunks.append(' '.join(current_chunk))
-            
-        return chunks
-
     def _format_summaries(self, summaries: list) -> str:
         """要約をフォーマット"""
         try:
@@ -266,49 +309,3 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"Error formatting summaries: {str(e)}")
             return "要約のフォーマットに失敗しました。"
-
-    def generate_summary(self, text: str) -> str:
-        """コンテキストを考慮した要約を生成"""
-        try:
-            chunks = self._chunk_text(text)
-            summaries = []
-            previous_summaries = []
-            
-            for i, chunk in enumerate(chunks):
-                context = self._get_chunk_context(previous_summaries)
-                
-                # Add retry logic for API calls
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        response = self.model.generate_content(
-                            self._create_summary_prompt(chunk, context),
-                            generation_config=genai.types.GenerationConfig(
-                                temperature=0.3,
-                                top_p=0.8,
-                                top_k=40,
-                                max_output_tokens=8192,
-                            )
-                        )
-                        
-                        if not response.text:
-                            continue
-                            
-                        result = self._validate_json_response(response.text)
-                        if result:
-                            summaries.append(result)
-                            previous_summaries.append(result)
-                            break
-                    except Exception as e:
-                        logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
-                        if attempt == max_retries - 1:
-                            logger.error(f"All attempts failed for chunk {i}")
-            
-            if not summaries:
-                raise ValueError("No valid summaries generated")
-                
-            return self._format_summaries(summaries)
-            
-        except Exception as e:
-            logger.error(f"Error in summary generation: {str(e)}")
-            raise Exception(f"Failed to generate summary: {str(e)}")

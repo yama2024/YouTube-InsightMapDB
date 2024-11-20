@@ -1,0 +1,87 @@
+import re
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.formatters import TextFormatter
+from concurrent.futures import ThreadPoolExecutor
+from typing import List
+
+class FastTranscriptSummarizer:
+    def __init__(self, chunk_size=1500, overlap_size=200):
+        self.chunk_size = chunk_size
+        self.overlap_size = overlap_size
+
+    def get_transcript(self, video_url: str) -> str:
+        """Fetch the transcript of a YouTube video."""
+        video_id = self._extract_video_id(video_url)
+        try:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            transcript = transcript_list.find_transcript(['en', 'ja'])
+            transcript_data = transcript.fetch()
+            formatter = TextFormatter()
+            return formatter.format_transcript(transcript_data)
+        except Exception as e:
+            raise ValueError(f"Failed to fetch transcript: {e}")
+
+    def summarize(self, text: str) -> str:
+        """Summarize the given text with parallel processing."""
+        chunks = self._split_text_into_chunks(text)
+
+        # Process chunks in parallel
+        with ThreadPoolExecutor() as executor:
+            summaries = list(executor.map(self._summarize_chunk, chunks))
+
+        combined_summary = self._combine_summaries(summaries)
+        return self._trim_to_30_percent(combined_summary, len(text))
+
+    def _extract_video_id(self, url: str) -> str:
+        """Extract video ID from YouTube URL."""
+        match = re.search(r'(?:v=|/v/|youtu\.be/)([^&?/]+)', url)
+        if not match:
+            raise ValueError("Invalid YouTube URL")
+        return match.group(1)
+
+    def _split_text_into_chunks(self, text: str) -> List[str]:
+        """Split text into smaller chunks with overlap for context."""
+        sentences = re.split(r'(?<=[。！？.!?])\s*', text)
+        chunks = []
+        current_chunk = []
+        current_length = 0
+
+        for sentence in sentences:
+            if current_length + len(sentence) > self.chunk_size:
+                chunks.append("".join(current_chunk))
+                current_chunk = sentence[-self.overlap_size:]
+                current_length = len(current_chunk)
+            else:
+                current_chunk.append(sentence)
+                current_length += len(sentence)
+
+        if current_chunk:
+            chunks.append("".join(current_chunk))
+
+        return chunks
+
+    def _summarize_chunk(self, chunk: str) -> str:
+        """Summarize a single chunk."""
+        # Placeholder logic: Replace with actual model-based summarization
+        return f"Summary: {chunk[:100]}..."  # Simplified example
+
+    def _combine_summaries(self, summaries: List[str]) -> str:
+        """Combine chunk summaries into a coherent final summary."""
+        return "\n".join(summaries)
+
+    def _trim_to_30_percent(self, summary: str, original_length: int) -> str:
+        """Trim the summary to approximately 30% of the original text length."""
+        target_length = int(original_length * 0.3)
+        return summary[:target_length].strip()
+
+# Example usage:
+if __name__ == "__main__":
+    summarizer = FastTranscriptSummarizer()
+    video_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    try:
+        transcript = summarizer.get_transcript(video_url)
+        summary = summarizer.summarize(transcript)
+        print("Summary:")
+        print(summary)
+    except Exception as e:
+        print(f"Error: {e}")
