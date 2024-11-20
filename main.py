@@ -6,13 +6,18 @@ import streamlit as st
 import os
 import time
 import logging
-from streamlit_mermaid import st_mermaid
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+try:
+    from streamlit_mermaid import st_mermaid
+except Exception as e:
+    logger.error(f"Failed to import streamlit_mermaid: {str(e)}")
+    st.error("マインドマップコンポーネントの読み込みに失敗しました")
 
 try:
     # Page configuration
@@ -274,8 +279,11 @@ try:
 
                         with col1:
                             st.markdown("### Mind Map")
-                            st_mermaid(st.session_state.mindmap,
-                                       height="400px")
+                            try:
+                                st_mermaid(st.session_state.mindmap, height="400px")
+                            except Exception as e:
+                                st.error("マインドマップの表示に失敗しました。別の形式で表示します。")
+                                st.code(st.session_state.mindmap, language="mermaid")
 
                         with col2:
                             st.markdown("### Mermaid Syntax")
@@ -343,38 +351,27 @@ try:
                                                 )
 
                                     start_time = time.time()
-                                    text_processor = TextProcessor()
-
-                                    # Start enhancement process
-                                    enhanced_text = text_processor.proofread_text(
-                                        st.session_state.transcript,
-                                        progress_callback=update_enhancement_progress)
-
-                                    if enhanced_text:
+                                    
+                                    try:
+                                        text_processor = TextProcessor()
+                                        enhanced_text = text_processor.proofread_text(
+                                            st.session_state.transcript,
+                                            update_enhancement_progress)
                                         st.session_state.enhanced_text = enhanced_text
-                                        st.markdown('<div class="glass-container">',
-                                                    unsafe_allow_html=True)
-                                        st.markdown("#### 整形済みテキスト")
-                                        st.markdown(
-                                            enhanced_text.replace('\n', '  \n'))
-
-                                        # Download button for enhanced text
-                                        st.download_button(
-                                            "📥 整形済みテキストをダウンロード",
-                                            enhanced_text,
-                                            file_name="enhanced_text.txt",
-                                            mime="text/plain")
-
-                                        # Update progress container
-                                        st.markdown('</div>', unsafe_allow_html=True)
+                                        update_step_progress('proofread')
+                                        st.markdown("#### 整形後のテキスト")
+                                        st.markdown(enhanced_text.replace('\n', '  \n'))
+                                    except Exception as e:
+                                        st.error(f"テキスト整形に失敗しました: {str(e)}")
+                                        logger.error(f"Error in text enhancement: {str(e)}")
 
                             except Exception as e:
-                                st.error(f"テキスト整形中にエラーが発生しました: {str(e)}")
-                                logger.error(f"Error in text enhancement: {str(e)}")
+                                st.error(f"エラーが発生しました: {str(e)}")
+                                logger.error(f"Error in enhancement process: {str(e)}")
 
     except Exception as e:
-        st.error(f"初期化エラー: {str(e)}")
-        logger.error(f"Initialization error: {str(e)}")
+        st.error(f"アプリケーションエラー: {str(e)}")
+        logger.error(f"Application error: {str(e)}")
 
 except Exception as e:
     st.error(f"初期化エラー: {str(e)}")
