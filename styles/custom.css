@@ -702,56 +702,73 @@ div.stApp {
 
 /* Quality Score Styles */
 .quality-score-container {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 15px;
-    padding: 20px;
-    margin: 15px 0;
+    background: rgba(255, 255, 255, 0.95) !important;
+    border-radius: 12px !important;
+    padding: 2rem !important;
+    margin-top: 3rem !important;  /* Increased spacing from keywords section */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
 }
 
 .score-item {
-    margin-bottom: 15px;
+    margin-bottom: 2rem !important;
 }
 
 .score-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 5px;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin-bottom: 1rem !important;
 }
 
 .score-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 500;
+    font-size: 1.3rem !important;
+    font-weight: 600 !important;
+    color: #1a365d !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
 }
 
 .score-range {
-    font-size: 0.9em;
-    opacity: 0.8;
+    font-size: 1.2rem !important;
+    font-weight: 500 !important;
+    padding: 0.3rem 0.8rem !important;
+    border-radius: 6px !important;
 }
 
 .score-description {
-    font-size: 0.9em;
-    margin-bottom: 10px;
-    opacity: 0.9;
+    font-size: 1.1rem !important;
+    color: #4a5568 !important;
+    margin-bottom: 0.8rem !important;
+    line-height: 1.5 !important;
 }
 
+/* Score range colors */
+.score-range.high { background: #c6f6d5 !important; color: #22543d !important; }
+.score-range.medium { background: #fefcbf !important; color: #744210 !important; }
+.score-range.low { background: #fed7d7 !important; color: #822727 !important; }
+
+/* Score bar styles */
 .score-bar {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    height: 10px;
-    width: 100%;
-    overflow: hidden;
+    background: #e2e8f0 !important;
+    height: 12px !important;
+    border-radius: 6px !important;
+    overflow: hidden !important;
 }
 
 .score-fill {
-    height: 100%;
-    transition: width 0.5s ease;
+    height: 100% !important;
+    border-radius: 6px !important;
+    transition: width 0.3s ease !important;
 }
 
-.score-value {
-    font-weight: bold;
+.score-fill.high { background: #48bb78 !important; }
+.score-fill.medium { background: #ecc94b !important; }
+.score-fill.low { background: #f56565 !important; }
+
+/* Add spacing between sections */
+.keyword-card:last-child {
+    margin-bottom: 3rem !important;
 }
 
 /* Score colors */
