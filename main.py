@@ -168,42 +168,44 @@ try:
                 
             summary_data = json.loads(summary_text.strip())
             
-            # Display overview
+            # Always display overview
             st.markdown("## 📑 動画の概要")
             st.markdown(summary_data.get("動画の概要", ""))
             
-            # Display points with proper type conversion
-            st.markdown("## 🎯 主要ポイント")
-            for point in summary_data.get("ポイント", []):
-                try:
-                    importance = int(point.get("重要度", 3))  # Convert to int with default value
-                except (ValueError, TypeError):
-                    importance = 3  # Default if conversion fails
-                
-                emoji = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "ℹ️"
-                
-                st.markdown(f'''
-                    <div class="summary-card">
-                        <div class="importance-{'high' if importance >= 4 else 'medium' if importance >= 2 else 'low'}">
-                            {emoji} <strong>ポイント{point.get("番号", "")}: {point.get("タイトル", "")}</strong>
+            # Only display points and keywords for detailed style
+            if st.session_state.current_summary_style == "detailed":
+                # Display points with proper type conversion
+                st.markdown("## 🎯 主要ポイント")
+                for point in summary_data.get("ポイント", []):
+                    try:
+                        importance = int(point.get("重要度", 3))  # Convert to int with default value
+                    except (ValueError, TypeError):
+                        importance = 3  # Default if conversion fails
+                    
+                    emoji = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "ℹ️"
+                    
+                    st.markdown(f'''
+                        <div class="summary-card">
+                            <div class="importance-{'high' if importance >= 4 else 'medium' if importance >= 2 else 'low'}">
+                                {emoji} <strong>ポイント{point.get("番号", "")}: {point.get("タイトル", "")}</strong>
+                            </div>
+                            <p>{point.get("内容", "")}</p>
+                            {f'<p class="supplementary-info">{point.get("補足情報", "")}</p>' if "補足情報" in point else ""}
                         </div>
-                        <p>{point.get("内容", "")}</p>
-                        {f'<p class="supplementary-info">{point.get("補足情報", "")}</p>' if "補足情報" in point else ""}
-                    </div>
-                ''', unsafe_allow_html=True)
+                    ''', unsafe_allow_html=True)
+                
+                st.markdown("## 🔑 重要なキーワード")
+                for keyword in summary_data.get("キーワード", []):
+                    st.markdown(f'''
+                        <div class="keyword-card">
+                            <strong>{keyword.get("用語", "")}</strong>: {keyword.get("説明", "")}
+                            {f'<div class="related-terms">関連用語: {", ".join(keyword.get("関連用語", []))}</div>' if "関連用語" in keyword else ""}
+                        </div>
+                    ''', unsafe_allow_html=True)
             
-            # Display conclusion and keywords sections
+            # Always display conclusion
             st.markdown("## 💡 結論")
             st.markdown(summary_data.get("結論", ""))
-            
-            st.markdown("## 🔑 重要なキーワード")
-            for keyword in summary_data.get("キーワード", []):
-                st.markdown(f'''
-                    <div class="keyword-card">
-                        <strong>{keyword.get("用語", "")}</strong>: {keyword.get("説明", "")}
-                        {f'<div class="related-terms">関連用語: {", ".join(keyword.get("関連用語", []))}</div>' if "関連用語" in keyword else ""}
-                    </div>
-                ''', unsafe_allow_html=True)
             
             # Display quality scores
             quality_scores = st.session_state.quality_scores
