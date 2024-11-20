@@ -6,6 +6,7 @@ import streamlit as st
 import os
 import time
 import logging
+import json
 
 # Set up logging
 logging.basicConfig(
@@ -148,20 +149,57 @@ try:
         except Exception as e:
             logger.error(f"Error rendering step header: {str(e)}")
 
-    def render_quality_score(score: float, label: str):
+    def get_score_indicator(score: float) -> tuple:
+        """Get visual indicator and color class based on score"""
+        if score >= 7:
+            return "✅", "high"
+        elif score >= 5:
+            return "⚠️", "medium"
+        return "❌", "low"
+
+    def render_quality_score(score: float, label: str, description: str):
         """品質スコアを視覚的に表示"""
-        color = "red" if score < 5 else "orange" if score < 7 else "green"
+        indicator, score_class = get_score_indicator(score)
+        
         st.markdown(f"""
-        <div style="margin-bottom: 10px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span>{label}</span>
-                <span style="color: {color}; font-weight: bold;">{score:.1f}</span>
+        <div class="score-item">
+            <div class="score-header">
+                <div class="score-title">
+                    {indicator} {label}
+                    <div class="score-range score-{score_class}">
+                        {score:.1f}/10
+                    </div>
+                </div>
             </div>
-            <div style="background: rgba(255,255,255,0.1); border-radius: 10px; height: 10px; width: 100%; overflow: hidden;">
-                <div style="background: {color}; width: {score*10}%; height: 100%; transition: width 0.5s ease;"></div>
+            <div class="score-description">{description}</div>
+            <div class="score-bar">
+                <div class="score-fill {score_class}" style="width: {score*10}%;"></div>
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+    def display_summary(summary_text: str):
+        """Display formatted summary with importance indicators"""
+        try:
+            summary_data = json.loads(summary_text)
+            st.markdown("## 📑 要約のポイント")
+            
+            for point in summary_data.get("主要ポイント", []):
+                importance = point.get("重要度", 3)
+                emoji = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "ℹ️"
+                
+                st.markdown(f"""
+                    <div class="summary-card">
+                        <h3 class="importance-{'high' if importance >= 4 else 'medium' if importance >= 2 else 'low'}">
+                            {emoji} {point.get("タイトル", "No Title")}
+                        </h3>
+                        <p>{point.get("説明", "No Description")}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+        except json.JSONDecodeError:
+            st.error("要約データの解析に失敗しました")
+        except Exception as e:
+            st.error(f"要約の表示中にエラーが発生しました: {str(e)}")
 
     # Main application logic
     try:
@@ -271,7 +309,7 @@ try:
 
                     if st.session_state.summary:
                         st.markdown("### AI Summary")
-                        st.markdown(st.session_state.summary)
+                        display_summary(st.session_state.summary)
                         
                         # Display quality scores
                         st.markdown("### 要約品質スコア")
@@ -279,15 +317,31 @@ try:
                         
                         with st.container():
                             st.markdown("""
-                            <div style="background: rgba(255,255,255,0.1); border-radius: 15px; padding: 20px; margin: 10px 0;">
-                                <h4 style="margin-bottom: 15px;">品質評価指標</h4>
+                            <div class="quality-score-container">
+                                <h4>品質評価指標</h4>
                             """, unsafe_allow_html=True)
                             
-                            render_quality_score(quality_scores["構造の完全性"], "構造の完全性")
-                            render_quality_score(quality_scores["情報量"], "情報量")
-                            render_quality_score(quality_scores["簡潔性"], "簡潔性")
+                            render_quality_score(
+                                quality_scores["構造の完全性"],
+                                "構造の完全性",
+                                "要約の構造がどれだけ整っているか（見出し、段落、論理的な流れ）"
+                            )
+                            render_quality_score(
+                                quality_scores["情報量"],
+                                "情報量",
+                                "重要な情報をどれだけ含んでいるか（キーポイント、詳細、例示）"
+                            )
+                            render_quality_score(
+                                quality_scores["簡潔性"],
+                                "簡潔性",
+                                "簡潔に要点を示せているか（冗長性、重複の少なさ）"
+                            )
                             st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
-                            render_quality_score(quality_scores["総合スコア"], "総合スコア")
+                            render_quality_score(
+                                quality_scores["総合スコア"],
+                                "総合スコア",
+                                "全体的な要約の質（構造、情報量、簡潔性の総合評価）"
+                            )
                             
                             st.markdown("</div>", unsafe_allow_html=True)
 

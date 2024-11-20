@@ -644,60 +644,6 @@ div.stApp {
     border-color: rgba(46, 204, 113, 0.3) !important;
 }
 
-.progress-message:has(span:contains("⚠️")) {
-    background: rgba(241, 196, 15, 0.15) !important;
-    border-color: rgba(241, 196, 15, 0.3) !important;
-}
-
-.progress-message:has(span:contains("❌")) {
-    background: rgba(231, 76, 60, 0.15) !important;
-    border-color: rgba(231, 76, 60, 0.3) !important;
-}
-
-/* Progress Bar Styles */
-.stProgress > div > div > div {
-    background-color: rgba(74, 144, 226, 0.3) !important;
-    border-radius: 8px !important;
-    height: 8px !important;
-}
-
-.stProgress > div > div > div > div {
-    background: linear-gradient(90deg, #4a90e2, #90caf9) !important;
-    border-radius: 8px !important;
-    transition: width 0.3s ease !important;
-}
-
-/* Enhanced Progress Tracking Styles */
-.progress-container {
-    background: rgba(255, 255, 255, 0.1) !important;
-    border-radius: 12px !important;
-    padding: 1.5rem !important;
-    margin: 1rem 0 !important;
-    backdrop-filter: blur(10px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-}
-
-.progress-message {
-    background: rgba(255, 255, 255, 0.1) !important;
-    border-radius: 8px !important;
-    padding: 0.8rem 1.2rem !important;
-    margin: 0.5rem 0 !important;
-    font-size: 1rem !important;
-    color: white !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 0.5rem !important;
-    backdrop-filter: blur(5px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-    transition: all 0.3s ease !important;
-}
-
-/* Progress States */
-.progress-message:has(span:contains("✨")) {
-    background: rgba(46, 204, 113, 0.15) !important;
-    border-color: rgba(46, 204, 113, 0.3) !important;
-}
-
 .progress-message:has(span:contains("🔍")) {
     background: rgba(52, 152, 219, 0.15) !important;
     border-color: rgba(52, 152, 219, 0.3) !important;
@@ -734,3 +680,85 @@ div.stApp {
     margin-top: 1rem !important;
     border: 1px solid rgba(74, 144, 226, 0.2) !important;
 }
+
+/* Summary Card Styles */
+.summary-card {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 15px;
+    margin: 10px 0;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    transition: transform 0.2s ease;
+}
+
+.summary-card:hover {
+    transform: translateY(-2px);
+}
+
+.importance-high { color: #ff4b4b; }
+.importance-medium { color: #ffd700; }
+.importance-low { color: #90caf9; }
+
+/* Quality Score Styles */
+.quality-score-container {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 20px;
+    margin: 15px 0;
+}
+
+.score-item {
+    margin-bottom: 15px;
+}
+
+.score-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.score-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+}
+
+.score-range {
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+.score-description {
+    font-size: 0.9em;
+    margin-bottom: 10px;
+    opacity: 0.9;
+}
+
+.score-bar {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    height: 10px;
+    width: 100%;
+    overflow: hidden;
+}
+
+.score-fill {
+    height: 100%;
+    transition: width 0.5s ease;
+}
+
+.score-value {
+    font-weight: bold;
+}
+
+/* Score colors */
+.score-high { color: #2ecc71; }
+.score-medium { color: #f1c40f; }
+.score-low { color: #e74c3c; }
+
+.score-fill.high { background: #2ecc71; }
+.score-fill.medium { background: #f1c40f; }
+.score-fill.low { background: #e74c3c; }
