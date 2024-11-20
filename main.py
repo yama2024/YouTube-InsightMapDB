@@ -162,7 +162,11 @@ try:
     def display_summary(summary_text: str):
         """Display formatted summary with importance indicators"""
         try:
-            summary_data = json.loads(summary_text)
+            # Ensure the summary is valid JSON
+            if not summary_text or not summary_text.strip():
+                raise ValueError("要約テキストが空です")
+                
+            summary_data = json.loads(summary_text.strip())
             
             # Display overview
             st.markdown("## 📑 動画の概要")
@@ -180,6 +184,7 @@ try:
                             {emoji} <strong>ポイント{point.get("番号", "")}: {point.get("タイトル", "")}</strong>
                         </div>
                         <p>{point.get("内容", "")}</p>
+                        {f'<p class="supplementary-info">{point.get("補足情報", "")}</p>' if "補足情報" in point else ""}
                     </div>
                 ''', unsafe_allow_html=True)
             
@@ -192,10 +197,11 @@ try:
                 st.markdown(f'''
                     <div class="keyword-card">
                         <strong>{keyword.get("用語", "")}</strong>: {keyword.get("説明", "")}
+                        {f'<div class="related-terms">関連用語: {", ".join(keyword.get("関連用語", []))}</div>' if "関連用語" in keyword else ""}
                     </div>
                 ''', unsafe_allow_html=True)
             
-            # Display quality scores inside a section
+            # Display quality scores
             quality_scores = st.session_state.quality_scores
             if quality_scores:
                 st.markdown('''
@@ -227,6 +233,9 @@ try:
                 
                 st.markdown('</div></div>', unsafe_allow_html=True)
                 
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parsing error: {str(e)}")
+            st.error("要約データの形式が正しくありません。再試行してください。")
         except Exception as e:
             logger.error(f"Summary display error: {str(e)}")
             st.error("要約の表示中にエラーが発生しました")
