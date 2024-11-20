@@ -83,21 +83,25 @@ class TextProcessor:
     def _create_summary_prompt(self, text: str) -> str:
         """Create a prompt for the summary generation"""
         return f'''
-テキストを要約してJSON形式で出力してください。
-以下の形式で出力してください：
+テキストを要約して、以下の形式で出力してください：
 
 {{
     "主要ポイント": [
         {{
-            "タイトル": "要点",
-            "説明": "説明",
+            "タイトル": "トピック",
+            "説明": "詳細説明",
             "重要度": 3
         }}
     ]
 }}
 
-テキスト:
+テキストの内容:
 {text}
+
+注意事項:
+- 重要度は1から5の整数で表現
+- タイトルは簡潔に
+- 説明は具体的に
 '''
 
     def _process_chunk_with_retry(self, chunk: str, chunk_index: int) -> Dict:
@@ -132,8 +136,8 @@ class TextProcessor:
         return {
             "主要ポイント": [{
                 "タイトル": f"チャンク {chunk_index + 1}",
-                "説明": chunk[:50] + "...",
-                "重要度": 3
+                "説明": "処理中にエラーが発生しました。",
+                "重要度": 1
             }]
         }
 
@@ -172,9 +176,9 @@ class TextProcessor:
             # Return minimal valid structure
             return {
                 "主要ポイント": [{
-                    "タイトル": "テキスト要約",
-                    "説明": "テキストの主要なポイント",
-                    "重要度": 3
+                    "タイトル": "エラー",
+                    "説明": "要約の生成中にエラーが発生しました",
+                    "重要度": 1
                 }]
             }
 
@@ -282,18 +286,21 @@ class TextProcessor:
                             summaries.append(summary)
                     except Exception as e:
                         logger.error(f"Chunk processing failed: {str(e)}")
-                        
+
             if not summaries:
+                logger.error("No valid summaries were generated")
                 raise ValueError("要約の生成に失敗しました")
+
+            try:
+                merged_summary = self._merge_summaries(summaries)
+                summary_json = json.dumps(merged_summary, ensure_ascii=False, indent=2)
+                quality_scores = self.evaluate_summary_quality(text, summary_json)
                 
-            merged_summary = self._merge_summaries(summaries)
-            formatted_summary = json.dumps(merged_summary, ensure_ascii=False, indent=2)
-            
-            # Evaluate summary quality
-            quality_scores = self.evaluate_summary_quality(text, formatted_summary)
-            
-            self._cache[cache_key] = formatted_summary
-            return formatted_summary, quality_scores
+                self._cache[cache_key] = summary_json
+                return summary_json, quality_scores
+            except Exception as e:
+                logger.error(f"Error in summary finalization: {str(e)}")
+                raise ValueError("要約の生成に失敗しました")
             
         except Exception as e:
             logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")

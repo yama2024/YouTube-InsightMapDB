@@ -188,18 +188,17 @@ try:
                 importance = point.get("重要度", 3)
                 emoji = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "ℹ️"
                 
-                st.markdown(f"""
+                st.markdown(f'''
                     <div class="summary-card">
-                        <h3 class="importance-{'high' if importance >= 4 else 'medium' if importance >= 2 else 'low'}">
-                            {emoji} {point.get("タイトル", "No Title")}
-                        </h3>
-                        <p>{point.get("説明", "No Description")}</p>
+                        <div class="importance-{'high' if importance >= 4 else 'medium' if importance >= 2 else 'low'}">
+                            {emoji} <strong>{point.get("タイトル", "")}</strong>
+                        </div>
+                        <p>{point.get("説明", "")}</p>
                     </div>
-                """, unsafe_allow_html=True)
-        except json.JSONDecodeError:
-            st.error("要約データの解析に失敗しました")
+                ''', unsafe_allow_html=True)
         except Exception as e:
-            st.error(f"要約の表示中にエラーが発生しました: {str(e)}")
+            logger.error(f"Summary display error: {str(e)}")
+            st.error("要約の表示中にエラーが発生しました")
 
     # Main application logic
     try:
