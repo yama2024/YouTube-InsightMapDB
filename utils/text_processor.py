@@ -107,18 +107,15 @@ class TextProcessor:
             required_keys = ["動画の概要", "ポイント", "結論", "キーワード"]
             for key in required_keys:
                 if key in summary_data:
-                    structure_score += 2
+                    structure_score += 2.5
 
             points = summary_data.get("ポイント", [])
-            if len(points) == 3:  # 正確に3つのポイントがある
-                structure_score += 1
-
-            # ポイントの構造チェック
-            point_structure_score = 0
-            for point in points:
-                if all(key in point for key in ["番号", "タイトル", "内容", "重要度"]):
-                    point_structure_score += 1
-            structure_score += point_structure_score / len(points) if points else 0
+            if points:
+                point_structure_score = 0
+                for point in points:
+                    if all(key in point for key in ["番号", "タイトル", "内容", "重要度"]):
+                        point_structure_score += 1
+                structure_score += min(point_structure_score / len(points), 2.5)
 
             scores["構造の完全性"] = min(structure_score, 10.0)
 
@@ -126,10 +123,12 @@ class TextProcessor:
             info_score = 0
             # 概要の情報量
             overview_length = len(summary_data.get("動画の概要", ""))
-            if 100 <= overview_length <= 200:
+            if 150 <= overview_length <= 200:
                 info_score += 3
-            elif 50 <= overview_length < 100:
+            elif 100 <= overview_length < 150:
                 info_score += 2
+            elif 50 <= overview_length < 100:
+                info_score += 1
 
             # ポイントの情報量チェック
             for point in points:
@@ -142,16 +141,16 @@ class TextProcessor:
 
             # キーワードの評価
             keywords = summary_data.get("キーワード", [])
-            if 3 <= len(keywords) <= 10:
+            if 5 <= len(keywords) <= 10:
                 info_score += 2
-            elif 1 <= len(keywords) < 3:
+            elif 3 <= len(keywords) < 5:
                 info_score += 1
 
             # 結論の情報量
             conclusion_length = len(summary_data.get("結論", ""))
-            if 50 <= conclusion_length <= 100:
+            if 70 <= conclusion_length <= 100:
                 info_score += 2
-            elif 20 <= conclusion_length < 50:
+            elif 40 <= conclusion_length < 70:
                 info_score += 1
 
             scores["情報量"] = min(info_score, 10.0)
@@ -180,11 +179,15 @@ class TextProcessor:
             scores["簡潔性"] = max(concise_score, 0.0)
 
             # 総合スコアの計算（重み付け平均）
-            scores["総合スコア"] = (
-                scores["構造の完全性"] * 0.4 +
+            scores["総合スコア"] = round(
+                (scores["構造の完全性"] * 0.4 +
                 scores["情報量"] * 0.3 +
-                scores["簡潔性"] * 0.3
+                scores["簡潔性"] * 0.3), 1
             )
+
+            # すべてのスコアを小数点第1位までに丸める
+            for key in scores:
+                scores[key] = round(scores[key], 1)
 
             return scores
 
