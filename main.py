@@ -182,20 +182,30 @@ try:
         """Display formatted summary with importance indicators"""
         try:
             summary_data = json.loads(summary_text)
-            st.markdown("## 📑 要約のポイント")
             
-            for point in summary_data.get("主要ポイント", []):
+            # Display overview
+            st.markdown("## 📑 動画の概要")
+            st.markdown(summary_data.get("動画の概要", ""))
+            
+            # Display points
+            st.markdown("## 🎯 主要ポイント")
+            for i, point in enumerate(summary_data.get("ポイント", []), 1):
                 importance = point.get("重要度", 3)
                 emoji = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "ℹ️"
                 
                 st.markdown(f'''
                     <div class="summary-card">
                         <div class="importance-{'high' if importance >= 4 else 'medium' if importance >= 2 else 'low'}">
-                            {emoji} <strong>{point.get("タイトル", "")}</strong>
+                            {emoji} <strong>ポイント{i}: {point.get("タイトル", "")}</strong>
                         </div>
                         <p>{point.get("説明", "")}</p>
                     </div>
                 ''', unsafe_allow_html=True)
+            
+            # Display conclusion
+            st.markdown("## 💡 結論")
+            st.markdown(summary_data.get("結論", ""))
+            
         except Exception as e:
             logger.error(f"Summary display error: {str(e)}")
             st.error("要約の表示中にエラーが発生しました")

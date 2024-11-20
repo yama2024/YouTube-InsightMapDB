@@ -83,25 +83,37 @@ class TextProcessor:
     def _create_summary_prompt(self, text: str) -> str:
         """Create a prompt for the summary generation"""
         return f'''
-テキストを要約して、以下の形式で出力してください：
+テキストを分析し、以下の形式で要約してください：
 
 {{
-    "主要ポイント": [
+    "動画の概要": "概要文",
+    "ポイント": [
         {{
-            "タイトル": "トピック",
+            "タイトル": "ポイント1",
+            "説明": "詳細説明",
+            "重要度": 3
+        }},
+        {{
+            "タイトル": "ポイント2",
+            "説明": "詳細説明",
+            "重要度": 3
+        }},
+        {{
+            "タイトル": "ポイント3",
             "説明": "詳細説明",
             "重要度": 3
         }}
-    ]
+    ],
+    "結論": "まとめ"
 }}
 
-テキストの内容:
+分析対象テキスト:
 {text}
 
 注意事項:
 - 重要度は1から5の整数で表現
-- タイトルは簡潔に
-- 説明は具体的に
+- 説明は具体的かつ簡潔に
+- 概要と結論は要点を押さえて
 '''
 
     def _process_chunk_with_retry(self, chunk: str, chunk_index: int) -> Dict:
@@ -134,11 +146,13 @@ class TextProcessor:
         
         # Return minimal valid structure if all retries fail
         return {
-            "主要ポイント": [{
+            "動画の概要": "処理中にエラーが発生しました",
+            "ポイント": [{
                 "タイトル": f"チャンク {chunk_index + 1}",
                 "説明": "処理中にエラーが発生しました。",
                 "重要度": 1
-            }]
+            }],
+            "結論": "処理に失敗しました"
         }
 
     def _validate_summary_response(self, response_text: str) -> dict:
@@ -159,15 +173,23 @@ class TextProcessor:
             
             # Ensure basic structure exists
             if not isinstance(data, dict):
-                data = {"主要ポイント": []}
+                data = {
+                    "動画の概要": "概要を生成できませんでした",
+                    "ポイント": [],
+                    "結論": "結論を生成できませんでした"
+                }
             
             # Add missing sections with defaults
-            if "主要ポイント" not in data or not data["主要ポイント"]:
-                data["主要ポイント"] = [{
+            if "動画の概要" not in data:
+                data["動画の概要"] = "概要を生成できませんでした"
+            if "ポイント" not in data or not data["ポイント"]:
+                data["ポイント"] = [{
                     "タイトル": "主要ポイント",
                     "説明": "テキストの要約",
                     "重要度": 3
                 }]
+            if "結論" not in data:
+                data["結論"] = "結論を生成できませんでした"
                 
             return data
             
@@ -175,20 +197,38 @@ class TextProcessor:
             logger.error(f"Response validation failed: {str(e)}")
             # Return minimal valid structure
             return {
-                "主要ポイント": [{
+                "動画の概要": "概要を生成できませんでした",
+                "ポイント": [{
                     "タイトル": "エラー",
                     "説明": "要約の生成中にエラーが発生しました",
                     "重要度": 1
-                }]
+                }],
+                "結論": "結論を生成できませんでした"
             }
 
     def _merge_summaries(self, summaries: List[Dict]) -> Dict:
         """Merge multiple chunk summaries into one coherent summary"""
-        merged = {"主要ポイント": []}
+        merged = {
+            "動画の概要": "",
+            "ポイント": [],
+            "結論": ""
+        }
         
+        # Collect all points
+        all_points = []
         for summary in summaries:
-            if "主要ポイント" in summary:
-                merged["主要ポイント"].extend(summary["主要ポイント"])
+            all_points.extend(summary.get("ポイント", []))
+        
+        # Take the most important points (up to 5)
+        sorted_points = sorted(all_points, key=lambda x: x.get("重要度", 0), reverse=True)
+        merged["ポイント"] = sorted_points[:5]
+        
+        # Combine overview and conclusion from the most detailed summaries
+        overview_texts = [s.get("動画の概要", "") for s in summaries if s.get("動画の概要")]
+        conclusion_texts = [s.get("結論", "") for s in summaries if s.get("結論")]
+        
+        merged["動画の概要"] = max(overview_texts, key=len) if overview_texts else "概要なし"
+        merged["結論"] = max(conclusion_texts, key=len) if conclusion_texts else "結論なし"
                 
         return merged
 
@@ -205,21 +245,27 @@ class TextProcessor:
 
             # 構造の完全性をチェック (30%)
             structure_score = 0.0
-            if isinstance(summary_data, dict) and "主要ポイント" in summary_data:
-                points = summary_data["主要ポイント"]
+            required_sections = {"動画の概要", "ポイント", "結論"}
+            section_score = len(set(summary_data.keys()) & required_sections) / len(required_sections)
+            
+            if "ポイント" in summary_data:
+                points = summary_data["ポイント"]
                 if isinstance(points, list) and points:
                     required_fields = {"タイトル", "説明", "重要度"}
                     field_scores = []
                     for point in points:
                         field_score = len(set(point.keys()) & required_fields) / len(required_fields)
                         field_scores.append(field_score)
-                    structure_score = sum(field_scores) / len(field_scores)
+                    point_score = sum(field_scores) / len(field_scores)
+                    structure_score = (section_score + point_score) / 2
+                
             quality_scores["構造の完全性"] = structure_score * 10
 
             # 情報量を評価 (40%)
-            total_content = ""
-            for point in summary_data.get("主要ポイント", []):
-                total_content += point.get("タイトル", "") + " " + point.get("説明", "")
+            total_content = summary_data.get("動画の概要", "") + " "
+            for point in summary_data.get("ポイント", []):
+                total_content += point.get("タイトル", "") + " " + point.get("説明", "") + " "
+            total_content += summary_data.get("結論", "")
             
             # 情報量スコアを計算
             original_length = len(original_text)
