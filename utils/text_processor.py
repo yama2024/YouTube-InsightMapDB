@@ -57,63 +57,59 @@ class TextProcessor:
                 return match.group(1)
         raise ValueError("無効なYouTube URLです")
 
-    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 1000) -> List[str]:
-        """テキストをコンテキストを考慮したチャンクに分割"""
-        # 文単位で分割
+    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 800) -> List[str]:
         sentences = re.split('([。!?！？]+)', text)
         sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
         
         chunks = []
         current_chunk = []
         current_length = 0
+        overlap = 100  # Add overlap between chunks
         
         for sentence in sentences:
             if current_length + len(sentence) > chunk_size and current_chunk:
-                chunks.append(''.join(current_chunk))
-                current_chunk = []
-                current_length = 0
+                chunk_text = ''.join(current_chunk)
+                chunks.append(chunk_text)
+                # Keep last few sentences for overlap
+                current_chunk = current_chunk[-2:]  
+                current_length = sum(len(s) for s in current_chunk)
             current_chunk.append(sentence)
             current_length += len(sentence)
-            
+        
         if current_chunk:
             chunks.append(''.join(current_chunk))
-            
+        
         return chunks
 
     def _create_summary_prompt(self, text: str) -> str:
         return f'''
-以下のテキストから重要なポイントを抽出し、JSONフォーマットで出力してください。
-要約は元のテキストの30%程度の長さにしてください。
+テキストの内容を解析し、以下の形式で要約してください。
+長さは元のテキストの30%程度を目標とし、重要なポイントを簡潔に抽出してください。
 
-必須ルール:
-1. 必ず有効なJSONを出力すること
-2. 各説明は簡潔に
-3. 重要度は1-5の整数で表現
-
-出力形式:
+出力形式（必ずJSONで出力）:
 {{
     "主要ポイント": [
         {{
-            "タイトル": "トピックタイトル",
-            "説明": "30文字以内の説明",
-            "重要度": 3
+            "タイトル": "重要な論点や主題を端的に",
+            "説明": "具体的な内容を30文字以内で",
+            "重要度": 3  // 1-5の整数で表現
         }}
     ],
     "詳細分析": [
         {{
-            "セクション": "セクション名",
-            "キーポイント": ["重要ポイント"]
+            "セクション": "トピック名",
+            "キーポイント": ["具体的な要点を箇条書きで"]
         }}
     ],
     "キーワード": [
         {{
-            "用語": "キーワード",
-            "説明": "20文字以内の説明"
+            "用語": "重要な用語",
+            "説明": "20文字以内の解説"
         }}
     ]
 }}
 
-分析対象テキスト:
+解析対象テキスト:
 {text}
 '''
 
@@ -126,30 +122,26 @@ class TextProcessor:
             if json_str.endswith('```'):
                 json_str = json_str[:-3]
             
-            # Remove any leading/trailing whitespace or special characters
-            json_str = re.sub(r'^[^{]*({.*})[^}]*$', r'\1', json_str, flags=re.DOTALL)
-            
-            # Parse JSON
+            # Basic JSON structure check
             data = json.loads(json_str)
             
-            # Validate structure
+            # Ensure minimum required structure
             if not isinstance(data, dict):
                 return None
                 
-            # Validate required fields and types
-            if not all(key in data for key in ["主要ポイント", "詳細分析", "キーワード"]):
+            if not "主要ポイント" in data or not isinstance(data["主要ポイント"], list):
                 return None
                 
-            if not isinstance(data["主要ポイント"], list) or not data["主要ポイント"]:
+            # Ensure at least one main point exists
+            if not data["主要ポイント"]:
                 return None
                 
-            # Validate main points format
-            for point in data["主要ポイント"]:
-                if not all(key in point for key in ["タイトル", "説明", "重要度"]):
-                    return None
-                if not isinstance(point["重要度"], int) or not 1 <= point["重要度"] <= 5:
-                    return None
-                    
+            # Initialize missing sections if needed
+            if "詳細分析" not in data:
+                data["詳細分析"] = []
+            if "キーワード" not in data:
+                data["キーワード"] = []
+                
             return data
         except Exception as e:
             logger.error(f"Response validation failed: {str(e)}")
