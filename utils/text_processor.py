@@ -1,53 +1,53 @@
-import os
-import json
-import logging
-from typing import Dict, List
 import google.generativeai as genai
+import os
 import re
-from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.formatters import TextFormatter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
 import time
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from youtube_transcript_api import YouTubeTranscriptApi
+from typing import Dict, List, Optional
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class TextProcessor:
-    def __init__(self, max_workers=3):
+    def __init__(self, max_workers: int = 3, chunk_size: int = 1000):
+        """Initialize the TextProcessor with parallel processing capabilities"""
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key:
+            raise ValueError("Gemini API key is not set in environment variables")
+            
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-pro')
         self._cache = {}
         self.max_workers = max_workers
-        # Initialize Gemini
-        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.chunk_size = chunk_size
 
     def get_transcript(self, video_url: str) -> str:
-        """動画の文字起こしを取得"""
+        """Get transcript from YouTube video"""
         try:
             video_id = self._extract_video_id(video_url)
-            
-            # Check cache first
-            cache_key = f"transcript_{video_id}"
-            if cache_key in self._cache:
-                return self._cache[cache_key]
-            
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            transcript = transcript_list.find_transcript(['ja', 'en'])
-            transcript_data = transcript.fetch()
             
-            formatter = TextFormatter()
-            formatted_transcript = formatter.format_transcript(transcript_data)
-            
-            # Cache the result
-            self._cache[cache_key] = formatted_transcript
-            return formatted_transcript
+            # Try Japanese first, then English, then manual
+            for lang in ['ja', 'en', 'a.ja', 'a.en']:
+                try:
+                    transcript = transcript_list.find_transcript([lang])
+                    return ' '.join(entry['text'] for entry in transcript.fetch())
+                except Exception as e:
+                    logger.debug(f"Failed to get transcript in {lang}: {str(e)}")
+                    continue
+                    
+            raise ValueError("No suitable transcript found")
             
         except Exception as e:
-            logger.error(f"文字起こしの取得中にエラーが発生しました: {str(e)}")
-            raise Exception(f"文字起こしの取得に失敗しました: {str(e)}")
+            logger.error(f"Transcript extraction failed: {str(e)}")
+            raise ValueError(f"Failed to get transcript: {str(e)}")
 
     def _extract_video_id(self, url: str) -> str:
-        """YouTube URLからビデオIDを抽出"""
+        """Extract video ID from YouTube URL"""
         patterns = [
             r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
             r'(?:embed\/)([0-9A-Za-z_-]{11})',
@@ -58,51 +58,40 @@ class TextProcessor:
             match = re.search(pattern, url)
             if match:
                 return match.group(1)
-        raise ValueError("無効なYouTube URLです")
+        raise ValueError("Invalid YouTube URL format")
 
-    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 500) -> List[str]:
-        sentences = re.split('([。!?！？]+)', text)
-        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
-        
+    def _split_text(self, text: str) -> List[str]:
+        """Split text into chunks with proper sentence boundaries"""
+        sentences = re.split(r'([。.!?！？]+)', text)
         chunks = []
-        current_chunk = []
-        current_length = 0
+        current_chunk = ""
         
-        for sentence in sentences:
-            if current_length + len(sentence) > chunk_size and current_chunk:
-                chunks.append(''.join(current_chunk))
-                current_chunk = []
-                current_length = 0
-            current_chunk.append(sentence)
-            current_length += len(sentence)
-        
+        for i in range(0, len(sentences)-1, 2):
+            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
+            if len(current_chunk) + len(sentence) > self.chunk_size:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = sentence
+            else:
+                current_chunk += sentence
+                
         if current_chunk:
-            chunks.append(''.join(current_chunk))
-        
+            chunks.append(current_chunk)
+            
         return chunks
 
     def _create_summary_prompt(self, text: str) -> str:
+        """Create a prompt for the summary generation"""
         return f'''
 テキストを要約してJSON形式で出力してください。
+以下の形式で出力してください：
 
 {{
     "主要ポイント": [
         {{
             "タイトル": "要点",
-            "説明": "説明文",
+            "説明": "説明",
             "重要度": 3
-        }}
-    ],
-    "詳細分析": [
-        {{
-            "セクション": "セクション名",
-            "キーポイント": ["ポイント1", "ポイント2"]
-        }}
-    ],
-    "キーワード": [
-        {{
-            "用語": "キーワード",
-            "説明": "説明"
         }}
     ]
 }}
@@ -111,53 +100,8 @@ class TextProcessor:
 {text}
 '''
 
-    def _validate_summary_response(self, response_text: str) -> dict:
-        try:
-            # Extract JSON from response
-            json_str = response_text.strip()
-            json_match = re.search(r'({[\s\S]*})', json_str)
-            if json_match:
-                json_str = json_match.group(1)
-                
-            # Remove code blocks if present
-            if '```' in json_str:
-                json_str = re.sub(r'```(?:json)?(.*?)```', r'\1', json_str, flags=re.DOTALL)
-            
-            # Parse JSON with minimal validation
-            data = json.loads(json_str)
-            
-            # Ensure basic structure exists
-            if not isinstance(data, dict):
-                data = {"主要ポイント": [], "詳細分析": [], "キーワード": []}
-            
-            # Add missing sections with defaults
-            if "主要ポイント" not in data or not data["主要ポイント"]:
-                data["主要ポイント"] = [{
-                    "タイトル": "主要ポイント",
-                    "説明": "テキストの要約",
-                    "重要度": 3
-                }]
-            if "詳細分析" not in data:
-                data["詳細分析"] = []
-            if "キーワード" not in data:
-                data["キーワード"] = []
-                
-            return data
-            
-        except Exception as e:
-            logger.error(f"Response validation failed: {str(e)}")
-            # Return minimal valid structure instead of None
-            return {
-                "主要ポイント": [{
-                    "タイトル": "テキスト要約",
-                    "説明": "テキストの主要なポイント",
-                    "重要度": 3
-                }],
-                "詳細分析": [],
-                "キーワード": []
-            }
-
     def _process_chunk_with_retry(self, chunk: str, chunk_index: int) -> Dict:
+        """Process a single chunk with retry logic"""
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -190,20 +134,74 @@ class TextProcessor:
                 "タイトル": f"チャンク {chunk_index + 1}",
                 "説明": chunk[:50] + "...",
                 "重要度": 3
-            }],
-            "詳細分析": [],
-            "キーワード": []
+            }]
         }
 
-    def generate_summary(self, text: str) -> str:
+    def _validate_summary_response(self, response_text: str) -> dict:
+        """Validate and clean up the summary response"""
         try:
+            # Extract JSON from response
+            json_str = response_text.strip()
+            json_match = re.search(r'({[\s\S]*})', json_str)
+            if json_match:
+                json_str = json_match.group(1)
+                
+            # Remove code blocks if present
+            if '```' in json_str:
+                json_str = re.sub(r'```(?:json)?(.*?)```', r'\1', json_str, flags=re.DOTALL)
+            
+            # Parse JSON with minimal validation
+            data = json.loads(json_str)
+            
+            # Ensure basic structure exists
+            if not isinstance(data, dict):
+                data = {"主要ポイント": []}
+            
+            # Add missing sections with defaults
+            if "主要ポイント" not in data or not data["主要ポイント"]:
+                data["主要ポイント"] = [{
+                    "タイトル": "主要ポイント",
+                    "説明": "テキストの要約",
+                    "重要度": 3
+                }]
+                
+            return data
+            
+        except Exception as e:
+            logger.error(f"Response validation failed: {str(e)}")
+            # Return minimal valid structure
+            return {
+                "主要ポイント": [{
+                    "タイトル": "テキスト要約",
+                    "説明": "テキストの主要なポイント",
+                    "重要度": 3
+                }]
+            }
+
+    def _merge_summaries(self, summaries: List[Dict]) -> Dict:
+        """Merge multiple chunk summaries into one coherent summary"""
+        merged = {"主要ポイント": []}
+        
+        for summary in summaries:
+            if "主要ポイント" in summary:
+                merged["主要ポイント"].extend(summary["主要ポイント"])
+                
+        return merged
+
+    def generate_summary(self, text: str) -> str:
+        """Generate a summary using parallel processing"""
+        try:
+            if not text or len(text.strip()) < 10:
+                raise ValueError("テキストが短すぎるか空です")
+                
             cache_key = hash(text)
             if cache_key in self._cache:
                 return self._cache[cache_key]
-
-            chunks = self._split_into_contextual_chunks(text)
+                
+            chunks = self._split_text(text)
             summaries = []
             
+            # Process chunks in parallel
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 future_to_chunk = {
                     executor.submit(self._process_chunk_with_retry, chunk, i): i
@@ -211,19 +209,18 @@ class TextProcessor:
                 }
                 
                 for future in as_completed(future_to_chunk):
-                    chunk_index = future_to_chunk[future]
                     try:
                         summary = future.result()
-                        summaries.append(summary)
-                        logger.info(f"Successfully completed chunk {chunk_index + 1}/{len(chunks)}")
+                        if summary:
+                            summaries.append(summary)
                     except Exception as e:
-                        logger.error(f"Failed to process chunk {chunk_index + 1}: {str(e)}")
-            
+                        logger.error(f"Chunk processing failed: {str(e)}")
+                        
             if not summaries:
-                raise ValueError("有効な要約が生成されませんでした")
-            
+                raise ValueError("要約の生成に失敗しました")
+                
             merged_summary = self._merge_summaries(summaries)
-            formatted_summary = self._format_summary(merged_summary)
+            formatted_summary = json.dumps(merged_summary, ensure_ascii=False, indent=2)
             
             self._cache[cache_key] = formatted_summary
             return formatted_summary
@@ -231,82 +228,3 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
             raise Exception(f"要約の生成に失敗しました: {str(e)}")
-
-    def _merge_summaries(self, summaries: List[Dict]) -> Dict:
-        """複数のチャンク要約をマージ"""
-        merged = {
-            "主要ポイント": [],
-            "詳細分析": [],
-            "キーワード": []
-        }
-        
-        # 重要度でソート
-        all_points = []
-        for summary in summaries:
-            if "主要ポイント" in summary:
-                all_points.extend(summary["主要ポイント"])
-        
-        sorted_points = sorted(
-            all_points,
-            key=lambda x: x.get("重要度", 0),
-            reverse=True
-        )
-        
-        # 重複を除去して上位を選択
-        seen_titles = set()
-        for point in sorted_points:
-            title = point["タイトル"]
-            if title not in seen_titles:
-                seen_titles.add(title)
-                merged["主要ポイント"].append(point)
-
-        # 詳細分析をマージ
-        seen_sections = set()
-        for summary in summaries:
-            if "詳細分析" in summary:
-                for analysis in summary["詳細分析"]:
-                    if analysis["セクション"] not in seen_sections:
-                        seen_sections.add(analysis["セクション"])
-                        merged["詳細分析"].append(analysis)
-        
-        # キーワードをマージ
-        seen_keywords = set()
-        for summary in summaries:
-            if "キーワード" in summary:
-                for keyword in summary["キーワード"]:
-                    if keyword["用語"] not in seen_keywords:
-                        seen_keywords.add(keyword["用語"])
-                        merged["キーワード"].append(keyword)
-        
-        return merged
-
-    def _format_summary(self, merged_summary: Dict) -> str:
-        """要約を読みやすい形式にフォーマット"""
-        formatted_lines = ["# コンテンツ要約\n"]
-        
-        # 主要ポイント
-        formatted_lines.append("## 主要ポイント")
-        for point in merged_summary["主要ポイント"]:
-            importance = "🔥" * point.get("重要度", 1)
-            formatted_lines.append(
-                f"\n### {point['タイトル']} {importance}\n"
-                f"{point['説明']}"
-            )
-        
-        # 詳細分析
-        if merged_summary["詳細分析"]:
-            formatted_lines.append("\n## 詳細分析")
-            for analysis in merged_summary["詳細分析"]:
-                formatted_lines.append(f"\n### {analysis['セクション']}")
-                for point in analysis["キーポイント"]:
-                    formatted_lines.append(f"- {point}")
-        
-        # キーワード
-        if merged_summary["キーワード"]:
-            formatted_lines.append("\n## 重要キーワード")
-            for keyword in merged_summary["キーワード"]:
-                formatted_lines.append(
-                    f"\n- **{keyword['用語']}**: {keyword['説明']}"
-                )
-        
-        return "\n".join(formatted_lines)
