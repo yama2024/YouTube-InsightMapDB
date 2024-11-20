@@ -11,7 +11,8 @@ import json
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 try:
@@ -84,6 +85,8 @@ try:
             'progress': 0.0,
             'message': ''
         }
+    if 'current_summary_style' not in st.session_state:
+        st.session_state.current_summary_style = "balanced"
 
     def update_step_progress(step_name: str, completed: bool = True):
         """Update the completion status of a processing step"""
@@ -331,6 +334,18 @@ try:
             render_step_header(3, "Content Analysis", "🔍",
                                "文字起こし、要約、マインドマップを生成します")
             if st.session_state.transcript:
+                # Add style selection
+                summary_style = st.radio(
+                    "要約スタイルを選択",
+                    options=["balanced", "detailed", "overview"],
+                    format_func=lambda x: {
+                        "balanced": "バランス (標準的な長さと詳細さ)",
+                        "detailed": "詳細 (より詳しい分析と説明)",
+                        "overview": "概要 (簡潔なポイントのみ)"
+                    }[x],
+                    help="要約の詳細度を選択してください"
+                )
+
                 tabs = st.tabs([
                     "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Enhancement"
                 ])
@@ -340,14 +355,21 @@ try:
                     copy_text_block(st.session_state.transcript)
 
                 with tabs[1]:
-                    if 'summary' not in st.session_state or not st.session_state.summary:
+                    if ('summary' not in st.session_state or 
+                        not st.session_state.summary or
+                        'current_summary_style' not in st.session_state or
+                        st.session_state.current_summary_style != summary_style):
+                        
                         with st.spinner("AI要約を生成中..."):
                             try:
                                 text_processor = TextProcessor()
                                 summary, quality_scores = text_processor.generate_summary(
-                                    st.session_state.transcript)
+                                    st.session_state.transcript,
+                                    style=summary_style
+                                )
                                 st.session_state.summary = summary
                                 st.session_state.quality_scores = quality_scores
+                                st.session_state.current_summary_style = summary_style
                                 update_step_progress('summary')
                                 time.sleep(0.5)
                             except Exception as e:

@@ -45,54 +45,79 @@ class TextProcessor:
                 return match.group(1)
         raise ValueError("Invalid YouTube URL")
 
-    def _create_summary_prompt(self, text: str) -> str:
-        return f'''
+    def _create_summary_prompt(self, text: str, style: str = "balanced") -> str:
+        """Create a summary prompt based on the selected style"""
+        base_prompt = f"""
 テキストを分析し、以下の形式で要約してください。
-重要なポイントを明確に示し、簡潔にまとめてください。
+重要なポイントを明確に示し、"""
 
-{{
-    "動画の概要": "【200文字以内の簡潔な概要】",
-    "ポイント": [
-        {{
-            "番号": 1,
-            "タイトル": "【15文字以内の明確なタイトル】",
-            "内容": "【40文字以内の具体的な説明】",
-            "重要度": 5
-        }},
-        {{
-            "番号": 2,
-            "タイトル": "【15文字以内の明確なタイトル】",
-            "内容": "【40文字以内の具体的な説明】",
-            "重要度": 4
-        }},
-        {{
-            "番号": 3,
-            "タイトル": "【15文字以内の明確なタイトル】",
-            "内容": "【40文字以内の具体的な説明】",
-            "重要度": 3
-        }}
-    ],
-    "結論": "【100文字以内の明確な結論】",
-    "キーワード": [
-        {{
-            "用語": "【キーワード】",
-            "説明": "【20文字以内の簡潔な説明】"
-        }}
-    ]
-}}
+        if style == "detailed":
+            base_prompt += "詳細な説明を含めて要約してください。\n\n"
+            json_template = {
+                "動画の概要": "【400文字程度の詳細な概要】",
+                "ポイント": [
+                    {
+                        "番号": 1,
+                        "タイトル": "【20文字以内の明確なタイトル】",
+                        "内容": "【80文字程度の詳細な説明】",
+                        "重要度": 5,
+                        "補足情報": "【40文字程度の追加コンテキスト】"
+                    }
+                ] * 5,
+                "結論": "【200文字程度の詳細な結論】",
+                "キーワード": [
+                    {
+                        "用語": "【キーワード】",
+                        "説明": "【40文字程度の詳細な説明】",
+                        "関連用語": ["関連キーワード1", "関連キーワード2"]
+                    }
+                ] * 5
+            }
+        elif style == "overview":
+            base_prompt += "簡潔にポイントを絞って要約してください。\n\n"
+            json_template = {
+                "動画の概要": "【100文字以内の簡潔な概要】",
+                "ポイント": [
+                    {
+                        "番号": 1,
+                        "タイトル": "【15文字以内の明確なタイトル】",
+                        "内容": "【30文字以内の簡潔な説明】",
+                        "重要度": 5
+                    }
+                ] * 3,
+                "結論": "【50文字以内の明確な結論】",
+                "キーワード": [
+                    {
+                        "用語": "【キーワード】",
+                        "説明": "【20文字以内の簡潔な説明】"
+                    }
+                ] * 3
+            }
+        else:  # balanced (default)
+            base_prompt += "バランスの取れた形で要約してください。\n\n"
+            json_template = {
+                "動画の概要": "【200文字以内の簡潔な概要】",
+                "ポイント": [
+                    {
+                        "番号": 1,
+                        "タイトル": "【15文字以内の明確なタイトル】",
+                        "内容": "【40文字以内の具体的な説明】",
+                        "重要度": 5
+                    }
+                ] * 3,
+                "結論": "【100文字以内の明確な結論】",
+                "キーワード": [
+                    {
+                        "用語": "【キーワード】",
+                        "説明": "【20文字以内の簡潔な説明】"
+                    }
+                ]
+            }
 
-注意事項:
-1. 概要は要点を押さえて簡潔に
-2. ポイントは重要度順に配置
-3. キーワードは最大10個まで
-4. 説明は具体的かつ簡潔に
+        return base_prompt + json.dumps(json_template, ensure_ascii=False, indent=2) + f"\n\n分析対象テキスト:\n{text}"
 
-分析対象テキスト:
-{text}
-'''
-
-    def _evaluate_summary_quality(self, summary: str) -> dict:
-        """Evaluate the quality of the generated summary"""
+    def _evaluate_summary_quality(self, summary: str, style: str = "balanced") -> dict:
+        """Evaluate the quality of the generated summary based on the style"""
         try:
             summary_data = json.loads(summary)
             scores = {
@@ -102,7 +127,27 @@ class TextProcessor:
                 "総合スコア": 0.0
             }
 
-            # 構造の完全性の評価（配点: 10点満点）
+            # Style-specific evaluation criteria
+            if style == "detailed":
+                # Detailed style expects more comprehensive content
+                overview_length_range = (300, 400)
+                content_length_range = (60, 80)
+                conclusion_length_range = (150, 200)
+                min_keywords = 8
+            elif style == "overview":
+                # Overview style expects concise content
+                overview_length_range = (50, 100)
+                content_length_range = (20, 30)
+                conclusion_length_range = (30, 50)
+                min_keywords = 3
+            else:  # balanced
+                # Balanced style has moderate expectations
+                overview_length_range = (150, 200)
+                content_length_range = (30, 40)
+                conclusion_length_range = (70, 100)
+                min_keywords = 5
+
+            # Evaluate structure completeness (10 points)
             structure_score = 0
             required_keys = ["動画の概要", "ポイント", "結論", "キーワード"]
             for key in required_keys:
@@ -112,84 +157,78 @@ class TextProcessor:
             points = summary_data.get("ポイント", [])
             if points:
                 point_structure_score = 0
+                required_point_keys = ["番号", "タイトル", "内容", "重要度"]
+                if style == "detailed":
+                    required_point_keys.append("補足情報")
+                
                 for point in points:
-                    if all(key in point for key in ["番号", "タイトル", "内容", "重要度"]):
+                    if all(key in point for key in required_point_keys):
                         point_structure_score += 1
                 structure_score += min(point_structure_score / len(points), 2.5)
 
             scores["構造の完全性"] = min(structure_score, 10.0)
 
-            # 情報量の評価（配点: 10点満点）
+            # Evaluate information content (10 points)
             info_score = 0
-            # 概要の情報量
             overview_length = len(summary_data.get("動画の概要", ""))
-            if 150 <= overview_length <= 200:
+            if overview_length_range[0] <= overview_length <= overview_length_range[1]:
                 info_score += 3
-            elif 100 <= overview_length < 150:
+            elif overview_length >= overview_length_range[0] * 0.7:
                 info_score += 2
-            elif 50 <= overview_length < 100:
-                info_score += 1
 
-            # ポイントの情報量チェック
+            # Points evaluation
             for point in points:
-                title_len = len(point.get("タイトル", ""))
                 content_len = len(point.get("内容", ""))
-                if 5 <= title_len <= 15:
-                    info_score += 0.5
-                if 20 <= content_len <= 40:
+                if content_length_range[0] <= content_len <= content_length_range[1]:
                     info_score += 0.5
 
-            # キーワードの評価
+            # Keywords evaluation
             keywords = summary_data.get("キーワード", [])
-            if 5 <= len(keywords) <= 10:
+            if len(keywords) >= min_keywords:
                 info_score += 2
-            elif 3 <= len(keywords) < 5:
+            elif len(keywords) >= min_keywords * 0.7:
                 info_score += 1
 
-            # 結論の情報量
+            # Conclusion evaluation
             conclusion_length = len(summary_data.get("結論", ""))
-            if 70 <= conclusion_length <= 100:
+            if conclusion_length_range[0] <= conclusion_length <= conclusion_length_range[1]:
                 info_score += 2
-            elif 40 <= conclusion_length < 70:
+            elif conclusion_length >= conclusion_length_range[0] * 0.7:
                 info_score += 1
 
             scores["情報量"] = min(info_score, 10.0)
 
-            # 簡潔性の評価（配点: 10点満点）
+            # Evaluate conciseness (10 points)
             concise_score = 10.0
             
-            # 文字数制限オーバーのチェック
-            if overview_length > 200:
-                concise_score -= 2
-            if conclusion_length > 100:
-                concise_score -= 2
+            # Penalize based on style-specific criteria
+            if overview_length > overview_length_range[1]:
+                concise_score -= (overview_length - overview_length_range[1]) / 100
 
-            # ポイントの簡潔性チェック
             for point in points:
-                if len(point.get("タイトル", "")) > 15:
-                    concise_score -= 1
-                if len(point.get("内容", "")) > 40:
-                    concise_score -= 1
-
-            # キーワードの簡潔性
-            for keyword in keywords:
-                if len(keyword.get("説明", "")) > 20:
+                content_len = len(point.get("内容", ""))
+                if content_len > content_length_range[1]:
                     concise_score -= 0.5
+
+            if conclusion_length > conclusion_length_range[1]:
+                concise_score -= (conclusion_length - conclusion_length_range[1]) / 50
 
             scores["簡潔性"] = max(concise_score, 0.0)
 
-            # 総合スコアの計算（重み付け平均）
+            # Calculate overall score with style-specific weights
+            if style == "detailed":
+                weights = {"構造の完全性": 0.3, "情報量": 0.5, "簡潔性": 0.2}
+            elif style == "overview":
+                weights = {"構造の完全性": 0.3, "情報量": 0.2, "簡潔性": 0.5}
+            else:  # balanced
+                weights = {"構造の完全性": 0.4, "情報量": 0.3, "簡潔性": 0.3}
+
             scores["総合スコア"] = round(
-                (scores["構造の完全性"] * 0.4 +
-                scores["情報量"] * 0.3 +
-                scores["簡潔性"] * 0.3), 1
+                sum(scores[key] * weights[key] for key in weights), 1
             )
 
-            # すべてのスコアを小数点第1位までに丸める
-            for key in scores:
-                scores[key] = round(scores[key], 1)
-
-            return scores
+            # Round all scores to one decimal place
+            return {key: round(value, 1) for key, value in scores.items()}
 
         except json.JSONDecodeError:
             logger.error("Summary is not in valid JSON format")
@@ -198,15 +237,15 @@ class TextProcessor:
             logger.error(f"Error evaluating summary quality: {str(e)}")
             return {key: 0.0 for key in ["構造の完全性", "情報量", "簡潔性", "総合スコア"]}
 
-    def generate_summary(self, text: str) -> tuple:
+    def generate_summary(self, text: str, style: str = "balanced") -> tuple:
         """Generate a summary of the given text and evaluate its quality"""
         try:
-            # Check cache first
-            cache_key = hash(text)
+            # Create cache key including style
+            cache_key = hash(f"{text}_{style}")
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
-            prompt = self._create_summary_prompt(text)
+            prompt = self._create_summary_prompt(text, style)
             response = self.model.generate_content(prompt)
             summary = response.text
 
@@ -219,7 +258,7 @@ class TextProcessor:
             summary = summary.strip()
 
             # Evaluate the quality of the summary
-            quality_scores = self._evaluate_summary_quality(summary)
+            quality_scores = self._evaluate_summary_quality(summary, style)
 
             # Cache the result
             result = (summary, quality_scores)
