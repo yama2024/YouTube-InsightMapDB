@@ -6,14 +6,17 @@ import google.generativeai as genai
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class TextProcessor:
-    def __init__(self):
+    def __init__(self, max_workers=3):
         self._cache = {}
+        self.max_workers = max_workers
         # Initialize Gemini
         genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
         self.model = genai.GenerativeModel('gemini-pro')
@@ -57,21 +60,21 @@ class TextProcessor:
                 return match.group(1)
         raise ValueError("無効なYouTube URLです")
 
-    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 800) -> List[str]:
+    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 1000) -> List[str]:
         sentences = re.split('([。!?！？]+)', text)
         sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
         
         chunks = []
         current_chunk = []
         current_length = 0
-        overlap = 100  # Add overlap between chunks
+        overlap = 150  # Increased overlap for better context
         
         for sentence in sentences:
             if current_length + len(sentence) > chunk_size and current_chunk:
                 chunk_text = ''.join(current_chunk)
                 chunks.append(chunk_text)
                 # Keep last few sentences for overlap
-                current_chunk = current_chunk[-2:]  
+                current_chunk = current_chunk[-3:]  # Increased overlap sentences
                 current_length = sum(len(s) for s in current_chunk)
             current_chunk.append(sentence)
             current_length += len(sentence)
@@ -80,6 +83,88 @@ class TextProcessor:
             chunks.append(''.join(current_chunk))
         
         return chunks
+
+    def _process_chunk_with_retry(self, chunk: str, chunk_index: int) -> Dict:
+        """Process a single chunk with retry logic"""
+        max_retries = 3
+        base_delay = 1  # Base delay in seconds
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Processing chunk {chunk_index + 1}, attempt {attempt + 1}")
+                response = self.model.generate_content(
+                    self._create_summary_prompt(chunk),
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.3,
+                        top_p=0.8,
+                        top_k=40,
+                        max_output_tokens=8192,
+                    )
+                )
+                
+                if not response.text:
+                    raise ValueError("Empty response received")
+                    
+                chunk_data = self._validate_summary_response(response.text)
+                if chunk_data:
+                    logger.info(f"Successfully processed chunk {chunk_index + 1}")
+                    return chunk_data
+                else:
+                    raise ValueError("Invalid response format")
+                    
+            except Exception as e:
+                delay = base_delay * (2 ** attempt)  # Exponential backoff
+                logger.warning(f"Chunk {chunk_index + 1}, attempt {attempt + 1} failed: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(delay)
+                else:
+                    logger.error(f"All attempts failed for chunk {chunk_index + 1}")
+                    raise
+
+    def generate_summary(self, text: str) -> str:
+        """Generate summary with parallel processing"""
+        try:
+            cache_key = hash(text)
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+
+            chunks = self._split_into_contextual_chunks(text)
+            summaries = []
+            failed_chunks = []
+            
+            # Process chunks in parallel with ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                future_to_chunk = {
+                    executor.submit(self._process_chunk_with_retry, chunk, i): i
+                    for i, chunk in enumerate(chunks)
+                }
+                
+                for future in as_completed(future_to_chunk):
+                    chunk_index = future_to_chunk[future]
+                    try:
+                        summary = future.result()
+                        summaries.append(summary)
+                        logger.info(f"Successfully completed chunk {chunk_index + 1}/{len(chunks)}")
+                    except Exception as e:
+                        logger.error(f"Failed to process chunk {chunk_index + 1}: {str(e)}")
+                        failed_chunks.append(chunk_index)
+            
+            if not summaries:
+                raise ValueError("有効な要約が生成されませんでした")
+            
+            # Handle failed chunks if any exist
+            if failed_chunks:
+                logger.warning(f"Failed chunks: {failed_chunks}")
+                
+            merged_summary = self._merge_summaries(summaries)
+            formatted_summary = self._format_summary(merged_summary)
+            
+            self._cache[cache_key] = formatted_summary
+            return formatted_summary
+            
+        except Exception as e:
+            logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
+            raise Exception(f"要約の生成に失敗しました: {str(e)}")
 
     def _create_summary_prompt(self, text: str) -> str:
         return f'''
@@ -146,56 +231,6 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"Response validation failed: {str(e)}")
             return None
-
-    def generate_summary(self, text: str) -> str:
-        try:
-            cache_key = hash(text)
-            if cache_key in self._cache:
-                return self._cache[cache_key]
-
-            chunks = self._split_into_contextual_chunks(text)
-            summaries = []
-            
-            for chunk in chunks:
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        response = self.model.generate_content(
-                            self._create_summary_prompt(chunk),
-                            generation_config=genai.types.GenerationConfig(
-                                temperature=0.3,
-                                top_p=0.8,
-                                top_k=40,
-                                max_output_tokens=8192,
-                            )
-                        )
-                        
-                        if not response.text:
-                            continue
-                            
-                        chunk_data = self._validate_summary_response(response.text)
-                        if chunk_data:
-                            summaries.append(chunk_data)
-                            break
-                        else:
-                            logger.warning(f"Invalid response format in attempt {attempt + 1}")
-                    except Exception as e:
-                        logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
-                        if attempt == max_retries - 1:
-                            logger.error(f"All attempts failed for chunk")
-            
-            if not summaries:
-                raise ValueError("有効な要約が生成されませんでした")
-            
-            merged_summary = self._merge_summaries(summaries)
-            formatted_summary = self._format_summary(merged_summary)
-            
-            self._cache[cache_key] = formatted_summary
-            return formatted_summary
-            
-        except Exception as e:
-            logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
-            raise Exception(f"要約の生成に失敗しました: {str(e)}")
 
     def _merge_summaries(self, summaries: List[Dict]) -> Dict:
         """複数のチャンク要約をマージ"""
