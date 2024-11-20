@@ -296,135 +296,141 @@ class TextProcessor:
             previous_summaries = []
             
             for i, chunk in enumerate(chunks):
-                # Get enhanced context from previous summaries
-                context = self._get_chunk_context(previous_summaries)
-                
-                # Build prompt with enhanced context
-                prompt = f'''
-                以下のテキストを要約し、文脈を考慮したJSONフォーマットで出力してください。
-
-                前のセクションからの文脈情報：
-                - 継続中のトピック: {", ".join(context.get("continuing_themes", []))}
-                - 主要テーマ: {json.dumps([theme["topic"] for theme in context.get("key_themes", [])[:3]], ensure_ascii=False)}
-                - トピック間の関連: {json.dumps(context.get("topic_connections", [])[:3], ensure_ascii=False)}
-                - トピック階層: {json.dumps(context.get("topic_hierarchy", {}), ensure_ascii=False)}
-                
-                テキスト:
-                {chunk}
-                
-                出力フォーマット:
-                {{
-                    "主要ポイント": [
-                        {{
-                            "タイトル": "トピック",
-                            "重要度": 1-5の数値,
-                            "前セクションとの関連": "説明",
-                            "継続性": "新規/継続/発展"
-                        }}
-                    ],
-                    "詳細分析": [
-                        {{
-                            "セクション": "セクション名",
-                            "キーポイント": ["ポイント1", "ポイント2"],
-                            "文脈説明": "前セクションとの関連性",
-                            "発展度": "基礎/応用/深化"
-                        }}
-                    ],
-                    "文脈連携": {{
-                        "継続するトピック": ["トピック1", "トピック2"],
-                        "新規トピック": ["新トピック1", "新トピック2"],
-                        "トピック遷移": "トピック間の関連性の説明",
-                        "理解度要件": "前セクションの理解が必要な度合い（1-5）"
-                    }},
-                    "キーワード": [
-                        {{
-                            "用語": "キーワード",
-                            "説明": "説明文",
-                            "関連トピック": ["関連トピック1", "関連トピック2"],
-                            "重要度": 1-5の数値
-                        }}
-                    ]
-                }}
-                '''
-                
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.3,
-                        top_p=0.8,
-                        top_k=40,
-                        max_output_tokens=8192,
-                    )
-                )
-                
                 try:
-                    summary_data = json.loads(response.text)
-                    previous_summaries.append(summary_data)
+                    # Get enhanced context from previous summaries
+                    context = self._get_chunk_context(previous_summaries)
                     
-                    # Format summary with enhanced context awareness
-                    formatted_summary = []
-                    
-                    # Add section title with context level
-                    if i > 0:
-                        formatted_summary.append(f"\n## セクション {i+1} (前セクションとの関連度: {summary_data['文脈連携']['理解度要件']}/5)")
-                    else:
-                        formatted_summary.append(f"\n## セクション {i+1}")
-                    
-                    # Format main points with context indicators
-                    formatted_summary.append("\n### 主要ポイント")
-                    for point in summary_data["主要ポイント"]:
-                        title = point["タイトル"]
-                        importance = "🔥" * point["重要度"]
-                        continuity = {
-                            "新規": "🆕",
-                            "継続": "⏩",
-                            "発展": "📈"
-                        }.get(point["継続性"], "")
-                        
-                        formatted_summary.append(f"\n- {title} {importance} {continuity}")
-                        if point["前セクションとの関連"]:
-                            formatted_summary.append(f"  - 前セクションとの関連: {point['前セクションとの関連']}")
-                    
-                    # Add detailed analysis with development indicators
-                    formatted_summary.append("\n### 詳細分析")
-                    for analysis in summary_data["詳細分析"]:
-                        development_indicator = {
-                            "基礎": "📚",
-                            "応用": "🔄",
-                            "深化": "🎯"
-                        }.get(analysis["発展度"], "")
-                        
-                        formatted_summary.append(f"\n#### {analysis['セクション']} {development_indicator}")
-                        for point in analysis["キーポイント"]:
-                            formatted_summary.append(f"- {point}")
-                        if analysis["文脈説明"]:
-                            formatted_summary.append(f"\n文脈: {analysis['文脈説明']}")
-                    
-                    # Add topic transition information
-                    if summary_data["文脈連携"]["トピック遷移"]:
-                        formatted_summary.append("\n### トピックの展開")
-                        formatted_summary.append(summary_data["文脈連携"]["トピック遷移"])
-                    
-                    # Add keywords with importance indicators
-                    if summary_data.get("キーワード"):
-                        formatted_summary.append("\n### 重要キーワード")
-                        for keyword in summary_data["キーワード"]:
-                            importance = "⭐" * keyword["重要度"]
-                            formatted_summary.append(f"\n- {keyword['用語']} {importance}")
-                            formatted_summary.append(f"  - {keyword['説明']}")
-                            if keyword["関連トピック"]:
-                                formatted_summary.append(f"  - 関連: {', '.join(keyword['関連トピック'])}")
-                    
-                    summaries.append("\n".join(formatted_summary))
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse summary JSON: {str(e)}")
-                    # Add error handling summary
-                    summaries.append(f"\n## セクション {i+1} (エラー処理)\n- テキストの解析に問題が発生しました。基本的な要約を表示します。\n{response.text}")
-            
-            # Combine all summaries with proper spacing and context indicators
-            final_summary = "\n\n".join(summaries)
-            return final_summary
+                    # Build prompt with enhanced context
+                    prompt = f'''
+                    以下のテキストを要約し、文脈を考慮したJSONフォーマットで出力してください。
 
-except Exception as e:
-    logger.error(f"Error in summary generation: {str(e)}")
-    raise Exception(f"Failed to generate summary: {str(e)}")
+                    前のセクションからの文脈情報：
+                    - 継続中のトピック: {", ".join(context.get("continuing_themes", []))}
+                    - 主要テーマ: {json.dumps([theme["topic"] for theme in context.get("key_themes", [])[:3]], ensure_ascii=False)}
+                    - トピック間の関連: {json.dumps(context.get("topic_connections", [])[:3], ensure_ascii=False)}
+                    - トピック階層: {json.dumps(context.get("topic_hierarchy", {}), ensure_ascii=False)}
+                    
+                    テキスト:
+                    {chunk}
+                    
+                    出力フォーマット:
+                    {{
+                        "主要ポイント": [
+                            {{
+                                "タイトル": "トピック",
+                                "重要度": 1-5の数値,
+                                "前セクションとの関連": "説明",
+                                "継続性": "新規/継続/発展"
+                            }}
+                        ],
+                        "詳細分析": [
+                            {{
+                                "セクション": "セクション名",
+                                "キーポイント": ["ポイント1", "ポイント2"],
+                                "文脈説明": "前セクションとの関連性",
+                                "発展度": "基礎/応用/深化"
+                            }}
+                        ],
+                        "文脈連携": {{
+                            "継続するトピック": ["トピック1", "トピック2"],
+                            "新規トピック": ["新トピック1", "新トピック2"],
+                            "トピック遷移": "トピック間の関連性の説明",
+                            "理解度要件": "前セクションの理解が必要な度合い（1-5）"
+                        }},
+                        "キーワード": [
+                            {{
+                                "用語": "キーワード",
+                                "説明": "説明文",
+                                "関連トピック": ["関連トピック1", "関連トピック2"],
+                                "重要度": 1-5の数値
+                            }}
+                        ]
+                    }}
+                    '''
+                    
+                    response = self.model.generate_content(
+                        prompt,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.3,
+                            top_p=0.8,
+                            top_k=40,
+                            max_output_tokens=8192,
+                        )
+                    )
+                    
+                    try:
+                        summary_data = json.loads(response.text)
+                        previous_summaries.append(summary_data)
+                        summaries.append(summary_data)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON response: {str(e)}")
+                        continue
+                        
+                except Exception as e:
+                    logger.error(f"Error processing chunk {i}: {str(e)}")
+                    continue
+
+            # Format the final summary with enhanced context awareness
+            if not summaries:
+                raise ValueError("No valid summaries generated")
+
+            # Combine all summaries into a structured format with emoji indicators
+            formatted_summary = "# 📚 コンテンツ要約\n\n"
+
+            # Add main topics section
+            formatted_summary += "## 🎯 主要トピック\n\n"
+            for summary in summaries:
+                for point in summary.get("主要ポイント", []):
+                    title = point.get("タイトル", "")
+                    importance = point.get("重要度", 1)
+                    relevance = point.get("前セクションとの関連", "")
+                    continuity = point.get("継続性", "")
+                    
+                    # Add emoji indicators based on importance and continuity
+                    importance_emoji = "🔥" if importance >= 4 else "⭐" if importance >= 3 else "📌"
+                    continuity_emoji = "🆕" if continuity == "新規" else "⏩" if continuity == "継続" else "📈"
+                    
+                    formatted_summary += f"{importance_emoji} {continuity_emoji} **{title}**\n"
+                    if relevance:
+                        formatted_summary += f"   - 関連: {relevance}\n"
+
+            # Add detailed analysis section
+            formatted_summary += "\n## 📊 詳細分析\n\n"
+            for summary in summaries:
+                for analysis in summary.get("詳細分析", []):
+                    section = analysis.get("セクション", "")
+                    points = analysis.get("キーポイント", [])
+                    context = analysis.get("文脈説明", "")
+                    development = analysis.get("発展度", "")
+                    
+                    # Add emoji indicators based on development level
+                    dev_emoji = "📚" if development == "基礎" else "🔄" if development == "応用" else "🎯"
+                    
+                    formatted_summary += f"{dev_emoji} **{section}**\n"
+                    for point in points:
+                        formatted_summary += f"   - {point}\n"
+                    if context:
+                        formatted_summary += f"   💡 文脈: {context}\n"
+
+            # Add keywords section
+            formatted_summary += "\n## 🔍 キーワード解説\n\n"
+            keyword_set = set()  # To avoid duplicates
+            for summary in summaries:
+                for keyword in summary.get("キーワード", []):
+                    term = keyword.get("用語", "")
+                    if term and term not in keyword_set:
+                        keyword_set.add(term)
+                        explanation = keyword.get("説明", "")
+                        importance = keyword.get("重要度", 1)
+                        
+                        # Add emoji indicator based on keyword importance
+                        keyword_emoji = "🌟" if importance >= 4 else "✨" if importance >= 3 else "💫"
+                        
+                        formatted_summary += f"{keyword_emoji} **{term}**\n"
+                        formatted_summary += f"   {explanation}\n"
+
+            return formatted_summary
+
+        except Exception as e:
+            logger.error(f"Error in summary generation: {str(e)}")
+            raise Exception(f"Failed to generate summary: {str(e)}")
