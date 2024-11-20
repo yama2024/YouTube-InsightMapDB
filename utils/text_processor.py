@@ -19,40 +19,44 @@ logger = logging.getLogger(__name__)
 class DynamicRateLimiter:
     def __init__(self):
         self.last_request = 0
-        self.base_interval = 1.0  # 基本待機時間（秒）
-        self.response_times = []
-        self.max_samples = 10
-        self.backoff_factor = 1.5
-
-    def update_interval(self, response_time: float):
-        """応答時間に基づいて待機時間を動的に調整"""
-        self.response_times.append(response_time)
-        if len(self.response_times) > self.max_samples:
-            self.response_times.pop(0)
-        
-        # 直近の応答時間の平均に基づいて基本待機時間を調整
-        if self.response_times:
-            avg_response_time = sum(self.response_times) / len(self.response_times)
-            self.base_interval = max(1.0, min(5.0, avg_response_time * self.backoff_factor))
+        self.min_interval = 1.0
+        self.backoff_multiplier = 1.0
+        self.max_interval = 5.0
+        self.success_count = 0
+        self.error_count = 0
 
     def wait(self):
-        """動的な待機時間を適用"""
         now = time.time()
         elapsed = now - self.last_request
-        if elapsed < self.base_interval:
-            sleep_time = self.base_interval - elapsed + uniform(0.1, 0.5)
-            sleep(sleep_time)
+        
+        # エラー率に基づいて待機時間を調整
+        if self.error_count + self.success_count > 0:
+            error_rate = self.error_count / (self.error_count + self.success_count)
+            self.backoff_multiplier = 1.0 + (error_rate * 2.0)
+        
+        wait_time = max(0, self.min_interval * self.backoff_multiplier - elapsed)
+        if wait_time > 0:
+            time.sleep(wait_time)
+        
         self.last_request = time.time()
+
+    def report_success(self):
+        self.success_count += 1
+        self.backoff_multiplier = max(1.0, self.backoff_multiplier * 0.95)
+
+    def report_error(self):
+        self.error_count += 1
+        self.backoff_multiplier = min(self.max_interval, self.backoff_multiplier * 1.5)
 
 class TextProcessor:
     def __init__(self):
         self._initialize_api()
         self.rate_limiter = DynamicRateLimiter()
-        # Initialize cache with 1-hour TTL
         self.cache = TTLCache(maxsize=100, ttl=3600)
-        self.chunk_size = 4000  # Initial chunk size
-        self.max_retries = 5
-        self.json_validation_retries = 3
+        self.chunk_size = 1500  # チャンクサイズを1500に縮小
+        self.overlap_size = 200  # オーバーラップを200に設定
+        self.max_retries = 3    # リトライ回数を3回に設定
+        self.backoff_factor = 2 # バックオフ係数を2に設定
 
     def _initialize_api(self):
         """Initialize or reinitialize the Gemini API with current environment"""
@@ -95,74 +99,94 @@ class TextProcessor:
             return None
 
     def _process_chunk_with_retries(self, chunk: str, context: Dict) -> Optional[Dict]:
-        remaining_retries = self.json_validation_retries
-        last_error = None
-        
-        while remaining_retries > 0:
+        for attempt in range(self.max_retries):
             try:
-                start_time = time.time()
+                self.rate_limiter.wait()  # レート制限を適用
                 
-                # チャンクの前処理
+                # チャンクの前処理とバリデーション
                 if len(chunk.strip()) < 100:
-                    return {
-                        "概要": chunk,
-                        "主要ポイント": [{"タイトル": "概要", "説明": chunk, "重要度": 3}],
-                        "詳細分析": [{"セクション": "概要", "内容": chunk, "キーポイント": [chunk]}],
-                        "キーワード": [{"用語": "概要", "説明": chunk, "関連語": []}]
-                    }
+                    logger.warning("チャンクが短すぎます")
+                    return None
                 
-                def process_single_chunk():
-                    prompt = self._create_summary_prompt(chunk, context)
-                    self.rate_limiter.wait()  # レート制限を適用
-                    response = self.model.generate_content(
-                        prompt,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.2,
-                            top_p=0.95,
-                            top_k=40,
-                            max_output_tokens=8192,
-                        )
+                # プロンプトの生成と要約処理
+                response = self.model.generate_content(
+                    self._create_summary_prompt(chunk, context),
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.2,
+                        top_p=0.95,
+                        top_k=40,
+                        max_output_tokens=8192,
                     )
-                    return response.text
-
-                # チャンク処理の実行
-                chunk_response = process_single_chunk()
+                )
                 
-                # レスポンスの検証
-                if not chunk_response:
-                    raise ValueError("Empty response received")
+                if not response.text:
+                    raise ValueError("APIからの応答が空です")
                 
-                # JSON解析
-                parsed_response = self._validate_json_response(chunk_response)
-                if parsed_response:
-                    required_fields = ["概要", "主要ポイント", "詳細分析", "キーワード"]
-                    if all(field in parsed_response for field in required_fields):
-                        return parsed_response
-                
-                remaining_retries -= 1
-                if remaining_retries > 0:
-                    logger.warning(f"Retry attempt {self.json_validation_retries - remaining_retries}")
-                    sleep(1 * (self.json_validation_retries - remaining_retries))
+                # JSONの解析と検証
+                result = self._validate_json_response(response.text)
+                if result:
+                    self.rate_limiter.report_success()
+                    return result
+                    
+                # 待機時間を計算
+                wait_time = self.backoff_factor ** attempt
+                logger.warning(f"Attempt {attempt + 1} failed, waiting {wait_time} seconds...")
+                time.sleep(wait_time)
                 
             except Exception as e:
-                error_msg = str(e).lower()
-                if "quota" in error_msg:
-                    try:
-                        self._initialize_api()
-                        continue
-                    except Exception as key_error:
-                        raise Exception(f"APIキーの更新に失敗しました: {str(key_error)}")
-                
-                last_error = e
-                remaining_retries -= 1
-                if remaining_retries > 0:
-                    wait_time = (2 ** (self.json_validation_retries - remaining_retries)) + uniform(0, 1)
-                    logger.warning(f"Error during chunk processing: {str(e)}, retrying in {wait_time:.2f} seconds...")
-                    sleep(wait_time)
+                logger.error(f"Chunk processing error: {str(e)}")
+                self.rate_limiter.report_error()
+                if attempt < self.max_retries - 1:
+                    wait_time = self.backoff_factor ** attempt
+                    time.sleep(wait_time)
+                else:
+                    logger.error("All retry attempts failed")
+                    return None
         
-        error_message = str(last_error) if last_error else "Unknown error"
-        logger.error(f"Failed to process chunk after all retries: {error_message}")
         return None
+
+    def _split_text_into_chunks(self, text: str) -> List[str]:
+        if not text:
+            raise ValueError("入力テキストが空です")
+            
+        # 文章の前処理
+        text = text.replace('\n', ' ').strip()
+        text = re.sub(r'\s+', ' ', text)
+        
+        # 文単位での分割
+        sentences = re.split('([。!?！？]+)', text)
+        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
+        
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # チャンクサイズの確認
+            if current_length + len(sentence) > self.chunk_size and current_chunk:
+                chunks.append(' '.join(current_chunk))
+                # オーバーラップを考慮して最後の文を保持
+                current_chunk = current_chunk[-2:] if len(current_chunk) > 2 else []
+                current_length = sum(len(s) for s in current_chunk)
+            
+            current_chunk.append(sentence)
+            current_length += len(sentence)
+        
+        # 残りの文を処理
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
+        
+        # チャンクの検証
+        valid_chunks = [chunk for chunk in chunks if len(chunk.strip()) >= 100]
+        
+        if not valid_chunks:
+            raise ValueError("有効なチャンクを生成できませんでした")
+        
+        return valid_chunks
 
     def _create_summary_prompt(self, text: str, context: Optional[Dict] = None) -> str:
         """Improved prompt with stricter JSON structure requirements"""
@@ -219,33 +243,6 @@ class TextProcessor:
 - 不正なJSON構造を避けるため、文字列内の二重引用符は必ずエスケープしてください"""
 
         return prompt
-
-    def _split_text_into_chunks(self, text: str) -> List[str]:
-        """テキストを適切なサイズのチャンクに分割"""
-        chunks = []
-        current_chunk = ""
-        current_size = 0
-        
-        # 文章単位で分割（。や！や？で区切る）
-        sentences = re.split(r'([。！？])', text)
-        
-        for i in range(0, len(sentences)-1, 2):
-            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
-            sentence_size = len(sentence)
-            
-            if current_size + sentence_size > self.chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = sentence
-                current_size = sentence_size
-            else:
-                current_chunk += sentence
-                current_size += sentence_size
-        
-        if current_chunk:
-            chunks.append(current_chunk)
-            
-        return chunks
 
     def _combine_chunk_summaries(self, summaries: List[Dict]) -> Dict:
         """改善されたチャンクサマリーの統合処理"""
@@ -384,15 +381,16 @@ class TextProcessor:
         try:
             video_id = re.findall(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', youtube_url)[0]
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            
-            try:
-                transcript = transcript_list.find_transcript(['ja'])
-            except:
+            transcript = transcript_list.find_transcript(['ja'])
+            if not transcript:
+                transcript = transcript_list.find_transcript(['ja-JP'])
+            if not transcript:
                 transcript = transcript_list.find_transcript(['en'])
-                transcript = transcript.translate('ja')
+                if transcript:
+                    transcript = transcript.translate('ja')
             
-            formatted_transcript = TextFormatter().format_transcript(transcript.fetch())
-            return formatted_transcript
+            formatter = TextFormatter()
+            return formatter.format_transcript(transcript.fetch())
             
         except Exception as e:
             logger.error(f"Error getting transcript: {str(e)}")
