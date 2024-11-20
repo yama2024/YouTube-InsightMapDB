@@ -82,7 +82,13 @@ class TextProcessor:
 
     def _create_summary_prompt(self, text: str) -> str:
         return f'''
-テキストを分析し、以下の形式で要約してください。元の文章の30%程度の長さに抑え、簡潔に重要なポイントを抽出してください。
+以下のテキストから重要なポイントを抽出し、JSONフォーマットで出力してください。
+要約は元のテキストの30%程度の長さにしてください。
+
+必須ルール:
+1. 必ず有効なJSONを出力すること
+2. 各説明は簡潔に
+3. 重要度は1-5の整数で表現
 
 出力形式:
 {{
@@ -90,13 +96,13 @@ class TextProcessor:
         {{
             "タイトル": "トピックタイトル",
             "説明": "30文字以内の説明",
-            "重要度": 1-5
+            "重要度": 3
         }}
     ],
     "詳細分析": [
         {{
             "セクション": "セクション名",
-            "キーポイント": ["重要ポイント（各15文字以内）"]
+            "キーポイント": ["重要ポイント"]
         }}
     ],
     "キーワード": [
@@ -120,14 +126,30 @@ class TextProcessor:
             if json_str.endswith('```'):
                 json_str = json_str[:-3]
             
+            # Remove any leading/trailing whitespace or special characters
+            json_str = re.sub(r'^[^{]*({.*})[^}]*$', r'\1', json_str, flags=re.DOTALL)
+            
             # Parse JSON
             data = json.loads(json_str)
             
-            # Validate required fields
-            required_fields = ["主要ポイント", "詳細分析", "キーワード"]
-            if not all(field in data for field in required_fields):
+            # Validate structure
+            if not isinstance(data, dict):
                 return None
                 
+            # Validate required fields and types
+            if not all(key in data for key in ["主要ポイント", "詳細分析", "キーワード"]):
+                return None
+                
+            if not isinstance(data["主要ポイント"], list) or not data["主要ポイント"]:
+                return None
+                
+            # Validate main points format
+            for point in data["主要ポイント"]:
+                if not all(key in point for key in ["タイトル", "説明", "重要度"]):
+                    return None
+                if not isinstance(point["重要度"], int) or not 1 <= point["重要度"] <= 5:
+                    return None
+                    
             return data
         except Exception as e:
             logger.error(f"Response validation failed: {str(e)}")
@@ -163,6 +185,8 @@ class TextProcessor:
                         if chunk_data:
                             summaries.append(chunk_data)
                             break
+                        else:
+                            logger.warning(f"Invalid response format in attempt {attempt + 1}")
                     except Exception as e:
                         logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
                         if attempt == max_retries - 1:
@@ -170,7 +194,7 @@ class TextProcessor:
             
             if not summaries:
                 raise ValueError("有効な要約が生成されませんでした")
-                
+            
             merged_summary = self._merge_summaries(summaries)
             formatted_summary = self._format_summary(merged_summary)
             
