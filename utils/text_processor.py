@@ -1,50 +1,36 @@
+import json
+import re
+import logging
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.formatters import TextFormatter
 import google.generativeai as genai
 import os
-import re
-import json
-import time
-import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from youtube_transcript_api import YouTubeTranscriptApi
-from typing import Dict, List, Optional, Tuple
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class TextProcessor:
-    def __init__(self, max_workers: int = 3, chunk_size: int = 1000):
-        """Initialize the TextProcessor with parallel processing capabilities"""
+    def __init__(self):
+        self._cache = {}
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
-            raise ValueError("Gemini API key is not set in environment variables")
-            
+            raise ValueError("Gemini API key not found in environment variables")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-pro')
-        self._cache = {}
-        self.max_workers = max_workers
-        self.chunk_size = chunk_size
 
     def get_transcript(self, video_url: str) -> str:
         """Get transcript from YouTube video"""
         try:
             video_id = self._extract_video_id(video_url)
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            
-            # Try Japanese first, then English, then manual
-            for lang in ['ja', 'en', 'a.ja', 'a.en']:
-                try:
-                    transcript = transcript_list.find_transcript([lang])
-                    return ' '.join(entry['text'] for entry in transcript.fetch())
-                except Exception as e:
-                    logger.debug(f"Failed to get transcript in {lang}: {str(e)}")
-                    continue
-                    
-            raise ValueError("No suitable transcript found")
-            
+            transcript = transcript_list.find_transcript(['ja', 'en'])
+            transcript_data = transcript.fetch()
+            formatter = TextFormatter()
+            return formatter.format_transcript(transcript_data)
         except Exception as e:
-            logger.error(f"Transcript extraction failed: {str(e)}")
-            raise ValueError(f"Failed to get transcript: {str(e)}")
+            logger.error(f"Failed to fetch transcript: {str(e)}")
+            raise
 
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from YouTube URL"""
@@ -53,301 +39,160 @@ class TextProcessor:
             r'(?:embed\/)([0-9A-Za-z_-]{11})',
             r'(?:watch\?v=)([0-9A-Za-z_-]{11})'
         ]
-        
         for pattern in patterns:
             match = re.search(pattern, url)
             if match:
                 return match.group(1)
-        raise ValueError("Invalid YouTube URL format")
-
-    def _split_text(self, text: str) -> List[str]:
-        """Split text into chunks with proper sentence boundaries"""
-        sentences = re.split(r'([。.!?！？]+)', text)
-        chunks = []
-        current_chunk = ""
-        
-        for i in range(0, len(sentences)-1, 2):
-            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
-            if len(current_chunk) + len(sentence) > self.chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = sentence
-            else:
-                current_chunk += sentence
-                
-        if current_chunk:
-            chunks.append(current_chunk)
-            
-        return chunks
+        raise ValueError("Invalid YouTube URL")
 
     def _create_summary_prompt(self, text: str) -> str:
-        """Create a prompt for the summary generation"""
         return f'''
 テキストを分析し、以下の形式で要約してください：
 
 {{
-    "動画の概要": "概要文",
+    "動画の概要": "【重要度の高い情報を含む、200文字以内の簡潔な概要】",
     "ポイント": [
         {{
-            "タイトル": "ポイント1",
-            "説明": "詳細説明",
-            "重要度": 3
+            "タイトル": "【15文字以内の明確なタイトル】",
+            "説明": "【40文字以内の具体的な説明】",
+            "重要度": 【4か5】  // 最重要ポイント
         }},
         {{
-            "タイトル": "ポイント2",
-            "説明": "詳細説明",
-            "重要度": 3
+            "タイトル": "【15文字以内の明確なタイトル】",
+            "説明": "【40文字以内の具体的な説明】",
+            "重要度": 【3】  // 重要なポイント
         }},
         {{
-            "タイトル": "ポイント3",
-            "説明": "詳細説明",
-            "重要度": 3
+            "タイトル": "【15文字以内の明確なタイトル】",
+            "説明": "【40文字以内の具体的な説明】",
+            "重要度": 【2】  // 補足的なポイント
         }}
     ],
-    "結論": "まとめ"
+    "結論": "【100文字以内の明確な結論】"
 }}
+
+要約の注意点:
+1. 重要度の分布を必ず分けること（5または4を1つ、3を1つ、2を1つ）
+2. タイトルは具体的な名詞や要点を含めること
+3. 説明は簡潔かつ具体的に
+4. 概要と結論で重複を避けること
 
 分析対象テキスト:
 {text}
-
-注意事項:
-- 重要度は1から5の整数で表現
-- 説明は具体的かつ簡潔に
-- 概要と結論は要点を押さえて
 '''
 
-    def _process_chunk_with_retry(self, chunk: str, chunk_index: int) -> Dict:
-        """Process a single chunk with retry logic"""
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Processing chunk {chunk_index + 1}, attempt {attempt + 1}")
-                response = self.model.generate_content(
-                    self._create_summary_prompt(chunk),
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.3,
-                        top_p=0.8,
-                        top_k=40,
-                        max_output_tokens=4096,
-                    )
-                )
-                
-                if not response or not response.text:
-                    logger.warning(f"Empty response for chunk {chunk_index + 1}")
-                    continue
-                    
-                # Always return a valid summary structure
-                return self._validate_summary_response(response.text)
-                
-            except Exception as e:
-                logger.error(f"Error processing chunk {chunk_index + 1}: {str(e)}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-        
-        # Return minimal valid structure if all retries fail
-        return {
-            "動画の概要": "処理中にエラーが発生しました",
-            "ポイント": [{
-                "タイトル": f"チャンク {chunk_index + 1}",
-                "説明": "処理中にエラーが発生しました。",
-                "重要度": 1
-            }],
-            "結論": "処理に失敗しました"
-        }
-
-    def _validate_summary_response(self, response_text: str) -> dict:
-        """Validate and clean up the summary response"""
-        try:
-            # Extract JSON from response
-            json_str = response_text.strip()
-            json_match = re.search(r'({[\s\S]*})', json_str)
-            if json_match:
-                json_str = json_match.group(1)
-                
-            # Remove code blocks if present
-            if '```' in json_str:
-                json_str = re.sub(r'```(?:json)?(.*?)```', r'\1', json_str, flags=re.DOTALL)
-            
-            # Parse JSON with minimal validation
-            data = json.loads(json_str)
-            
-            # Ensure basic structure exists
-            if not isinstance(data, dict):
-                data = {
-                    "動画の概要": "概要を生成できませんでした",
-                    "ポイント": [],
-                    "結論": "結論を生成できませんでした"
-                }
-            
-            # Add missing sections with defaults
-            if "動画の概要" not in data:
-                data["動画の概要"] = "概要を生成できませんでした"
-            if "ポイント" not in data or not data["ポイント"]:
-                data["ポイント"] = [{
-                    "タイトル": "主要ポイント",
-                    "説明": "テキストの要約",
-                    "重要度": 3
-                }]
-            if "結論" not in data:
-                data["結論"] = "結論を生成できませんでした"
-                
-            return data
-            
-        except Exception as e:
-            logger.error(f"Response validation failed: {str(e)}")
-            # Return minimal valid structure
-            return {
-                "動画の概要": "概要を生成できませんでした",
-                "ポイント": [{
-                    "タイトル": "エラー",
-                    "説明": "要約の生成中にエラーが発生しました",
-                    "重要度": 1
-                }],
-                "結論": "結論を生成できませんでした"
-            }
-
-    def _merge_summaries(self, summaries: List[Dict]) -> Dict:
-        """Merge multiple chunk summaries into one coherent summary"""
-        merged = {
-            "動画の概要": "",
-            "ポイント": [],
-            "結論": ""
-        }
-        
-        # Collect all points
-        all_points = []
-        for summary in summaries:
-            all_points.extend(summary.get("ポイント", []))
-        
-        # Take the most important points (up to 5)
-        sorted_points = sorted(all_points, key=lambda x: x.get("重要度", 0), reverse=True)
-        merged["ポイント"] = sorted_points[:5]
-        
-        # Combine overview and conclusion from the most detailed summaries
-        overview_texts = [s.get("動画の概要", "") for s in summaries if s.get("動画の概要")]
-        conclusion_texts = [s.get("結論", "") for s in summaries if s.get("結論")]
-        
-        merged["動画の概要"] = max(overview_texts, key=len) if overview_texts else "概要なし"
-        merged["結論"] = max(conclusion_texts, key=len) if conclusion_texts else "結論なし"
-                
-        return merged
-
-    def evaluate_summary_quality(self, original_text: str, summary_json: str) -> Dict[str, float]:
+    def _evaluate_summary_quality(self, summary: str) -> dict:
         """Evaluate the quality of the generated summary"""
         try:
-            summary_data = json.loads(summary_json)
-            quality_scores = {
+            summary_data = json.loads(summary)
+            scores = {
                 "構造の完全性": 0.0,
                 "情報量": 0.0,
                 "簡潔性": 0.0,
                 "総合スコア": 0.0
             }
 
-            # 構造の完全性をチェック (30%)
-            structure_score = 0.0
-            required_sections = {"動画の概要", "ポイント", "結論"}
-            section_score = len(set(summary_data.keys()) & required_sections) / len(required_sections)
+            # 構造の完全性の評価
+            structure_score = 0
+            required_keys = ["動画の概要", "ポイント", "結論"]
+            for key in required_keys:
+                if key in summary_data:
+                    structure_score += 3
             
-            if "ポイント" in summary_data:
-                points = summary_data["ポイント"]
-                if isinstance(points, list) and points:
-                    required_fields = {"タイトル", "説明", "重要度"}
-                    field_scores = []
-                    for point in points:
-                        field_score = len(set(point.keys()) & required_fields) / len(required_fields)
-                        field_scores.append(field_score)
-                    point_score = sum(field_scores) / len(field_scores)
-                    structure_score = (section_score + point_score) / 2
+            points = summary_data.get("ポイント", [])
+            if len(points) == 3:  # 正確に3つのポイントがある
+                structure_score += 1
                 
-            quality_scores["構造の完全性"] = structure_score * 10
-
-            # 情報量を評価 (40%)
-            total_content = summary_data.get("動画の概要", "") + " "
-            for point in summary_data.get("ポイント", []):
-                total_content += point.get("タイトル", "") + " " + point.get("説明", "") + " "
-            total_content += summary_data.get("結論", "")
+            # ポイントの構造チェック
+            point_structure_score = 0
+            for point in points:
+                if all(key in point for key in ["タイトル", "説明", "重要度"]):
+                    point_structure_score += 1
+            structure_score += point_structure_score / len(points) if points else 0
             
-            # 情報量スコアを計算
-            original_length = len(original_text)
-            summary_length = len(total_content)
-            ideal_ratio = 0.3  # 理想的な要約は元のテキストの30%程度
-            actual_ratio = summary_length / original_length
-            information_score = max(0, 1 - abs(actual_ratio - ideal_ratio) / ideal_ratio)
-            quality_scores["情報量"] = information_score * 10
+            scores["構造の完全性"] = min(structure_score, 10.0)
 
-            # 簡潔性を評価 (30%)
-            conciseness_score = 0.0
-            if summary_length > 0:
-                # 重複フレーズをチェック
-                phrases = re.findall(r'\b\w+(?:\s+\w+){2,}\b', total_content)
-                unique_phrases = set(phrases)
-                if phrases:
-                    conciseness_score = len(unique_phrases) / len(phrases)
-            quality_scores["簡潔性"] = conciseness_score * 10
+            # 情報量の評価
+            info_score = 0
+            overview_length = len(summary_data.get("動画の概要", ""))
+            if 100 <= overview_length <= 200:  # 適切な長さの概要
+                info_score += 3
+            
+            # ポイントの情報量チェック
+            for point in points:
+                title_len = len(point.get("タイトル", ""))
+                desc_len = len(point.get("説明", ""))
+                if 5 <= title_len <= 15:  # タイトルの長さが適切
+                    info_score += 1
+                if 20 <= desc_len <= 40:  # 説明の長さが適切
+                    info_score += 1
+            
+            conclusion_length = len(summary_data.get("結論", ""))
+            if 50 <= conclusion_length <= 100:  # 適切な長さの結論
+                info_score += 2
+                
+            scores["情報量"] = min(info_score, 10.0)
 
-            # 総合スコアを計算
-            quality_scores["総合スコア"] = (
-                quality_scores["構造の完全性"] * 0.3 +
-                quality_scores["情報量"] * 0.4 +
-                quality_scores["簡潔性"] * 0.3
-            )
+            # 簡潔性の評価
+            concise_score = 10.0  # 開始点を10とし、問題があれば減点
+            
+            # 文字数制限オーバーのチェック
+            if overview_length > 200:
+                concise_score -= 2
+            if conclusion_length > 100:
+                concise_score -= 2
+                
+            # ポイントの簡潔性チェック
+            for point in points:
+                if len(point.get("タイトル", "")) > 15:
+                    concise_score -= 1
+                if len(point.get("説明", "")) > 40:
+                    concise_score -= 1
+                    
+            scores["簡潔性"] = max(concise_score, 0.0)
 
-            return quality_scores
+            # 総合スコアの計算
+            scores["総合スコア"] = (scores["構造の完全性"] * 0.4 + 
+                               scores["情報量"] * 0.3 + 
+                               scores["簡潔性"] * 0.3)
 
+            return scores
+
+        except json.JSONDecodeError:
+            logger.error("Summary is not in valid JSON format")
+            return {key: 0.0 for key in ["構造の完全性", "情報量", "簡潔性", "総合スコア"]}
         except Exception as e:
-            logger.error(f"要約品質の評価中にエラーが発生しました: {str(e)}")
-            return {
-                "構造の完全性": 0.0,
-                "情報量": 0.0,
-                "簡潔性": 0.0,
-                "総合スコア": 0.0
-            }
+            logger.error(f"Error evaluating summary quality: {str(e)}")
+            return {key: 0.0 for key in ["構造の完全性", "情報量", "簡潔性", "総合スコア"]}
 
-    def generate_summary(self, text: str) -> Tuple[str, Dict[str, float]]:
-        """Generate a summary using parallel processing and evaluate its quality"""
+    def generate_summary(self, text: str) -> tuple:
+        """Generate a summary of the given text and evaluate its quality"""
         try:
-            if not text or len(text.strip()) < 10:
-                raise ValueError("テキストが短すぎるか空です")
-                
+            # Check cache first
             cache_key = hash(text)
             if cache_key in self._cache:
-                summary = self._cache[cache_key]
-                quality_scores = self.evaluate_summary_quality(text, summary)
-                return summary, quality_scores
-                
-            chunks = self._split_text(text)
-            summaries = []
-            
-            # Process chunks in parallel
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                future_to_chunk = {
-                    executor.submit(self._process_chunk_with_retry, chunk, i): i
-                    for i, chunk in enumerate(chunks)
-                }
-                
-                for future in as_completed(future_to_chunk):
-                    try:
-                        summary = future.result()
-                        if summary:
-                            summaries.append(summary)
-                    except Exception as e:
-                        logger.error(f"Chunk processing failed: {str(e)}")
+                return self._cache[cache_key]
 
-            if not summaries:
-                logger.error("No valid summaries were generated")
-                raise ValueError("要約の生成に失敗しました")
+            prompt = self._create_summary_prompt(text)
+            response = self.model.generate_content(prompt)
+            summary = response.text
 
-            try:
-                merged_summary = self._merge_summaries(summaries)
-                summary_json = json.dumps(merged_summary, ensure_ascii=False, indent=2)
-                quality_scores = self.evaluate_summary_quality(text, summary_json)
-                
-                self._cache[cache_key] = summary_json
-                return summary_json, quality_scores
-            except Exception as e:
-                logger.error(f"Error in summary finalization: {str(e)}")
-                raise ValueError("要約の生成に失敗しました")
-            
+            # Clean up the response to ensure valid JSON
+            summary = summary.strip()
+            if summary.startswith('```json'):
+                summary = summary[7:]
+            if summary.endswith('```'):
+                summary = summary[:-3]
+            summary = summary.strip()
+
+            # Evaluate the quality of the summary
+            quality_scores = self._evaluate_summary_quality(summary)
+
+            # Cache the result
+            result = (summary, quality_scores)
+            self._cache[cache_key] = result
+            return result
+
         except Exception as e:
-            logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
-            raise Exception(f"要約の生成に失敗しました: {str(e)}")
+            logger.error(f"Error generating summary: {str(e)}")
+            raise
