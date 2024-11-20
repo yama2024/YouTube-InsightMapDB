@@ -22,8 +22,14 @@ class TextProcessor:
 
     def _create_summary_prompt(self, text):
         prompt = f"""
-以下のテキストを分析し、文脈を考慮した要約を生成してください。以下のJSON形式で出力してください：
+あなたは文脈を考慮した要約生成の専門家です。以下のテキストを分析し、文脈の流れと重要度を考慮した要約を生成してください。
 
+出力要件:
+1. 各トピックの関連性と重要度を考慮
+2. 文脈の流れを保持した自然な要約
+3. 重要なキーポイントの抽出と説明
+
+出力フォーマット:
 {{
     "主要ポイント": [
         {{
@@ -50,6 +56,12 @@ class TextProcessor:
     }}
 }}
 
+考慮すべきポイント:
+1. トピック間の関連性を明確に示す
+2. 重要度の判定基準を文脈から導出
+3. キーワードの文脈上の役割を考慮
+4. トピックの継続性と新規性を区別
+
 分析対象テキスト:
 {text}
 """
@@ -69,7 +81,24 @@ class TextProcessor:
             transcript = transcript_list.find_transcript(['ja', 'en'])
             transcript_pieces = transcript.fetch()
             
-            full_transcript = ' '.join([piece['text'] for piece in transcript_pieces])
+            # Improved transcript processing with context preservation
+            processed_pieces = []
+            current_context = ""
+            
+            for piece in transcript_pieces:
+                text = piece['text'].strip()
+                # Preserve context between transcript pieces
+                if text.endswith(('、', '。', '！', '？')):
+                    current_context += text + ' '
+                    processed_pieces.append(current_context.strip())
+                    current_context = ""
+                else:
+                    current_context += text + ' '
+            
+            if current_context:  # Add any remaining context
+                processed_pieces.append(current_context.strip())
+            
+            full_transcript = ' '.join(processed_pieces)
             
             # Cache the result
             self._cache[cache_key] = full_transcript
@@ -103,24 +132,35 @@ class TextProcessor:
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
-            prompt = self._create_summary_prompt(text)
-            response = self.model.generate_content(prompt)
+            # Split text into contextual chunks for better processing
+            chunks = self._split_into_contextual_chunks(text)
             
-            if not response.text:
-                raise Exception("要約の生成に失敗しました")
-
-            # Extract JSON from response
-            json_str = response.text
-            if json_str.startswith('```json'):
-                json_str = json_str[7:]
-            if json_str.endswith('```'):
-                json_str = json_str[:-3]
-
-            # Parse JSON and validate structure
-            summary_data = json.loads(json_str)
+            # Process each chunk while maintaining context
+            summaries = []
+            context = {}
             
-            # Format the summary in a readable way
-            formatted_summary = self._format_summary(summary_data)
+            for chunk in chunks:
+                prompt = self._create_summary_prompt(chunk)
+                response = self.model.generate_content(prompt)
+                
+                if not response.text:
+                    raise Exception("要約の生成に失敗しました")
+
+                # Extract JSON from response
+                json_str = response.text
+                if json_str.startswith('```json'):
+                    json_str = json_str[7:]
+                if json_str.endswith('```'):
+                    json_str = json_str[:-3]
+
+                # Parse JSON and update context
+                chunk_data = json.loads(json_str)
+                self._update_context(context, chunk_data)
+                summaries.append(chunk_data)
+            
+            # Merge summaries with context awareness
+            merged_summary = self._merge_summaries(summaries, context)
+            formatted_summary = self._format_summary(merged_summary)
             
             # Cache the result
             self._cache[cache_key] = formatted_summary
@@ -129,6 +169,68 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
             raise Exception(f"要約の生成に失敗しました: {str(e)}")
+
+    def _split_into_contextual_chunks(self, text, chunk_size=1000):
+        """Split text into chunks while preserving context"""
+        chunks = []
+        sentences = re.split('([。！？])', text)
+        current_chunk = ""
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i] + (sentences[i + 1] if i + 1 < len(sentences) else "")
+            if len(current_chunk) + len(sentence) > chunk_size:
+                chunks.append(current_chunk)
+                current_chunk = sentence
+            else:
+                current_chunk += sentence
+                
+        if current_chunk:
+            chunks.append(current_chunk)
+            
+        return chunks
+
+    def _update_context(self, context, chunk_data):
+        """Update context information from chunk data"""
+        # Update continuing topics
+        if "文脈連携" in chunk_data:
+            if "継続するトピック" not in context:
+                context["継続するトピック"] = set()
+            if "新規トピック" not in context:
+                context["新規トピック"] = set()
+                
+            context["継続するトピック"].update(chunk_data["文脈連携"]["継続するトピック"])
+            context["新規トピック"].update(chunk_data["文脈連携"]["新規トピック"])
+
+    def _merge_summaries(self, summaries, context):
+        """Merge chunk summaries with context awareness"""
+        merged = {
+            "主要ポイント": [],
+            "詳細分析": [],
+            "キーワード": [],
+            "文脈連携": {
+                "継続するトピック": list(context.get("継続するトピック", [])),
+                "新規トピック": list(context.get("新規トピック", []))
+            }
+        }
+        
+        # Merge while maintaining importance and context
+        seen_topics = set()
+        for summary in summaries:
+            # Merge main points with deduplication
+            for point in summary.get("主要ポイント", []):
+                if point["タイトル"] not in seen_topics:
+                    merged["主要ポイント"].append(point)
+                    seen_topics.add(point["タイトル"])
+            
+            # Merge detailed analysis
+            merged["詳細分析"].extend(summary.get("詳細分析", []))
+            
+            # Merge keywords with deduplication
+            for keyword in summary.get("キーワード", []):
+                if not any(k["用語"] == keyword["用語"] for k in merged["キーワード"]):
+                    merged["キーワード"].append(keyword)
+
+        return merged
 
     def _format_summary(self, data):
         """Format the summary data into a readable markdown string"""
