@@ -14,27 +14,31 @@ class MindMapGenerator:
         try:
             lines = ["mindmap"]
             
-            # Root node (centered video title or main topic)
+            # Escape special characters and clean the title
             root_title = data.get("タイトル", "コンテンツ概要")
-            lines.append(f"  root[[{root_title}]]")
+            root_title = root_title.replace('"', "'").replace("\n", " ")
+            lines.append(f"  root(({root_title}))")
             
             # Process main points as primary branches
             if "主要ポイント" in data:
                 for i, point in enumerate(data["主要ポイント"]):
-                    # Create main branch
-                    title = point.get("タイトル", "").replace('"', '').replace("'", "")
-                    lines.append(f"    id{i}[{title}]")
+                    # Clean and escape the title
+                    title = point.get("タイトル", "").replace('"', "'").replace("\n", " ")
+                    lines.append(f"    {i}({title})")
                     
-                    # Add sub-points if available
+                    # Add sub-points with proper escaping
                     if "説明" in point:
-                        explanation = point["説明"].replace('"', '').replace("'", "")
-                        lines.append(f"      id{i}_1[{explanation}]")
+                        explanation = point["説明"].replace('"', "'").replace("\n", " ")
+                        # Truncate long explanations
+                        if len(explanation) > 50:
+                            explanation = explanation[:47] + "..."
+                        lines.append(f"      {i}.1({explanation})")
             
             return "\n".join(lines)
             
         except Exception as e:
             logger.error(f"マインドマップの生成中にエラーが発生しました: {str(e)}")
-            return "mindmap\n  root[[エラーが発生しました]]"
+            return "mindmap\n  root((エラーが発生しました))"
 
     def generate_mindmap(self, text: str) -> str:
         """Generate a mindmap from the analyzed text"""
@@ -66,4 +70,4 @@ class MindMapGenerator:
             
         except Exception as e:
             logger.error(f"マインドマップの生成に失敗しました: {str(e)}")
-            return "mindmap\n  root[[エラーが発生しました]]"
+            return "mindmap\n  root((エラーが発生しました))"
