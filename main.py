@@ -86,7 +86,7 @@ try:
             'message': ''
         }
     if 'current_summary_style' not in st.session_state:
-        st.session_state.current_summary_style = "balanced"
+        st.session_state.current_summary_style = "overview"  # Default to overview
 
     def update_step_progress(step_name: str, completed: bool = True):
         """Update the completion status of a processing step"""
@@ -350,9 +350,8 @@ try:
                 # Add style selection with proper label
                 summary_style = st.radio(
                     "要約スタイル",
-                    options=["balanced", "detailed", "overview"],
+                    options=["detailed", "overview"],
                     format_func=lambda x: {
-                        "balanced": "バランス (標準的な長さと詳細さ)",
                         "detailed": "詳細 (より詳しい分析と説明)",
                         "overview": "概要 (簡潔なポイントのみ)"
                     }[x],

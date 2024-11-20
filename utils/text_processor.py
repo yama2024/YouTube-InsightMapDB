@@ -1,10 +1,12 @@
+import os
 import json
-import re
 import logging
+from typing import Tuple, Dict, Any
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import TextFormatter
 import google.generativeai as genai
-import os
+from concurrent.futures import ThreadPoolExecutor
+import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -12,15 +14,19 @@ logger = logging.getLogger(__name__)
 
 class TextProcessor:
     def __init__(self):
+        self._setup_gemini()
         self._cache = {}
+
+    def _setup_gemini(self):
+        """Initialize Gemini API with the provided key"""
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
-            raise ValueError("Gemini API key not found in environment variables")
+            raise ValueError("Gemini API key is not set in environment variables")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-pro')
 
     def get_transcript(self, video_url: str) -> str:
-        """Get transcript from YouTube video"""
+        """Extract transcript from YouTube video"""
         try:
             video_id = self._extract_video_id(video_url)
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
@@ -29,8 +35,8 @@ class TextProcessor:
             formatter = TextFormatter()
             return formatter.format_transcript(transcript_data)
         except Exception as e:
-            logger.error(f"Failed to fetch transcript: {str(e)}")
-            raise
+            logger.error(f"Failed to get transcript: {str(e)}")
+            raise ValueError(f"文字起こしの取得に失敗しました: {str(e)}")
 
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from YouTube URL"""
@@ -45,238 +51,208 @@ class TextProcessor:
                 return match.group(1)
         raise ValueError("Invalid YouTube URL")
 
-    def _create_summary_prompt(self, text: str, style: str = "balanced") -> str:
-        """Create a summary prompt based on the selected style"""
-        base_prompt = f"""
-テキストを分析し、以下の形式で要約してください。
-重要なポイントを明確に示し、"""
-
-        if style == "detailed":
-            base_prompt += "詳細な分析と深い考察を含めて要約してください。\n\n"
-            json_template = {
-                "動画の概要": "【400文字程度の詳細な概要】",
-                "ポイント": [
-                    {
-                        "番号": "【1-5】",
-                        "タイトル": "【20文字以内の具体的なタイトル】",
-                        "内容": "【80文字程度の詳細な説明】",
-                        "重要度": "【1-5の数値】",
-                        "補足情報": "【40文字程度の追加コンテキスト】"
-                    }
-                ] * 5,  # 5つのポイント
-                "結論": "【200文字程度の詳細な結論】",
-                "キーワード": [
-                    {
-                        "用語": "【重要なキーワード】",
-                        "説明": "【40文字程度の詳細な説明】",
-                        "関連用語": ["関連キーワード1", "関連キーワード2"]
-                    }
-                ] * 8  # より多くのキーワード
-            }
-            base_prompt += """
-重要な指示:
-- 詳細な説明と分析を含める
-- 補足情報を必ず追加
-- 関連するキーワードも含める"""
-
-        elif style == "overview":
-            base_prompt += "最重要ポイントのみを簡潔に要約してください。\n\n"
-            json_template = {
-                "動画の概要": "【100文字以内の簡潔な概要】",
-                "ポイント": [
-                    {
-                        "番号": "【1-3】",
-                        "タイトル": "【15文字以内の明確なタイトル】",
-                        "内容": "【30文字以内の簡潔な説明】",
-                        "重要度": "【1-5の数値】"
-                    }
-                ] * 3,  # 3つの主要ポイントのみ
-                "結論": "【50文字以内の明確な結論】",
-                "キーワード": [
-                    {
-                        "用語": "【キーワード】",
-                        "説明": "【20文字以内の簡潔な説明】"
-                    }
-                ] * 3  # 主要なキーワードのみ
-            }
-            base_prompt += """
-重要な指示:
-- 最も重要なポイントのみを抽出
-- 簡潔な表現を使用
-- 重要度の高い項目を優先"""
-
-        else:  # balanced
-            base_prompt += "バランスの取れた形で要約してください。\n\n"
-            json_template = {
-                "動画の概要": "【200文字程度の簡潔な概要】",
-                "ポイント": [
-                    {
-                        "番号": "【1-4】",
-                        "タイトル": "【15文字以内の明確なタイトル】",
-                        "内容": "【50文字程度の説明】",
-                        "重要度": "【1-5の数値】"
-                    }
-                ] * 4,  # 4つの主要ポイント
-                "結論": "【100文字程度の結論】",
-                "キーワード": [
-                    {
-                        "用語": "【キーワード】",
-                        "説明": "【30文字程度の説明】"
-                    }
-                ] * 5  # バランスの取れた数のキーワード
-            }
-            base_prompt += """
-重要な指示:
-- 重要なポイントをバランスよく含める
-- 適度な詳細さを維持
-- 理解しやすい説明を心がける"""
-
-        base_prompt += "\n\n必ずJSONフォーマットで出力してください。マークダウンのコードブロックは使用しないでください。\n\n"
-        return base_prompt + json.dumps(json_template, ensure_ascii=False, indent=2) + f"\n\n分析対象テキスト:\n{text}"
-
-    def _evaluate_summary_quality(self, summary: str, style: str = "balanced") -> dict:
-        """Evaluate the quality of the generated summary based on the style"""
+    def generate_summary(self, text: str, style: str = "overview") -> Tuple[str, Dict[str, float]]:
+        """Generate a summary of the text with specified style"""
         try:
-            summary_data = json.loads(summary)
-            scores = {
-                "構造の完全性": 0.0,
-                "情報量": 0.0,
-                "簡潔性": 0.0,
-                "総合スコア": 0.0
-            }
+            # Validate style
+            if style not in ["detailed", "overview"]:
+                logger.warning(f"Invalid style '{style}', defaulting to 'overview'")
+                style = "overview"
 
-            # Style-specific evaluation criteria
-            if style == "detailed":
-                overview_length_range = (300, 400)
-                content_length_range = (60, 80)
-                conclusion_length_range = (150, 200)
-                min_keywords = 8
-            elif style == "overview":
-                overview_length_range = (50, 100)
-                content_length_range = (20, 30)
-                conclusion_length_range = (30, 50)
-                min_keywords = 3
-            else:  # balanced
-                overview_length_range = (150, 200)
-                content_length_range = (30, 40)
-                conclusion_length_range = (70, 100)
-                min_keywords = 5
-
-            # Evaluate structure completeness
-            structure_score = 0
-            required_keys = ["動画の概要", "ポイント", "結論", "キーワード"]
-            for key in required_keys:
-                if key in summary_data:
-                    structure_score += 2.5
-
-            points = summary_data.get("ポイント", [])
-            if points:
-                point_structure_score = 0
-                required_point_keys = ["番号", "タイトル", "内容", "重要度"]
-                if style == "detailed":
-                    required_point_keys.append("補足情報")
-                
-                for point in points:
-                    if all(key in point for key in required_point_keys):
-                        point_structure_score += 1
-                structure_score += min(point_structure_score / len(points), 2.5)
-
-            scores["構造の完全性"] = min(structure_score, 10.0)
-
-            # Evaluate information content
-            info_score = 0
-            overview_length = len(summary_data.get("動画の概要", ""))
-            if overview_length_range[0] <= overview_length <= overview_length_range[1]:
-                info_score += 3
-            elif overview_length >= overview_length_range[0] * 0.7:
-                info_score += 2
-
-            for point in points:
-                content_len = len(point.get("内容", ""))
-                if content_length_range[0] <= content_len <= content_length_range[1]:
-                    info_score += 0.5
-
-            keywords = summary_data.get("キーワード", [])
-            if len(keywords) >= min_keywords:
-                info_score += 2
-            elif len(keywords) >= min_keywords * 0.7:
-                info_score += 1
-
-            conclusion_length = len(summary_data.get("結論", ""))
-            if conclusion_length_range[0] <= conclusion_length <= conclusion_length_range[1]:
-                info_score += 2
-            elif conclusion_length >= conclusion_length_range[0] * 0.7:
-                info_score += 1
-
-            scores["情報量"] = min(info_score, 10.0)
-
-            # Evaluate conciseness
-            concise_score = 10.0
-            if overview_length > overview_length_range[1]:
-                concise_score -= (overview_length - overview_length_range[1]) / 100
-
-            for point in points:
-                content_len = len(point.get("内容", ""))
-                if content_len > content_length_range[1]:
-                    concise_score -= 0.5
-
-            if conclusion_length > conclusion_length_range[1]:
-                concise_score -= (conclusion_length - conclusion_length_range[1]) / 50
-
-            scores["簡潔性"] = max(concise_score, 0.0)
-
-            # Calculate overall score with style-specific weights
-            if style == "detailed":
-                weights = {"構造の完全性": 0.3, "情報量": 0.5, "簡潔性": 0.2}
-            elif style == "overview":
-                weights = {"構造の完全性": 0.3, "情報量": 0.2, "簡潔性": 0.5}
-            else:  # balanced
-                weights = {"構造の完全性": 0.4, "情報量": 0.3, "簡潔性": 0.3}
-
-            scores["総合スコア"] = round(
-                sum(scores[key] * weights[key] for key in weights), 1
-            )
-
-            return {key: round(value, 1) for key, value in scores.items()}
-
-        except json.JSONDecodeError:
-            logger.error("Summary is not in valid JSON format")
-            return {key: 0.0 for key in ["構造の完全性", "情報量", "簡潔性", "総合スコア"]}
-        except Exception as e:
-            logger.error(f"Error evaluating summary quality: {str(e)}")
-            return {key: 0.0 for key in ["構造の完全性", "情報量", "簡潔性", "総合スコア"]}
-
-    def generate_summary(self, text: str, style: str = "balanced") -> tuple:
-        """Generate a summary of the given text and evaluate its quality"""
-        try:
-            cache_key = hash(f"{text}_{style}")
+            cache_key = f"{hash(text)}_{style}"
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
             prompt = self._create_summary_prompt(text, style)
             response = self.model.generate_content(prompt)
-            summary = response.text.strip()
+            
+            if not response.text:
+                raise ValueError("空の応答が返されました")
 
-            # Clean and validate JSON
+            # Clean and parse the response
+            summary = response.text
             if summary.startswith('```json'):
                 summary = summary[7:]
             if summary.endswith('```'):
                 summary = summary[:-3]
-            summary = summary.strip()
 
-            # Validate JSON before returning
+            # Validate JSON structure
             try:
-                json.loads(summary)  # Test if valid JSON
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON response: {e}")
-                raise ValueError("要約の生成に失敗しました。再試行してください。")
+                json.loads(summary)
+            except json.JSONDecodeError:
+                logger.error("Invalid JSON response")
+                raise ValueError("不正なJSON形式の応答が返されました")
 
-            # Evaluate quality
-            quality_scores = self._evaluate_summary_quality(summary, style)
+            # Evaluate summary quality
+            quality_scores = self._evaluate_summary_quality(summary, text, style)
+            
+            # Cache the result
             result = (summary, quality_scores)
             self._cache[cache_key] = result
             return result
 
         except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
-            raise
+            logger.error(f"Summary generation error: {str(e)}")
+            raise ValueError(f"要約の生成に失敗しました: {str(e)}")
+
+    def _create_summary_prompt(self, text: str, style: str) -> str:
+        """Create a prompt for summary generation based on style"""
+        base_prompt = f"""
+以下のテキストを解析し、構造化された要約をJSON形式で生成してください。
+
+テキスト:
+{text}
+
+要約の形式は以下のJSONスキーマに従ってください:
+{{
+    "動画の概要": "string",
+    "ポイント": [
+        {{
+            "番号": number,
+            "タイトル": "string",
+            "内容": "string",
+            "重要度": number (1-5),
+            "補足情報": "string" (省略可)
+        }}
+    ],
+    "結論": "string",
+    "キーワード": [
+        {{
+            "用語": "string",
+            "説明": "string",
+            "関連用語": ["string"] (省略可)
+        }}
+    ]
+}}
+"""
+
+        if style == "detailed":
+            return base_prompt + """
+詳細スタイルの要件:
+- より深い分析と詳細な説明を含める
+- 各ポイントに補足情報を追加
+- キーワードに関連用語を含める
+- 重要度は詳細に5段階で評価
+"""
+        else:  # overview style
+            return base_prompt + """
+概要スタイルの要件:
+- 簡潔で要点を押さえた説明
+- 重要なポイントのみを抽出
+- 補足情報は特に重要な場合のみ含める
+- キーワードは主要なものに限定
+- 重要度は主要なポイントを中心に評価
+"""
+
+    def _evaluate_summary_quality(self, summary: str, original_text: str, style: str) -> Dict[str, float]:
+        """Evaluate the quality of the generated summary"""
+        try:
+            summary_data = json.loads(summary)
+            
+            # Base scoring weights
+            weights = {
+                "detailed": {
+                    "構造の完全性": 0.3,
+                    "情報量": 0.4,
+                    "簡潔性": 0.3
+                },
+                "overview": {
+                    "構造の完全性": 0.3,
+                    "情報量": 0.3,
+                    "簡潔性": 0.4
+                }
+            }[style]
+
+            # Evaluate structure completeness
+            structure_score = self._evaluate_structure(summary_data)
+            
+            # Evaluate information content
+            info_score = self._evaluate_information(summary_data, style)
+            
+            # Evaluate conciseness
+            concise_score = self._evaluate_conciseness(summary_data, style)
+            
+            # Calculate weighted total score
+            total_score = (
+                structure_score * weights["構造の完全性"] +
+                info_score * weights["情報量"] +
+                concise_score * weights["簡潔性"]
+            )
+
+            return {
+                "構造の完全性": round(structure_score, 1),
+                "情報量": round(info_score, 1),
+                "簡潔性": round(concise_score, 1),
+                "総合スコア": round(total_score, 1)
+            }
+
+        except Exception as e:
+            logger.error(f"Quality evaluation error: {str(e)}")
+            return {
+                "構造の完全性": 5.0,
+                "情報量": 5.0,
+                "簡潔性": 5.0,
+                "総合スコア": 5.0
+            }
+
+    def _evaluate_structure(self, summary_data: Dict[str, Any]) -> float:
+        """Evaluate the structural completeness of the summary"""
+        score = 7.0  # Base score
+        
+        # Check for required sections
+        if "動画の概要" in summary_data:
+            score += 1.0
+        if "ポイント" in summary_data and len(summary_data["ポイント"]) > 0:
+            score += 1.0
+        if "結論" in summary_data:
+            score += 1.0
+        
+        return min(10.0, score)
+
+    def _evaluate_information(self, summary_data: Dict[str, Any], style: str) -> float:
+        """Evaluate the information content of the summary"""
+        score = 5.0  # Base score
+        
+        points = summary_data.get("ポイント", [])
+        keywords = summary_data.get("キーワード", [])
+        
+        if style == "detailed":
+            # Check for detailed information
+            if points and all("補足情報" in p for p in points):
+                score += 2.0
+            if keywords and all("関連用語" in k for k in keywords):
+                score += 2.0
+            if len(points) >= 5:
+                score += 1.0
+        else:  # overview
+            # Check for concise information
+            if points and len(points) >= 3:
+                score += 2.0
+            if keywords and len(keywords) >= 3:
+                score += 2.0
+            if all(len(p.get("内容", "")) < 100 for p in points):
+                score += 1.0
+        
+        return min(10.0, score)
+
+    def _evaluate_conciseness(self, summary_data: Dict[str, Any], style: str) -> float:
+        """Evaluate the conciseness of the summary"""
+        score = 7.0  # Base score
+        
+        overview = summary_data.get("動画の概要", "")
+        points = summary_data.get("ポイント", [])
+        
+        if style == "detailed":
+            # For detailed style, check for comprehensive explanations
+            if len(overview) > 100:
+                score += 1.0
+            if points and all(len(p.get("内容", "")) > 50 for p in points):
+                score += 2.0
+        else:  # overview
+            # For overview style, check for brevity
+            if len(overview) < 100:
+                score += 1.0
+            if points and all(len(p.get("内容", "")) < 50 for p in points):
+                score += 2.0
+        
+        return min(10.0, score)
