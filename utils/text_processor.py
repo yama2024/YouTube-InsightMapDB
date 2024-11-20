@@ -51,8 +51,8 @@ class TextProcessor:
         # Initialize cache with 1-hour TTL
         self.cache = TTLCache(maxsize=100, ttl=3600)
         self.chunk_size = 4000  # Reduced chunk size for better reliability
-        self.max_retries = 3
-        self.json_validation_retries = 2
+        self.max_retries = 5  # Increased from 3 to 5
+        self.json_validation_retries = 3  # Increased from 2 to 3
 
     def _initialize_api(self):
         """Initialize or reinitialize the Gemini API with current environment"""
@@ -63,24 +63,39 @@ class TextProcessor:
         self.model = genai.GenerativeModel('gemini-1.5-pro')
 
     def _validate_json_response(self, response_text: str) -> Optional[Dict]:
-        """Validate and parse JSON response with error recovery"""
+        """Improved JSON response validation with multiple recovery attempts"""
+        if not response_text:
+            logger.warning("Empty response received")
+            return None
+
         try:
-            # First attempt: direct JSON parsing
-            return json.loads(response_text)
-        except json.JSONDecodeError as e:
-            logger.warning(f"Initial JSON parsing failed: {str(e)}")
-            try:
-                # Second attempt: Find JSON-like structure
-                match = re.search(r'\{[\s\S]*\}', response_text)
-                if match:
-                    json_str = match.group(0)
+            # Remove any leading/trailing non-JSON content
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx >= 0 and end_idx > 0:
+                json_str = response_text[start_idx:end_idx]
+                try:
                     return json.loads(json_str)
-            except (json.JSONDecodeError, AttributeError) as e:
-                logger.warning(f"JSON recovery attempt failed: {str(e)}")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Initial JSON parsing failed: {str(e)}")
+                    
+                    # Try to fix common JSON issues
+                    json_str = json_str.replace('\n', ' ').replace('\r', '')
+                    json_str = re.sub(r'(?<!\\)"(?!,|\s*}|\s*])', '\\"', json_str)
+                    try:
+                        return json.loads(json_str)
+                    except json.JSONDecodeError:
+                        logger.warning("Failed to fix JSON structure")
+                        return None
+            else:
+                logger.warning("No JSON structure found in response")
                 return None
+        except Exception as e:
+            logger.warning(f"Unexpected error in JSON validation: {str(e)}")
+            return None
 
     def _create_summary_prompt(self, text: str, context: Optional[Dict] = None) -> str:
-        """Gemini APIに適したプロンプト生成 - より厳密なJSON出力を要求"""
+        """Improved prompt with stricter JSON structure requirements"""
         context_info = ""
         if context:
             context_info = f"\nコンテキスト情報:\n{json.dumps(context, ensure_ascii=False, indent=2)}"
@@ -91,44 +106,64 @@ class TextProcessor:
 {text}
 {context_info}
 
-出力要件:
-1. 概要（150文字以内）：主要なテーマと重要なポイントを簡潔に説明
-2. 主要なポイント（3-5項目）：重要度順に具体的な説明を付けて記載
-3. 詳細分析：各主要ポイントの詳細な展開と具体例
-4. キーワードと重要概念：重要用語の定義と関連性の説明
-
-必ず以下の厳密なJSON形式で出力してください：
+必須出力形式:
 {{
-    "概要": "string",
+    "概要": "150文字以内の簡潔な説明",
     "主要ポイント": [
-        {{"タイトル": "string", "説明": "string"}}
+        {{
+            "タイトル": "重要なポイントの見出し",
+            "説明": "具体的な説明文",
+            "重要度": "1-5の数値"
+        }}
     ],
     "詳細分析": [
-        {{"ポイント": "string", "分析": "string"}}
+        {{
+            "セクション": "分析セクションの名称",
+            "内容": "詳細な分析内容",
+            "キーポイント": [
+                "重要な点1",
+                "重要な点2"
+            ]
+        }}
     ],
     "キーワード": [
-        {{"用語": "string", "説明": "string"}}
+        {{
+            "用語": "キーワード",
+            "説明": "簡潔な説明",
+            "関連語": ["関連キーワード1", "関連キーワード2"]
+        }}
     ]
 }}
 
-注意：
-- 必ず有効なJSONフォーマットを維持してください
-- 全ての文字列はエスケープ処理してください
-- 余分な説明や装飾は避けてください"""
+制約事項:
+1. 必ず有効なJSONフォーマットを維持すること
+2. すべての文字列は適切にエスケープすること
+3. 数値は必ず数値型で出力すること
+4. 配列は必ず1つ以上の要素を含むこと
+5. 主要ポイントは3-5項目を含むこと
+6. キーワードは最低3つ含むこと
+
+注意:
+- JSONフォーマット以外の装飾や説明は一切含めないでください
+- 各セクションは必須です。省略しないでください
+- 不正なJSON構造を避けるため、文字列内の二重引用符は必ずエスケープしてください"""
 
         return prompt
 
     def _process_chunk_with_retries(self, chunk: str, context: Dict) -> Optional[Dict]:
-        """チャンク処理の改善版 - リトライとバリデーション機能付き"""
-        for attempt in range(self.json_validation_retries):
+        """Enhanced chunk processing with improved validation and error handling"""
+        remaining_retries = self.json_validation_retries
+        last_error = None
+
+        while remaining_retries > 0:
             try:
                 def process_single_chunk():
                     prompt = self._create_summary_prompt(chunk, context)
                     response = self.model.generate_content(
                         prompt,
                         generation_config=genai.types.GenerationConfig(
-                            temperature=0.3,
-                            top_p=0.8,
+                            temperature=0.2,  # Reduced for more consistent output
+                            top_p=0.95,
                             top_k=40,
                             max_output_tokens=8192,
                         )
@@ -136,23 +171,45 @@ class TextProcessor:
                     return response.text
 
                 chunk_response = self._retry_with_backoff(process_single_chunk)
+                
+                # Validate JSON response
                 parsed_response = self._validate_json_response(chunk_response)
-                
                 if parsed_response:
-                    return parsed_response
+                    # Verify required fields
+                    required_fields = ["概要", "主要ポイント", "詳細分析", "キーワード"]
+                    if all(field in parsed_response for field in required_fields):
+                        return parsed_response
+                    else:
+                        logger.warning("Response missing required fields")
+                        missing_fields = [f for f in required_fields if f not in parsed_response]
+                        logger.warning(f"Missing fields: {', '.join(missing_fields)}")
                 
-                logger.warning(f"Attempt {attempt + 1}: Invalid JSON structure, retrying...")
-                sleep(1)  # Brief pause before retry
+                remaining_retries -= 1
+                if remaining_retries > 0:
+                    logger.warning(f"Retry attempt {self.json_validation_retries - remaining_retries}: Invalid or incomplete response")
+                    sleep(1 * (self.json_validation_retries - remaining_retries))
                 
             except Exception as e:
-                if "quota" in str(e).lower():
+                error_msg = str(e).lower()
+                if "quota" in error_msg:
                     logger.error("API quota exceeded, attempting to refresh API key")
                     try:
-                        self._initialize_api()  # Try to refresh API key
+                        self._initialize_api()
+                        continue
                     except Exception as key_error:
                         raise Exception(f"API key refresh failed: {str(key_error)}")
-                logger.warning(f"Chunk processing attempt {attempt + 1} failed: {str(e)}")
                 
+                last_error = e
+                remaining_retries -= 1
+                if remaining_retries > 0:
+                    logger.warning(f"Error during chunk processing: {str(e)}, retrying...")
+                    sleep(1 * (self.json_validation_retries - remaining_retries))
+
+        if last_error:
+            logger.error(f"All retry attempts failed: {str(last_error)}")
+            return None
+        
+        logger.error("Failed to generate valid response after all retries")
         return None
 
     def _combine_chunk_summaries(self, summaries: List[Dict]) -> Dict:
