@@ -37,6 +37,164 @@ class TextProcessor:
                 return match.group(1)
         raise ValueError("Invalid YouTube URL format")
 
+    def _validate_json_response(self, response_text: str) -> Optional[Dict]:
+        try:
+            # First, clean up the response text
+            cleaned_text = response_text.strip()
+            # Remove any markdown code block markers if present
+            if cleaned_text.startswith('```json'):
+                cleaned_text = cleaned_text[7:]
+            if cleaned_text.endswith('```'):
+                cleaned_text = cleaned_text[:-3]
+            
+            # Try to parse JSON
+            data = json.loads(cleaned_text)
+            
+            # Validate required fields
+            required_fields = ["主要ポイント", "詳細分析", "文脈連携", "キーワード"]
+            if not all(field in data for field in required_fields):
+                logger.warning("Missing required fields in JSON response")
+                return None
+                
+            return data
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Error validating JSON response: {str(e)}")
+            return None
+
+    def _format_summaries(self, summaries: List[Dict]) -> str:
+        try:
+            formatted_text = []
+            
+            for i, summary in enumerate(summaries, 1):
+                formatted_text.append(f"## セクション {i}\n")
+                
+                # Add main points
+                formatted_text.append("### 主要ポイント")
+                for point in summary["主要ポイント"]:
+                    importance = "🔥" * point.get("重要度", 1)
+                    formatted_text.append(f"- {point['タイトル']} {importance}")
+                    if "説明" in point:
+                        formatted_text.append(f"  - {point['説明']}")
+                        
+                # Add detailed analysis
+                formatted_text.append("\n### 詳細分析")
+                for analysis in summary["詳細分析"]:
+                    formatted_text.append(f"#### {analysis['セクション']}")
+                    for point in analysis.get("キーポイント", []):
+                        formatted_text.append(f"- {point}")
+                        
+                # Add keywords
+                formatted_text.append("\n### キーワード")
+                for keyword in summary["キーワード"]:
+                    formatted_text.append(f"- **{keyword['用語']}**: {keyword['説明']}")
+                    
+                formatted_text.append("\n---\n")
+                
+            return "\n".join(formatted_text)
+            
+        except Exception as e:
+            logger.error(f"Error formatting summaries: {str(e)}")
+            return "要約のフォーマットに失敗しました。"
+
+    def _create_summary_prompt(self, chunk: str, context: Dict) -> str:
+        """Create a context-aware summary prompt"""
+        prompt = f'''
+        以下のテキストを要約し、文脈を考慮したJSONフォーマットで出力してください。
+
+        前のセクションからの文脈情報：
+        - 継続中のトピック: {", ".join(context.get("continuing_themes", []))}
+        - 主要テーマ: {json.dumps([theme["topic"] for theme in context.get("key_themes", [])[:3]], ensure_ascii=False)}
+        - トピック間の関連: {json.dumps(context.get("topic_connections", [])[:3], ensure_ascii=False)}
+        - トピック階層: {json.dumps(context.get("topic_hierarchy", {}), ensure_ascii=False)}
+        
+        テキスト:
+        {chunk}
+        
+        出力フォーマット:
+        {{
+            "主要ポイント": [
+                {{
+                    "タイトル": "トピック",
+                    "重要度": 1-5の数値,
+                    "前セクションとの関連": "説明",
+                    "継続性": "新規/継続/発展"
+                }}
+            ],
+            "詳細分析": [
+                {{
+                    "セクション": "セクション名",
+                    "キーポイント": ["ポイント1", "ポイント2"],
+                    "文脈説明": "前セクションとの関連性",
+                    "発展度": "基礎/応用/深化"
+                }}
+            ],
+            "文脈連携": {{
+                "継続するトピック": ["トピック1", "トピック2"],
+                "新規トピック": ["新トピック1", "新トピック2"],
+                "トピック遷移": "トピック間の関連性の説明",
+                "理解度要件": "前セクションの理解が必要な度合い（1-5）"
+            }},
+            "キーワード": [
+                {{
+                    "用語": "キーワード",
+                    "説明": "説明文",
+                    "関連トピック": ["関連トピック1", "関連トピック2"],
+                    "重要度": 1-5の数値
+                }}
+            ]
+        }}
+        '''
+        return prompt
+
+    def generate_summary(self, text: str) -> str:
+        try:
+            chunks = self._chunk_text(text)
+            summaries = []
+            previous_summaries = []
+            
+            for i, chunk in enumerate(chunks):
+                context = self._get_chunk_context(previous_summaries)
+                
+                # Add retry logic for API calls
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        response = self.model.generate_content(
+                            self._create_summary_prompt(chunk, context),
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=0.3,
+                                top_p=0.8,
+                                top_k=40,
+                                max_output_tokens=8192,
+                            )
+                        )
+                        
+                        if not response.text:
+                            continue
+                            
+                        result = self._validate_json_response(response.text)
+                        if result:
+                            summaries.append(result)
+                            previous_summaries.append(result)
+                            break
+                    except Exception as e:
+                        logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+                        if attempt == max_retries - 1:
+                            logger.error(f"All attempts failed for chunk {i}")
+                
+            if not summaries:
+                raise ValueError("No valid summaries generated")
+                
+            # Format final summary
+            return self._format_summaries(summaries)
+            
+        except Exception as e:
+            logger.error(f"Error in summary generation: {str(e)}")
+            raise Exception(f"Failed to generate summary: {str(e)}")
+
     def get_transcript(self, youtube_url: str) -> str:
         """Get transcript from YouTube video with improved error handling"""
         try:
@@ -81,6 +239,43 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"Error getting transcript: {str(e)}")
             raise Exception(f"Failed to get transcript: {str(e)}")
+
+    def _chunk_text(self, text: str, chunk_size: int = 1000) -> List[str]:
+        """Split text into manageable chunks while preserving context and semantic boundaries"""
+        # First, split by obvious break points
+        paragraphs = text.split('\n\n')
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for paragraph in paragraphs:
+            # Further split long paragraphs
+            if len(paragraph) > chunk_size:
+                sentences = re.split(r'([。.!?！？] )', paragraph)
+                for i in range(0, len(sentences), 2):
+                    sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
+                    sentence_length = len(sentence)
+                    
+                    if current_length + sentence_length > chunk_size and current_chunk:
+                        chunks.append(' '.join(current_chunk))
+                        current_chunk = []
+                        current_length = 0
+                    
+                    current_chunk.append(sentence)
+                    current_length += sentence_length
+            else:
+                if current_length + len(paragraph) > chunk_size and current_chunk:
+                    chunks.append(' '.join(current_chunk))
+                    current_chunk = []
+                    current_length = 0
+                
+                current_chunk.append(paragraph)
+                current_length += len(paragraph)
+        
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
+        
+        return chunks
 
     def _build_topic_hierarchy(self, summaries: List[Dict]) -> Dict:
         """Build topic hierarchy from previous summaries with improved context tracking"""
@@ -250,187 +445,3 @@ class TextProcessor:
         )
         
         return context
-
-    def _chunk_text(self, text: str, chunk_size: int = 1000) -> List[str]:
-        """Split text into manageable chunks while preserving context and semantic boundaries"""
-        # First, split by obvious break points
-        paragraphs = text.split('\n\n')
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        
-        for paragraph in paragraphs:
-            # Further split long paragraphs
-            if len(paragraph) > chunk_size:
-                sentences = re.split(r'([。.!?！？] )', paragraph)
-                for i in range(0, len(sentences), 2):
-                    sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
-                    sentence_length = len(sentence)
-                    
-                    if current_length + sentence_length > chunk_size and current_chunk:
-                        chunks.append(' '.join(current_chunk))
-                        current_chunk = []
-                        current_length = 0
-                    
-                    current_chunk.append(sentence)
-                    current_length += sentence_length
-            else:
-                if current_length + len(paragraph) > chunk_size and current_chunk:
-                    chunks.append(' '.join(current_chunk))
-                    current_chunk = []
-                    current_length = 0
-                
-                current_chunk.append(paragraph)
-                current_length += len(paragraph)
-        
-        if current_chunk:
-            chunks.append(' '.join(current_chunk))
-        
-        return chunks
-
-    def generate_summary(self, text: str) -> str:
-        """Generate context-aware summary using Gemini API"""
-        try:
-            chunks = self._chunk_text(text)
-            summaries = []
-            previous_summaries = []
-            
-            for i, chunk in enumerate(chunks):
-                try:
-                    # Get enhanced context from previous summaries
-                    context = self._get_chunk_context(previous_summaries)
-                    
-                    # Build prompt with enhanced context
-                    prompt = f'''
-                    以下のテキストを要約し、文脈を考慮したJSONフォーマットで出力してください。
-
-                    前のセクションからの文脈情報：
-                    - 継続中のトピック: {", ".join(context.get("continuing_themes", []))}
-                    - 主要テーマ: {json.dumps([theme["topic"] for theme in context.get("key_themes", [])[:3]], ensure_ascii=False)}
-                    - トピック間の関連: {json.dumps(context.get("topic_connections", [])[:3], ensure_ascii=False)}
-                    - トピック階層: {json.dumps(context.get("topic_hierarchy", {}), ensure_ascii=False)}
-                    
-                    テキスト:
-                    {chunk}
-                    
-                    出力フォーマット:
-                    {{
-                        "主要ポイント": [
-                            {{
-                                "タイトル": "トピック",
-                                "重要度": 1-5の数値,
-                                "前セクションとの関連": "説明",
-                                "継続性": "新規/継続/発展"
-                            }}
-                        ],
-                        "詳細分析": [
-                            {{
-                                "セクション": "セクション名",
-                                "キーポイント": ["ポイント1", "ポイント2"],
-                                "文脈説明": "前セクションとの関連性",
-                                "発展度": "基礎/応用/深化"
-                            }}
-                        ],
-                        "文脈連携": {{
-                            "継続するトピック": ["トピック1", "トピック2"],
-                            "新規トピック": ["新トピック1", "新トピック2"],
-                            "トピック遷移": "トピック間の関連性の説明",
-                            "理解度要件": "前セクションの理解が必要な度合い（1-5）"
-                        }},
-                        "キーワード": [
-                            {{
-                                "用語": "キーワード",
-                                "説明": "説明文",
-                                "関連トピック": ["関連トピック1", "関連トピック2"],
-                                "重要度": 1-5の数値
-                            }}
-                        ]
-                    }}
-                    '''
-                    
-                    response = self.model.generate_content(
-                        prompt,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.3,
-                            top_p=0.8,
-                            top_k=40,
-                            max_output_tokens=8192,
-                        )
-                    )
-                    
-                    try:
-                        summary_data = json.loads(response.text)
-                        previous_summaries.append(summary_data)
-                        summaries.append(summary_data)
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse JSON response: {str(e)}")
-                        continue
-                        
-                except Exception as e:
-                    logger.error(f"Error processing chunk {i}: {str(e)}")
-                    continue
-
-            # Format the final summary with enhanced context awareness
-            if not summaries:
-                raise ValueError("No valid summaries generated")
-
-            # Combine all summaries into a structured format with emoji indicators
-            formatted_summary = "# 📚 コンテンツ要約\n\n"
-
-            # Add main topics section
-            formatted_summary += "## 🎯 主要トピック\n\n"
-            for summary in summaries:
-                for point in summary.get("主要ポイント", []):
-                    title = point.get("タイトル", "")
-                    importance = point.get("重要度", 1)
-                    relevance = point.get("前セクションとの関連", "")
-                    continuity = point.get("継続性", "")
-                    
-                    # Add emoji indicators based on importance and continuity
-                    importance_emoji = "🔥" if importance >= 4 else "⭐" if importance >= 3 else "📌"
-                    continuity_emoji = "🆕" if continuity == "新規" else "⏩" if continuity == "継続" else "📈"
-                    
-                    formatted_summary += f"{importance_emoji} {continuity_emoji} **{title}**\n"
-                    if relevance:
-                        formatted_summary += f"   - 関連: {relevance}\n"
-
-            # Add detailed analysis section
-            formatted_summary += "\n## 📊 詳細分析\n\n"
-            for summary in summaries:
-                for analysis in summary.get("詳細分析", []):
-                    section = analysis.get("セクション", "")
-                    points = analysis.get("キーポイント", [])
-                    context = analysis.get("文脈説明", "")
-                    development = analysis.get("発展度", "")
-                    
-                    # Add emoji indicators based on development level
-                    dev_emoji = "📚" if development == "基礎" else "🔄" if development == "応用" else "🎯"
-                    
-                    formatted_summary += f"{dev_emoji} **{section}**\n"
-                    for point in points:
-                        formatted_summary += f"   - {point}\n"
-                    if context:
-                        formatted_summary += f"   💡 文脈: {context}\n"
-
-            # Add keywords section
-            formatted_summary += "\n## 🔍 キーワード解説\n\n"
-            keyword_set = set()  # To avoid duplicates
-            for summary in summaries:
-                for keyword in summary.get("キーワード", []):
-                    term = keyword.get("用語", "")
-                    if term and term not in keyword_set:
-                        keyword_set.add(term)
-                        explanation = keyword.get("説明", "")
-                        importance = keyword.get("重要度", 1)
-                        
-                        # Add emoji indicator based on keyword importance
-                        keyword_emoji = "🌟" if importance >= 4 else "✨" if importance >= 3 else "💫"
-                        
-                        formatted_summary += f"{keyword_emoji} **{term}**\n"
-                        formatted_summary += f"   {explanation}\n"
-
-            return formatted_summary
-
-        except Exception as e:
-            logger.error(f"Error in summary generation: {str(e)}")
-            raise Exception(f"Failed to generate summary: {str(e)}")
