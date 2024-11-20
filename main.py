@@ -172,10 +172,14 @@ try:
             st.markdown("## 📑 動画の概要")
             st.markdown(summary_data.get("動画の概要", ""))
             
-            # Display points
+            # Display points with proper type conversion
             st.markdown("## 🎯 主要ポイント")
             for point in summary_data.get("ポイント", []):
-                importance = point.get("重要度", 3)
+                try:
+                    importance = int(point.get("重要度", 3))  # Convert to int with default value
+                except (ValueError, TypeError):
+                    importance = 3  # Default if conversion fails
+                
                 emoji = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "ℹ️"
                 
                 st.markdown(f'''
@@ -343,9 +347,9 @@ try:
             render_step_header(3, "Content Analysis", "🔍",
                                "文字起こし、要約、マインドマップを生成します")
             if st.session_state.transcript:
-                # Add style selection
+                # Add style selection with proper label
                 summary_style = st.radio(
-                    "要約スタイルを選択",
+                    "要約スタイル",
                     options=["balanced", "detailed", "overview"],
                     format_func=lambda x: {
                         "balanced": "バランス (標準的な長さと詳細さ)",
@@ -380,99 +384,47 @@ try:
                                 st.session_state.quality_scores = quality_scores
                                 st.session_state.current_summary_style = summary_style
                                 update_step_progress('summary')
-                                time.sleep(0.5)
                             except Exception as e:
-                                st.error(f"AI要約の生成に失敗しました: {str(e)}")
-                                logger.error(
-                                    f"Error in summary generation: {str(e)}")
-                                st.stop()
+                                st.error(f"要約の生成に失敗しました: {str(e)}")
+                                logger.error(f"Error in summary generation: {str(e)}")
 
                     if st.session_state.summary:
-                        st.markdown("### AI Summary")
                         display_summary(st.session_state.summary)
 
                 with tabs[2]:
-                    st.markdown("### Mind Map Visualization")
-
-                    if 'mindmap' not in st.session_state or not st.session_state.mindmap:
-                        with st.spinner("マインドマップを生成中..."):
-                            try:
-                                mindmap_gen = MindMapGenerator()
-                                mermaid_syntax = mindmap_gen.generate_mindmap(
-                                    st.session_state.summary)
-                                st.session_state.mindmap = mermaid_syntax
-                                st.session_state.current_step = 4
-                                update_step_progress('mindmap')
-                                time.sleep(0.5)
-                            except Exception as e:
-                                st.error(f"マインドマップの生成に失敗しました: {str(e)}")
-                                logger.error(
-                                    f"Error in mindmap generation: {str(e)}")
-                                st.stop()
-
-                    if st.session_state.mindmap:
-                        col1, col2 = st.columns([2, 1])
-
-                        with col1:
-                            st.markdown("### Mind Map")
-                            try:
-                                st_mermaid(st.session_state.mindmap, height="400px")
-                            except Exception as e:
-                                st.error("マインドマップの表示に失敗しました。別の形式で表示します。")
-                                st.code(st.session_state.mindmap, language="mermaid")
-
-                        with col2:
-                            st.markdown("### Mermaid Syntax")
-                            st.text_area("",
-                                         value=st.session_state.mindmap,
-                                         height=200)
-
-                            st.download_button("📥 Download Mermaid Syntax",
-                                               data=st.session_state.mindmap,
-                                               file_name="mindmap.mmd",
-                                               mime="text/plain")
-
-                            if st.button("🔄 マインドマップを再生成"):
-                                st.session_state.mindmap = None
-                                st.rerun()
+                    if st.session_state.summary:
+                        try:
+                            mindmap_generator = MindMapGenerator()
+                            mindmap = mindmap_generator.generate_mindmap(
+                                st.session_state.summary)
+                            st_mermaid(mindmap)
+                            update_step_progress('mindmap')
+                        except Exception as e:
+                            st.error(f"マインドマップの生成に失敗しました: {str(e)}")
+                            logger.error(f"Error in mindmap generation: {str(e)}")
 
                 with tabs[3]:
-                    st.markdown("### テキスト整形")
-                    if st.session_state.mindmap:  # Only show enhancement after mindmap is generated
-                        st.markdown('<div class="glass-container">',
-                                    unsafe_allow_html=True)
-                        st.markdown("#### 元のテキスト")
-                        st.markdown(
-                            st.session_state.transcript.replace('\n', '  \n'))
-                        st.markdown('</div>', unsafe_allow_html=True)
-
-                        if st.button("✨ テキストを整形",
-                                     help="AIを使用して文章を校正し、読みやすく整形します"):
-                            try:
-                                # Create a container for progress tracking
-                                progress_container = st.container()
-                                with progress_container:
-                                    progress_bar = st.progress(0)
-                                    status_text = st.empty()
-                                
-                                text_processor = TextProcessor()
-                                enhanced_text = text_processor.enhance_text(st.session_state.transcript)
-                                st.session_state.enhanced_text = enhanced_text
-                                
-                                # Show completion message
-                                progress_bar.progress(100)
-                                status_text.success("✨ テキストの整形が完了しました！")
-                                st.markdown("#### 整形後のテキスト")
-                                st.markdown(enhanced_text.replace('\n', '  \n'))
-                                
-                            except Exception as e:
-                                st.error(f"テキストの整形中にエラーが発生しました: {str(e)}")
-                                logger.error(f"Error in text enhancement: {str(e)}")
+                    if st.session_state.transcript and st.session_state.summary:
+                        try:
+                            pdf_generator = PDFGenerator()
+                            pdf_data = pdf_generator.create_pdf(
+                                st.session_state.video_info,
+                                st.session_state.transcript,
+                                st.session_state.summary)
+                            st.download_button(
+                                label="📥 PDFをダウンロード",
+                                data=pdf_data,
+                                file_name="content_analysis.pdf",
+                                mime="application/pdf")
+                            update_step_progress('pdf')
+                        except Exception as e:
+                            st.error(f"PDFの生成に失敗しました: {str(e)}")
+                            logger.error(f"Error in PDF generation: {str(e)}")
 
     except Exception as e:
         logger.error(f"Application error: {str(e)}")
-        st.error(f"アプリケーションエラーが発生しました: {str(e)}")
+        st.error("アプリケーションエラーが発生しました")
 
 except Exception as e:
-    st.error(f"初期化エラー: {str(e)}")
     logger.error(f"Initialization error: {str(e)}")
+    st.error("アプリケーションの初期化中にエラーが発生しました")
