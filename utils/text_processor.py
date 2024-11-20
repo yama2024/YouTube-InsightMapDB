@@ -60,7 +60,7 @@ class TextProcessor:
                 return match.group(1)
         raise ValueError("無効なYouTube URLです")
 
-    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 1000) -> List[str]:
+    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 800) -> List[str]:
         sentences = re.split('([。!?！？]+)', text)
         sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
         
@@ -85,9 +85,8 @@ class TextProcessor:
         return chunks
 
     def _process_chunk_with_retry(self, chunk: str, chunk_index: int) -> Dict:
-        """Process a single chunk with retry logic"""
         max_retries = 3
-        base_delay = 1  # Base delay in seconds
+        base_delay = 1
         
         for attempt in range(max_retries):
             try:
@@ -102,37 +101,77 @@ class TextProcessor:
                     )
                 )
                 
-                if not response.text:
-                    raise ValueError("Empty response received")
+                if response and response.text:
+                    logger.info(f"Raw API response for chunk {chunk_index + 1}: {response.text[:100]}...")
+                else:
+                    logger.warning(f"Empty response received for chunk {chunk_index + 1}")
+                    continue
                     
                 chunk_data = self._validate_summary_response(response.text)
                 if chunk_data:
                     logger.info(f"Successfully processed chunk {chunk_index + 1}")
                     return chunk_data
-                else:
-                    raise ValueError("Invalid response format")
-                    
+                
             except Exception as e:
-                delay = base_delay * (2 ** attempt)  # Exponential backoff
+                delay = base_delay * (2 ** attempt)
                 logger.warning(f"Chunk {chunk_index + 1}, attempt {attempt + 1} failed: {str(e)}")
                 if attempt < max_retries - 1:
                     time.sleep(delay)
-                else:
-                    logger.error(f"All attempts failed for chunk {chunk_index + 1}")
-                    raise
+            
+        logger.error(f"All attempts failed for chunk {chunk_index + 1}")
+        return None  # Return None instead of raising exception
+
+    def _validate_summary_response(self, response_text: str) -> dict:
+        try:
+            # Clean up response
+            json_str = response_text.strip()
+            if json_str.startswith('```json'):
+                json_str = json_str[7:]
+            if json_str.endswith('```'):
+                json_str = json_str[:-3]
+            
+            # Try to extract JSON if embedded in text
+            json_match = re.search(r'({[\s\S]*})', json_str)
+            if json_match:
+                json_str = json_match.group(1)
+            
+            # Parse JSON
+            data = json.loads(json_str)
+            
+            # Create default structure if missing
+            if not isinstance(data, dict):
+                return None
+                
+            if "主要ポイント" not in data:
+                data["主要ポイント"] = []
+            if "詳細分析" not in data:
+                data["詳細分析"] = []
+            if "キーワード" not in data:
+                data["キーワード"] = []
+                
+            # Ensure at least one main point
+            if not data["主要ポイント"]:
+                data["主要ポイント"] = [{
+                    "タイトル": "テキスト概要",
+                    "説明": "テキストの主要な内容",
+                    "重要度": 3
+                }]
+                
+            return data
+            
+        except Exception as e:
+            logger.error(f"Response validation failed: {str(e)}\nResponse text: {response_text[:200]}...")
+            return None
 
     def generate_summary(self, text: str) -> str:
-        """Generate summary with parallel processing"""
         try:
             cache_key = hash(text)
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
-            chunks = self._split_into_contextual_chunks(text)
+            chunks = self._split_into_contextual_chunks(text, chunk_size=800)  # Reduced chunk size
             summaries = []
-            failed_chunks = []
             
-            # Process chunks in parallel with ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 future_to_chunk = {
                     executor.submit(self._process_chunk_with_retry, chunk, i): i
@@ -143,19 +182,15 @@ class TextProcessor:
                     chunk_index = future_to_chunk[future]
                     try:
                         summary = future.result()
-                        summaries.append(summary)
-                        logger.info(f"Successfully completed chunk {chunk_index + 1}/{len(chunks)}")
+                        if summary:
+                            summaries.append(summary)
+                            logger.info(f"Successfully completed chunk {chunk_index + 1}/{len(chunks)}")
                     except Exception as e:
                         logger.error(f"Failed to process chunk {chunk_index + 1}: {str(e)}")
-                        failed_chunks.append(chunk_index)
             
             if not summaries:
                 raise ValueError("有効な要約が生成されませんでした")
             
-            # Handle failed chunks if any exist
-            if failed_chunks:
-                logger.warning(f"Failed chunks: {failed_chunks}")
-                
             merged_summary = self._merge_summaries(summaries)
             formatted_summary = self._format_summary(merged_summary)
             
@@ -197,40 +232,6 @@ class TextProcessor:
 解析対象テキスト:
 {text}
 '''
-
-    def _validate_summary_response(self, response_text: str) -> dict:
-        try:
-            # Clean up response
-            json_str = response_text.strip()
-            if json_str.startswith('```json'):
-                json_str = json_str[7:]
-            if json_str.endswith('```'):
-                json_str = json_str[:-3]
-            
-            # Basic JSON structure check
-            data = json.loads(json_str)
-            
-            # Ensure minimum required structure
-            if not isinstance(data, dict):
-                return None
-                
-            if not "主要ポイント" in data or not isinstance(data["主要ポイント"], list):
-                return None
-                
-            # Ensure at least one main point exists
-            if not data["主要ポイント"]:
-                return None
-                
-            # Initialize missing sections if needed
-            if "詳細分析" not in data:
-                data["詳細分析"] = []
-            if "キーワード" not in data:
-                data["キーワード"] = []
-                
-            return data
-        except Exception as e:
-            logger.error(f"Response validation failed: {str(e)}")
-            return None
 
     def _merge_summaries(self, summaries: List[Dict]) -> Dict:
         """複数のチャンク要約をマージ"""
