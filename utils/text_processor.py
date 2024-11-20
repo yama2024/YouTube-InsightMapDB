@@ -19,27 +19,38 @@ logger = logging.getLogger(__name__)
 class DynamicRateLimiter:
     def __init__(self):
         self.last_request = 0
-        self.min_interval = 2.0
+        self.min_interval = 3.0  # より長い最小待機時間
         self.backoff_multiplier = 1.0
-        self.max_interval = 10.0
+        self.max_interval = 15.0  # より長い最大待機時間
         self.success_count = 0
         self.error_count = 0
         self.quota_exceeded = False
+        self.request_times = []
+        self.window_size = 60  # 1分間の時間枠
+        self.max_requests = 30  # 1分間あたりの最大リクエスト数を制限
 
     def wait(self):
         now = time.time()
-        elapsed = now - self.last_request
+        
+        # 時間枠内のリクエストを更新
+        self.request_times = [t for t in self.request_times if now - t < self.window_size]
+        
+        if len(self.request_times) >= self.max_requests:
+            sleep_time = self.window_size - (now - self.request_times[0])
+            if sleep_time > 0:
+                time.sleep(sleep_time)
         
         if self.quota_exceeded:
-            time.sleep(max(5.0, self.max_interval))
+            time.sleep(self.max_interval)
             self.quota_exceeded = False
             return
         
-        wait_time = max(0, self.min_interval * self.backoff_multiplier - elapsed)
+        wait_time = max(0, self.min_interval * self.backoff_multiplier)
         if wait_time > 0:
             time.sleep(wait_time)
         
-        self.last_request = time.time()
+        self.request_times.append(now)
+        self.last_request = now
 
     def report_success(self):
         self.success_count += 1
@@ -59,9 +70,9 @@ class TextProcessor:
         self._initialize_api()
         self.rate_limiter = DynamicRateLimiter()
         self.cache = TTLCache(maxsize=100, ttl=3600)
-        self.chunk_size = 1500
+        self.chunk_size = 2500  # より大きなチャンクサイズで回数を減らす
         self.overlap_size = 200
-        self.max_retries = 3
+        self.max_retries = 5  # リトライ回数を増やす
         self.backoff_factor = 2
         self.context_memory = []
         self.max_context_memory = 5
@@ -74,6 +85,85 @@ class TextProcessor:
             raise ValueError("Gemini API key is not set in environment variables")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
+
+    def _split_text_into_chunks(self, text: str) -> List[str]:
+        if len(text) < self.chunk_size:
+            return [text]
+        
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        # 文単位での分割（改行も考慮）
+        sentences = [s.strip() for s in re.split('[。.!?！？\n]', text) if s.strip()]
+        
+        for sentence in sentences:
+            if current_length + len(sentence) > self.chunk_size and current_chunk:
+                chunks.append(' '.join(current_chunk))
+                current_chunk = [sentence]
+                current_length = len(sentence)
+            else:
+                current_chunk.append(sentence)
+                current_length += len(sentence)
+        
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
+        
+        return chunks
+
+    def _process_chunk_with_retries(self, chunk: str, context: Dict) -> Optional[Dict]:
+        max_retries = 5  # リトライ回数を増やす
+        base_wait_time = 3  # 基本待機時間を増やす
+        
+        for attempt in range(max_retries):
+            try:
+                self.rate_limiter.wait()
+                
+                response = self.model.generate_content(
+                    self._create_summary_prompt(chunk, context),
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.2,
+                        top_p=0.95,
+                        top_k=40,
+                        max_output_tokens=8192,
+                    )
+                )
+                
+                if not response.text:
+                    raise ValueError("Empty response received")
+                
+                result = self._validate_json_response(response.text)
+                if result:
+                    self.rate_limiter.report_success()
+                    return result
+                
+                raise ValueError("Invalid JSON response")
+                
+            except Exception as e:
+                error_msg = str(e).lower()
+                self.rate_limiter.report_error()
+                
+                if "quota" in error_msg or "429" in error_msg:
+                    self.rate_limiter.report_quota_exceeded()
+                    wait_time = base_wait_time * (2 ** attempt)
+                    logger.warning(f"API quota exceeded, waiting {wait_time} seconds...")
+                    time.sleep(wait_time)
+                    
+                    # APIキーの再初期化を試みる
+                    try:
+                        self._initialize_api()
+                    except Exception as key_error:
+                        logger.error(f"Failed to reinitialize API: {str(key_error)}")
+                
+                if attempt < max_retries - 1:
+                    wait_time = base_wait_time * (2 ** attempt)
+                    logger.warning(f"Retrying chunk processing ({max_retries - attempt - 1} attempts left)")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Failed to process chunk after all retries: {str(e)}")
+                    return None
+        
+        return None
 
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from YouTube URL"""
