@@ -4,6 +4,7 @@ import google.generativeai as genai
 import re
 import os
 import time
+import random
 from typing import List, Optional, Dict, Any, Tuple
 from retrying import retry
 from cachetools import TTLCache, cached
@@ -66,77 +67,80 @@ class TextProcessor:
             }
         }
 
-    def generate_summary(self, text: str) -> str:
-        if not text:
-            raise ValueError("入力テキストが空です")
+    def _handle_rate_limit(self, attempt: int, max_attempts: int = 5) -> float:
+        if attempt >= max_attempts:
+            raise Exception("最大リトライ回数を超えました")
         
+        # Calculate delay with jitter
+        base_delay = min(32, (2 ** attempt))  # Exponential backoff capped at 32 seconds
+        jitter = random.uniform(0, 0.1 * base_delay)  # 10% jitter
+        return base_delay + jitter
+
+    def generate_summary(self, text: str) -> str:
         try:
-            # Smaller chunks and larger delays
-            chunks = self._chunk_text(text, chunk_size=500, overlap=50)
+            # Smaller initial chunk size
+            chunks = self._chunk_text(text, chunk_size=300, overlap=30)
             summaries = []
             
+            # Initialize rate limit tracker
+            last_request_time = 0
+            min_request_interval = 2.0  # Minimum time between requests
+            
             for i, chunk in enumerate(chunks):
-                # Increase delay between chunks
-                time.sleep(3 if i == 0 else 5)
+                # Ensure minimum delay between requests
+                current_time = time.time()
+                if current_time - last_request_time < min_request_interval:
+                    time.sleep(min_request_interval - (current_time - last_request_time))
                 
-                prompt = f'''
-                以下のテキストを要約してください：
-                
-                {chunk}
-                
-                ポイント：
-                - 重要な情報を保持
-                - 簡潔に表現
-                - 文脈を維持
-                '''
-                
-                for attempt in range(5):  # Increased retry attempts
+                success = False
+                for attempt in range(5):
                     try:
                         if attempt > 0:
-                            time.sleep(5 * attempt)  # Progressive backoff
+                            delay = self._handle_rate_limit(attempt)
+                            logger.info(f"リトライ {attempt+1}/5, {delay}秒待機")
+                            time.sleep(delay)
                         
                         response = self.model.generate_content(
-                            prompt,
+                            f"以下のテキストを要約してください:\n\n{chunk}",
                             safety_settings=self.safety_settings,
                             generation_config=genai.types.GenerationConfig(
                                 temperature=0.3,
                                 top_p=0.8,
                                 top_k=40,
-                                max_output_tokens=800,
+                                max_output_tokens=600,
                             )
                         )
                         
                         if response and response.text:
                             summaries.append(response.text.strip())
+                            success = True
+                            last_request_time = time.time()
                             break
                             
                     except Exception as e:
-                        if 'Resource has been exhausted' in str(e) and attempt < 4:
+                        if 'Resource has been exhausted' in str(e):
+                            logger.warning(f"レート制限エラー (チャンク {i+1}): {str(e)}")
                             continue
-                        raise Exception(f"チャンク {i+1} の処理に失敗: {str(e)}")
+                        raise
                 
-                # Add extra delay after successful chunk processing
-                time.sleep(2)
-                        
+                if not success:
+                    raise Exception(f"チャンク {i+1} の処理に失敗しました")
+                
+                # Add progressive delay between chunks
+                time.sleep(min(5.0, 2.0 + (i * 0.5)))
+            
             if not summaries:
                 raise ValueError("要約を生成できませんでした")
-                
-            # Combine summaries with increased delays
-            time.sleep(5)
-            combined = "\n\n".join(summaries)
-            final_prompt = f'''
-            以下の要約をさらに整理して、簡潔にまとめてください：
             
-            {combined}
-            '''
-            
+            # Final summary with improved error handling
+            final_text = "\n".join(summaries)
             for attempt in range(5):
                 try:
-                    if attempt > 0:
-                        time.sleep(5 * attempt)
+                    delay = self._handle_rate_limit(attempt)
+                    time.sleep(delay)
                     
                     final_response = self.model.generate_content(
-                        final_prompt,
+                        f"以下の要約をさらに整理して、簡潔にまとめてください:\n\n{final_text}",
                         safety_settings=self.safety_settings,
                         generation_config=genai.types.GenerationConfig(
                             temperature=0.3,
@@ -151,10 +155,11 @@ class TextProcessor:
                         
                 except Exception as e:
                     if 'Resource has been exhausted' in str(e) and attempt < 4:
+                        logger.warning(f"最終要約でレート制限エラー: {str(e)}")
                         continue
-                    raise Exception(f"最終要約の生成に失敗しました: {str(e)}")
+                    raise
             
-            raise ValueError("要約の生成に失敗しました")
+            raise Exception("最終要約の生成に失敗しました")
             
         except Exception as e:
             logger.error(f"要約生成エラー: {str(e)}")
