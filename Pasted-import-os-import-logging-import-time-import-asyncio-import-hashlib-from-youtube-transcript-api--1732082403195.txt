@@ -1,0 +1,488 @@
+import os
+import logging
+import time
+import asyncio
+import hashlib
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.formatters import TextFormatter
+import re
+from cachetools import TTLCache
+from typing import Optional, Callable, List, Dict, Any
+import json
+import google.generativeai as genai
+
+# ロギングの設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class DynamicRateLimiter:
+    def __init__(self):
+        self.last_request = 0
+        self.min_interval = 2.0
+        self.backoff_multiplier = 1.0
+        self.max_interval = 10.0
+        self.quota_exceeded = False
+        self.lock = asyncio.Lock()
+
+    async def wait(self):
+        async with self.lock:
+            now = time.time()
+            elapsed = now - self.last_request
+
+            if self.quota_exceeded:
+                await asyncio.sleep(max(5.0, self.max_interval))
+                self.quota_exceeded = False
+                return
+
+            wait_time = max(0, self.min_interval * self.backoff_multiplier - elapsed)
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+
+            self.last_request = time.time()
+
+    def report_success(self):
+        self.backoff_multiplier = max(1.0, self.backoff_multiplier * 0.95)
+
+    def report_error(self):
+        self.backoff_multiplier = min(self.max_interval, self.backoff_multiplier * 1.5)
+
+    def report_quota_exceeded(self):
+        self.quota_exceeded = True
+        self.backoff_multiplier = min(self.max_interval, self.backoff_multiplier * 2.0)
+
+class TextProcessor:
+    def __init__(self):
+        self._initialize_api()
+        self.rate_limiter = DynamicRateLimiter()
+        self.cache = TTLCache(maxsize=100, ttl=3600)
+        self.chunk_size = 1500
+        self.overlap_size = 200
+        self.max_retries = 3
+        self.backoff_factor = 2
+        self.context_memory = []
+        self.max_context_memory = 5
+
+    def _initialize_api(self):
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key:
+            raise ValueError("Gemini API key is not set in environment variables")
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-pro')
+
+    def _extract_video_id(self, url: str) -> str:
+        video_id_match = re.search(r'(?:v=|/v/|youtu\.be/)([^&?/]+)', url)
+        if not video_id_match:
+            raise ValueError("Invalid YouTube URL format")
+        return video_id_match.group(1)
+
+    def get_transcript(self, url: str) -> str:
+        try:
+            video_id = self._extract_video_id(url)
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+
+            try:
+                transcript = transcript_list.find_transcript(['ja'])
+            except Exception:
+                try:
+                    transcript = transcript_list.find_transcript(['en'])
+                except Exception:
+                    transcript = transcript_list.find_manually_created_transcript()
+
+            transcript_data = transcript.fetch()
+            formatter = TextFormatter()
+            formatted_transcript = formatter.format_transcript(transcript_data)
+
+            if not formatted_transcript:
+                raise ValueError("空の文字起こしデータが返されました")
+
+            return formatted_transcript
+
+        except Exception as e:
+            logger.error(f"Error getting transcript: {str(e)}")
+            raise Exception(f"文字起こしの取得に失敗しました: {str(e)}")
+
+    async def generate_summary(self, text: str, progress_callback: Optional[Callable] = None) -> str:
+        try:
+            if not text:
+                raise ValueError("入力テキストが空です")
+
+            if progress_callback:
+                progress_callback(0.1, "テキストを解析中...")
+
+            cache_key = hashlib.md5(text.encode()).hexdigest()
+            if cache_key in self.cache:
+                if progress_callback:
+                    progress_callback(1.0, "✨ キャッシュから要約を取得しました")
+                return self.cache[cache_key]
+
+            self.context_memory = []
+
+            chunks = self._split_text_into_chunks(text)
+            chunk_summaries = []
+            failed_chunks = 0
+
+            tasks = []
+            for i, chunk in enumerate(chunks, 1):
+                task = asyncio.create_task(self._process_chunk_with_retries(i, chunk, len(chunks), progress_callback))
+                tasks.append(task)
+
+            results = await asyncio.gather(*tasks)
+
+            for result in results:
+                if result:
+                    chunk_summaries.append(result)
+                else:
+                    failed_chunks += 1
+
+            if not chunk_summaries:
+                raise Exception("すべてのチャンクの処理に失敗しました")
+
+            if failed_chunks > 0:
+                logger.warning(f"{failed_chunks} チャンクの処理に失敗しました")
+
+            if progress_callback:
+                progress_callback(0.9, "要約を統合中...")
+
+            final_summary_data = self._combine_chunk_summaries(chunk_summaries)
+            final_summary = self._format_final_summary(final_summary_data)
+
+            self.cache[cache_key] = final_summary
+
+            if progress_callback:
+                progress_callback(1.0, "✨ 要約が完了しました")
+
+            return final_summary
+
+        except Exception as e:
+            logger.error(f"Error in summary generation: {str(e)}")
+            if progress_callback:
+                progress_callback(1.0, f"❌ エラーが発生しました: {str(e)}")
+            raise
+
+    def _split_text_into_chunks(self, text: str) -> List[str]:
+        if not text:
+            raise ValueError("入力テキストが空です")
+
+        text = text.replace('\n', ' ').strip()
+        text = re.sub(r'\s+', ' ', text)
+
+        if len(text) < 200:
+            return [text]
+
+        sentences = []
+        temp = ''
+        for char in text:
+            temp += char
+            if char in ['。', '！', '？', '!', '?', '.']:
+                if temp.strip():
+                    sentences.append(temp.strip())
+                temp = ''
+        if temp.strip():
+            sentences.append(temp.strip())
+
+        chunks = []
+        current_chunk = []
+        current_length = 0
+
+        for i, sentence in enumerate(sentences):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+
+            sentence_length = len(sentence)
+
+            if sentence_length > self.chunk_size:
+                sub_chunks = [sentence[i:i+self.chunk_size]
+                              for i in range(0, len(sentence), self.chunk_size)]
+                for sub_chunk in sub_chunks:
+                    if sub_chunk:
+                        chunks.append(sub_chunk)
+                continue
+
+            if current_length + sentence_length > self.chunk_size - self.overlap_size and current_chunk:
+                chunks.append(' '.join(current_chunk))
+                overlap_sentences = current_chunk[-2:] if len(current_chunk) > 2 else current_chunk
+                current_chunk = overlap_sentences.copy()
+                current_length = sum(len(s) for s in current_chunk)
+
+            current_chunk.append(sentence)
+            current_length += sentence_length
+
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
+
+        if not chunks:
+            return [text]
+
+        return chunks
+
+    async def _process_chunk_with_retries(self, index: int, chunk: str, total_chunks: int, progress_callback: Optional[Callable]) -> Optional[Dict]:
+        remaining_retries = self.max_retries
+        backoff_time = 1
+
+        context = {
+            "total_chunks": total_chunks,
+            "current_chunk": index,
+            "chunk_position": "開始" if index == 1 else "終了" if index == total_chunks else "中間",
+            "previous_summaries": self._get_context_summary() if self.context_memory else ""
+        }
+
+        while remaining_retries > 0:
+            try:
+                await self.rate_limiter.wait()
+
+                response = self.model.generate_content(
+                    self._create_summary_prompt(chunk, context),
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.2,
+                        top_p=0.95,
+                        top_k=40,
+                        max_output_tokens=8192,
+                    )
+                )
+
+                if not response.text:
+                    raise ValueError("Empty response received")
+
+                result = self._validate_json_response(response.text)
+                if result:
+                    self.rate_limiter.report_success()
+                    self._update_context_memory(result)
+                    if progress_callback:
+                        progress = 0.1 + (0.7 * (index / total_chunks))
+                        progress_callback(progress, f"チャンク {index}/{total_chunks} を処理中...")
+                    return result
+
+                raise ValueError("Invalid JSON response")
+
+            except Exception as e:
+                remaining_retries -= 1
+
+                if "quota" in str(e).lower() or "429" in str(e):
+                    self.rate_limiter.report_quota_exceeded()
+                    logger.warning(f"API quota exceeded, waiting {backoff_time} seconds...")
+                    await asyncio.sleep(backoff_time)
+                    backoff_time *= 2
+
+                    try:
+                        self._initialize_api()
+                    except Exception as key_error:
+                        logger.error(f"Failed to reinitialize API: {str(key_error)}")
+                else:
+                    self.rate_limiter.report_error()
+
+                if remaining_retries > 0:
+                    logger.warning(f"Retrying chunk processing ({remaining_retries} attempts left)")
+                else:
+                    logger.error(f"Failed to process chunk after all retries: {str(e)}")
+                    return None
+
+        return None
+
+    def _create_summary_prompt(self, text: str, context: Optional[Dict] = None) -> str:
+        context_info = ""
+        if context:
+            context_info = f"\nコンテキスト情報:\n{json.dumps(context, ensure_ascii=False, indent=2)}"
+
+        previous_context = self._get_context_summary()
+        if previous_context:
+            context_info += f"\n\n前回までの文脈:\n{previous_context}"
+
+        prompt = f"""以下のテキストを分析し、前後の文脈を考慮した上で、厳密なJSON形式で構造化された要約を生成してください。
+
+入力テキスト:
+{text}
+{context_info}
+
+必須出力形式:
+{{
+    "概要": "150文字以内の簡潔な説明（前後の文脈を考慮）",
+    "主要ポイント": [
+        {{
+            "タイトル": "重要なポイントの見出し",
+            "説明": "具体的な説明文（前後の文脈との関連性を含む）",
+            "重要度": "1-5の数値"
+        }}
+    ],
+    "詳細分析": [
+        {{
+            "セクション": "分析セクションの名称",
+            "内容": "詳細な分析内容（文脈を考慮）",
+            "キーポイント": [
+                "重要な点1",
+                "重要な点2"
+            ],
+            "前後の関連性": "前後の文脈との関係性の説明"
+        }}
+    ],
+    "文脈連携": {{
+        "前の内容との関連": "前の部分との関連性の説明",
+        "継続するトピック": ["継続して重要な話題1", "継続して重要な話題2"],
+        "新規トピック": ["新しく導入された話題1", "新しく導入された話題2"]
+    }}
+}}
+
+制約事項:
+1. 必ず有効なJSONフォーマットを維持すること
+2. すべての文字列は適切にエスケープすること
+3. 数値は必ず数値型で出力すること
+4. 配列は必ず1つ以上の要素を含むこと
+5. 主要ポイントは3-5項目を含むこと
+6. 前後の文脈を必ず考慮すること
+7. 文脈連携セクションは必須
+
+注意:
+- JSONフォーマット以外の装飾や説明は一切含めないでください
+- 各セクションは必須です。省略しないでください
+- 不正なJSON構造を避けるため、文字列内の二重引用符は必ずエスケープしてください
+- 前後の文脈との一貫性を重視してください"""
+
+        return prompt
+
+    def _validate_json_response(self, response_text: str) -> Optional[Dict]:
+        if not response_text:
+            logger.warning("Empty response received")
+            return None
+
+        try:
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx >= 0 and end_idx > 0:
+                json_str = response_text[start_idx:end_idx]
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Initial JSON parsing failed: {str(e)}")
+
+                    json_str = json_str.replace('\n', ' ').replace('\r', '')
+                    json_str = re.sub(r'(?<!\\)"(?!,|\s*}|\s*])', '\\"', json_str)
+                    try:
+                        return json.loads(json_str)
+                    except json.JSONDecodeError:
+                        logger.warning("Failed to fix JSON structure")
+                        return None
+            else:
+                logger.warning("No JSON structure found in response")
+                return None
+        except Exception as e:
+            logger.warning(f"Unexpected error in JSON validation: {str(e)}")
+            return None
+
+    def _update_context_memory(self, summary: Dict[str, Any]) -> None:
+        self.context_memory.append({
+            "概要": summary.get("概要", ""),
+            "主要ポイント": [point["タイトル"] for point in summary.get("主要ポイント", [])]
+        })
+
+        if len(self.context_memory) > self.max_context_memory:
+            self.context_memory.pop(0)
+
+    def _get_context_summary(self) -> str:
+        if not self.context_memory:
+            return ""
+
+        context_summary = {
+            "これまでの概要": [ctx["概要"] for ctx in self.context_memory],
+            "重要なポイント": list(set(
+                point for ctx in self.context_memory
+                for point in ctx["主要ポイント"]
+            ))
+        }
+
+        return json.dumps(context_summary, ensure_ascii=False, indent=2)
+
+    def _combine_chunk_summaries(self, summaries: List[Dict]) -> Dict:
+        if not summaries:
+            raise ValueError("No valid summaries to combine")
+
+        combined = {
+            "概要": "",
+            "主要ポイント": [],
+            "詳細分析": [],
+            "文脈連携": {
+                "継続するトピック": set(),
+                "新規トピック": set()
+            }
+        }
+
+        continuous_topics = set()
+        new_topics = set()
+
+        for summary in summaries:
+            if not isinstance(summary, dict):
+                continue
+
+            if "概要" in summary:
+                combined["概要"] += summary["概要"].strip() + " "
+
+            if "主要ポイント" in summary:
+                for point in summary["主要ポイント"]:
+                    if isinstance(point, dict) and "タイトル" in point and "説明" in point:
+                        if not any(p["タイトル"] == point["タイトル"] for p in combined["主要ポイント"]):
+                            combined["主要ポイント"].append(point)
+
+            if "詳細分析" in summary:
+                for analysis in summary["詳細分析"]:
+                    if isinstance(analysis, dict) and "セクション" in analysis:
+                        combined["詳細分析"].append(analysis)
+
+            if "文脈連携" in summary:
+                context_info = summary["文脈連携"]
+                if isinstance(context_info, dict):
+                    if "継続するトピック" in context_info:
+                        continuous_topics.update(context_info["継続するトピック"])
+                    if "新規トピック" in context_info:
+                        new_topics.update(context_info["新規トピック"])
+
+        combined["文脈連携"] = {
+            "継続するトピック": list(continuous_topics),
+            "新規トピック": list(new_topics)
+        }
+
+        combined["概要"] = combined["概要"].strip()[:150]
+
+        combined["主要ポイント"] = sorted(
+            combined["主要ポイント"],
+            key=lambda x: x.get("重要度", 0),
+            reverse=True
+        )[:5]
+
+        return combined
+
+    def _format_final_summary(self, summary_data: Dict) -> str:
+        sections = []
+
+        sections.append(f"# 概要\n{summary_data['概要']}\n")
+
+        sections.append("# 主要ポイント")
+        for point in summary_data["主要ポイント"]:
+            sections.append(f"## {point['タイトル']}")
+            sections.append(f"{point['説明']}")
+            sections.append(f"重要度: {'⭐' * int(point['重要度'])}\n")
+
+        sections.append("# 詳細分析")
+        for analysis in summary_data["詳細分析"]:
+            sections.append(f"## {analysis['セクション']}")
+            sections.append(analysis['内容'])
+            if analysis['キーポイント']:
+                sections.append("\n主なポイント:")
+                for point in analysis['キーポイント']:
+                    sections.append(f"- {point}")
+            if "前後の関連性" in analysis:
+                sections.append(f"\n前後の関連性: {analysis['前後の関連性']}\n")
+
+        if "文脈連携" in summary_data:
+            sections.append("# 文脈の連続性")
+            context_info = summary_data["文脈連携"]
+
+            if context_info.get("継続するトピック"):
+                sections.append("\n## 継続しているトピック")
+                for topic in context_info["継続するトピック"]:
+                    sections.append(f"- {topic}")
+
+            if context_info.get("新規トピック"):
+                sections.append("\n## 新しく導入されたトピック")
+                for topic in context_info["新規トピック"]:
+                    sections.append(f"- {topic}")
+
+        return "\n".join(sections)
