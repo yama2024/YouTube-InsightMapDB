@@ -57,6 +57,22 @@ class TextProcessor:
         # Initialize noise patterns
         self._init_noise_patterns()
 
+    def _validate_input_text(self, text: str) -> bool:
+        """Validate input text length and content"""
+        if not text:
+            raise ValueError("入力テキストが空です")
+        
+        text = text.strip()
+        if len(text) < 100:
+            raise ValueError("入力テキストが短すぎます（最小100文字必要）")
+            
+        # Check for meaningful content
+        normalized_text = ''.join(text.split())
+        if len(normalized_text) < 50:
+            raise ValueError("有効なテキストコンテンツが不足しています（実質的な内容が50文字未満）")
+            
+        return True
+
     def _init_noise_patterns(self):
         """Initialize enhanced noise patterns for better text cleaning"""
         self.noise_patterns = {
@@ -92,12 +108,13 @@ class TextProcessor:
     def _chunk_text(self, text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
         """Enhanced text chunking with improved validation and error handling"""
         if not text:
-            logger.error("空のテキストが入力されました")
-            return []
+            raise ValueError("空のテキストが入力されました")
 
         # Validate parameters
         if chunk_size <= 0:
             raise ValueError("チャンクサイズは正の整数である必要があります")
+        if chunk_size < 200:
+            raise ValueError("チャンクサイズが小さすぎます（最小200文字必要）")
         if overlap < 0 or overlap >= chunk_size:
             raise ValueError("オーバーラップは0以上かつチャンクサイズ未満である必要があります")
             
@@ -106,6 +123,9 @@ class TextProcessor:
         cached_chunks = self.chunk_cache.get(cache_key)
         if cached_chunks:
             return cached_chunks
+            
+        # Normalize whitespace
+        text = re.sub(r'[\s　]+', ' ', text).strip()
             
         # Split into sentences first
         sentences = re.split('([。!?！？]+)', text)
@@ -116,18 +136,21 @@ class TextProcessor:
         current_length = 0
         
         for sentence in sentences:
+            sentence = sentence.strip()
             sentence_length = len(sentence)
             
             # Skip empty sentences
-            if not sentence.strip():
+            if not sentence:
                 continue
                 
             if current_length + sentence_length > chunk_size:
                 if current_chunk:
-                    chunk_text = ''.join(current_chunk)
+                    chunk_text = ' '.join(current_chunk)
                     # Validate minimum chunk size
-                    if len(chunk_text) >= chunk_size * 0.5:  # Minimum 50% of chunk_size
+                    if len(chunk_text) >= 200:  # Minimum 200 characters
                         chunks.append(chunk_text)
+                    else:
+                        logger.warning(f"チャンクサイズが小さすぎます（{len(chunk_text)}文字）")
                     
                     # Keep overlap sentences
                     overlap_size = 0
@@ -147,8 +170,8 @@ class TextProcessor:
         
         # Handle remaining text
         if current_chunk:
-            final_chunk = ''.join(current_chunk)
-            if len(final_chunk) >= chunk_size * 0.5:
+            final_chunk = ' '.join(current_chunk)
+            if len(final_chunk) >= 200:
                 chunks.append(final_chunk)
         
         # Validate maximum chunks
@@ -159,12 +182,75 @@ class TextProcessor:
         
         # Validate final chunks
         if not chunks:
-            logger.error("有効なチャンクを生成できませんでした")
-            raise ValueError("テキストの分割に失敗しました。入力テキストが短すぎるか、不適切な形式です。")
+            raise ValueError("有効なチャンクを生成できませんでした。テキストが短すぎるか、不適切な形式です。")
         
         # Cache the chunks
         self.chunk_cache[cache_key] = chunks
         return chunks
+
+    def generate_summary(self, text: str, chunk_size: int = 800) -> str:
+        """Generate a summary with improved quality and performance"""
+        try:
+            # Validate input text
+            self._validate_input_text(text)
+            
+            # Check cache first
+            cache_key = hash(text)
+            cached_summary = self.summary_cache.get(cache_key)
+            if cached_summary:
+                logger.info("キャッシュされた要約を使用します")
+                return cached_summary
+            
+            # Validate chunk size
+            if chunk_size < 200:
+                raise ValueError("チャンクサイズが小さすぎます（最小200文字必要）")
+            if chunk_size > 2000:
+                raise ValueError("チャンクサイズが大きすぎます（最大2000文字まで）")
+            
+            # Improve chunking with better context preservation
+            chunks = self._chunk_text(text, chunk_size=chunk_size, overlap=min(100, chunk_size // 4))
+            
+            if not chunks:
+                raise ValueError("テキストの分割に失敗しました。テキストが短すぎるか、不適切な形式です。")
+            
+            # Process chunks with parallel execution
+            chunk_summaries = []
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                future_to_chunk = {
+                    executor.submit(self._process_chunk_with_retry, chunk): i 
+                    for i, chunk in enumerate(chunks)
+                }
+                
+                for future in as_completed(future_to_chunk):
+                    try:
+                        summary = future.result()
+                        if summary:
+                            chunk_summaries.append((future_to_chunk[future], summary))
+                    except Exception as e:
+                        logger.error(f"チャンク処理エラー（チャンク {future_to_chunk[future] + 1}/{len(chunks)}）: {str(e)}")
+            
+            if not chunk_summaries:
+                raise ValueError("有効な要約を生成できませんでした。すべてのチャンクの処理に失敗しました。")
+            
+            # Sort summaries by original chunk order
+            chunk_summaries.sort(key=lambda x: x[0])
+            summaries = [summary for _, summary in chunk_summaries]
+            
+            # Generate final summary
+            final_text = "\n".join(summaries)
+            final_summary = self._generate_final_summary(final_text)
+            
+            if not final_summary:
+                raise ValueError("最終要約の生成に失敗しました。要約の品質が基準を満たしていません。")
+            
+            # Cache the result
+            self.summary_cache[cache_key] = final_summary
+            return final_summary
+            
+        except Exception as e:
+            error_msg = f"要約生成エラー: {str(e)}\n処理されたチャンク数: {len(chunk_summaries) if 'chunk_summaries' in locals() else 0}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
 
     async def _process_chunk_with_retry(self, chunk: str, attempt: int = 0) -> Optional[str]:
         """Process a single chunk with enhanced error handling and retry logic"""
@@ -216,64 +302,6 @@ class TextProcessor:
             else:
                 logger.error(f"{max_attempts}回の試行後も処理に失敗しました: {str(e)}")
                 return None
-
-    def generate_summary(self, text: str) -> str:
-        """Generate a summary with improved quality and performance"""
-        if not text:
-            raise ValueError("要約するテキストが空です")
-            
-        try:
-            # Check cache first
-            cache_key = hash(text)
-            cached_summary = self.summary_cache.get(cache_key)
-            if cached_summary:
-                logger.info("キャッシュされた要約を使用します")
-                return cached_summary
-            
-            # Improve chunking with better context preservation
-            chunks = self._chunk_text(text, chunk_size=800, overlap=100)
-            
-            if not chunks:
-                raise ValueError("テキストの分割に失敗しました")
-            
-            # Process chunks with parallel execution
-            chunk_summaries = []
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                future_to_chunk = {
-                    executor.submit(self._process_chunk_with_retry, chunk): i 
-                    for i, chunk in enumerate(chunks)
-                }
-                
-                for future in as_completed(future_to_chunk):
-                    try:
-                        summary = future.result()
-                        if summary:
-                            chunk_summaries.append((future_to_chunk[future], summary))
-                    except Exception as e:
-                        logger.error(f"チャンク処理エラー: {str(e)}")
-            
-            if not chunk_summaries:
-                raise ValueError("有効な要約を生成できませんでした")
-            
-            # Sort summaries by original chunk order
-            chunk_summaries.sort(key=lambda x: x[0])
-            summaries = [summary for _, summary in chunk_summaries]
-            
-            # Generate final summary
-            final_text = "\n".join(summaries)
-            final_summary = self._generate_final_summary(final_text)
-            
-            if not final_summary:
-                raise ValueError("最終要約の生成に失敗しました")
-            
-            # Cache the result
-            self.summary_cache[cache_key] = final_summary
-            return final_summary
-            
-        except Exception as e:
-            error_msg = f"要約生成エラー: {str(e)}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
 
     def _generate_final_summary(self, text: str) -> Optional[str]:
         """Generate final summary with enhanced coherence checks"""
