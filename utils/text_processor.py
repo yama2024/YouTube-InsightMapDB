@@ -80,8 +80,60 @@ class TextProcessor:
             
         return chunks
 
+    def _create_summary_prompt(self, text: str) -> str:
+        return f'''
+テキストを分析し、以下の形式で要約してください。元の文章の30%程度の長さに抑え、簡潔に重要なポイントを抽出してください。
+
+出力形式:
+{{
+    "主要ポイント": [
+        {{
+            "タイトル": "トピックタイトル",
+            "説明": "30文字以内の説明",
+            "重要度": 1-5
+        }}
+    ],
+    "詳細分析": [
+        {{
+            "セクション": "セクション名",
+            "キーポイント": ["重要ポイント（各15文字以内）"]
+        }}
+    ],
+    "キーワード": [
+        {{
+            "用語": "キーワード",
+            "説明": "20文字以内の説明"
+        }}
+    ]
+}}
+
+分析対象テキスト:
+{text}
+'''
+
+    def _validate_summary_response(self, response_text: str) -> dict:
+        try:
+            # Clean up response
+            json_str = response_text.strip()
+            if json_str.startswith('```json'):
+                json_str = json_str[7:]
+            if json_str.endswith('```'):
+                json_str = json_str[:-3]
+            
+            # Parse JSON
+            data = json.loads(json_str)
+            
+            # Validate required fields
+            required_fields = ["主要ポイント", "詳細分析", "キーワード"]
+            if not all(field in data for field in required_fields):
+                return None
+                
+            return data
+        except Exception as e:
+            logger.error(f"Response validation failed: {str(e)}")
+            return None
+
     def generate_summary(self, text: str) -> str:
-        """コンテキストを考慮したAI要約を生成"""
         try:
             cache_key = hash(text)
             if cache_key in self._cache:
@@ -91,68 +143,40 @@ class TextProcessor:
             summaries = []
             
             for chunk in chunks:
-                prompt = f'''
-以下のテキストを分析し、重要度に応じて要約してください。
-JSONフォーマットで出力してください。
-
-テキストの分析ポイント:
-1. 主要なトピックと重要度（1-5、5が最も重要）を抽出
-2. トピック間の関連性を考慮
-3. キーとなる概念や用語を特定
-
-出力形式:
-{{
-    "主要ポイント": [
-        {{
-            "タイトル": "トピックタイトル",
-            "説明": "トピックの詳細説明（30文字以内）",
-            "重要度": 重要度スコア(1-5)
-        }}
-    ],
-    "関連性": [
-        {{
-            "トピックA": "トピックタイトル",
-            "トピックB": "関連するトピックタイトル",
-            "関連度": 関連度スコア(1-5)
-        }}
-    ],
-    "キーワード": [
-        {{
-            "用語": "キーワード",
-            "説明": "用語の説明（20文字以内）"
-        }}
-    ]
-}}
-
-分析対象テキスト:
-{chunk}
-'''
-                try:
-                    response = self.model.generate_content(prompt)
-                    json_str = response.text.strip()
-                    
-                    # Clean JSON string if needed
-                    if json_str.startswith('```json'):
-                        json_str = json_str[7:]
-                    if json_str.endswith('```'):
-                        json_str = json_str[:-3]
-                    
-                    chunk_data = json.loads(json_str)
-                    summaries.append(chunk_data)
-                except Exception as e:
-                    logger.warning(f"チャンク解析エラー: {str(e)}")
-                    continue
-
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        response = self.model.generate_content(
+                            self._create_summary_prompt(chunk),
+                            generation_config=genai.types.GenerationConfig(
+                                temperature=0.3,
+                                top_p=0.8,
+                                top_k=40,
+                                max_output_tokens=8192,
+                            )
+                        )
+                        
+                        if not response.text:
+                            continue
+                            
+                        chunk_data = self._validate_summary_response(response.text)
+                        if chunk_data:
+                            summaries.append(chunk_data)
+                            break
+                    except Exception as e:
+                        logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
+                        if attempt == max_retries - 1:
+                            logger.error(f"All attempts failed for chunk")
+            
             if not summaries:
                 raise ValueError("有効な要約が生成されませんでした")
-
-            # マージして最終的な要約を生成
+                
             merged_summary = self._merge_summaries(summaries)
             formatted_summary = self._format_summary(merged_summary)
             
             self._cache[cache_key] = formatted_summary
             return formatted_summary
-
+            
         except Exception as e:
             logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
             raise Exception(f"要約の生成に失敗しました: {str(e)}")
@@ -161,7 +185,7 @@ JSONフォーマットで出力してください。
         """複数のチャンク要約をマージ"""
         merged = {
             "主要ポイント": [],
-            "関連性": [],
+            "詳細分析": [],
             "キーワード": []
         }
         
@@ -184,6 +208,15 @@ JSONフォーマットで出力してください。
             if title not in seen_titles:
                 seen_titles.add(title)
                 merged["主要ポイント"].append(point)
+
+        # 詳細分析をマージ
+        seen_sections = set()
+        for summary in summaries:
+            if "詳細分析" in summary:
+                for analysis in summary["詳細分析"]:
+                    if analysis["セクション"] not in seen_sections:
+                        seen_sections.add(analysis["セクション"])
+                        merged["詳細分析"].append(analysis)
         
         # キーワードをマージ
         seen_keywords = set()
@@ -208,6 +241,14 @@ JSONフォーマットで出力してください。
                 f"\n### {point['タイトル']} {importance}\n"
                 f"{point['説明']}"
             )
+        
+        # 詳細分析
+        if merged_summary["詳細分析"]:
+            formatted_lines.append("\n## 詳細分析")
+            for analysis in merged_summary["詳細分析"]:
+                formatted_lines.append(f"\n### {analysis['セクション']}")
+                for point in analysis["キーポイント"]:
+                    formatted_lines.append(f"- {point}")
         
         # キーワード
         if merged_summary["キーワード"]:
