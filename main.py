@@ -370,8 +370,14 @@ try:
                 with tabs[1]:
                     if ('summary' not in st.session_state or 
                         not st.session_state.summary or
-                        'current_summary_style' not in st.session_state or
                         st.session_state.current_summary_style != summary_style):
+                        
+                        # Clear previous summary when style changes
+                        if st.session_state.current_summary_style != summary_style:
+                            st.session_state.summary = None
+                            st.session_state.quality_scores = None
+                        
+                        st.session_state.current_summary_style = summary_style
                         
                         with st.spinner("AI要約を生成中..."):
                             try:
@@ -382,11 +388,11 @@ try:
                                 )
                                 st.session_state.summary = summary
                                 st.session_state.quality_scores = quality_scores
-                                st.session_state.current_summary_style = summary_style
                                 update_step_progress('summary')
                             except Exception as e:
                                 st.error(f"要約の生成に失敗しました: {str(e)}")
                                 logger.error(f"Error in summary generation: {str(e)}")
+                                st.stop()
 
                     if st.session_state.summary:
                         display_summary(st.session_state.summary)
