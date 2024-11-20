@@ -189,22 +189,31 @@ try:
             
             # Display points
             st.markdown("## 🎯 主要ポイント")
-            for i, point in enumerate(summary_data.get("ポイント", []), 1):
+            for point in summary_data.get("ポイント", []):
                 importance = point.get("重要度", 3)
                 emoji = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "ℹ️"
                 
                 st.markdown(f'''
                     <div class="summary-card">
                         <div class="importance-{'high' if importance >= 4 else 'medium' if importance >= 2 else 'low'}">
-                            {emoji} <strong>ポイント{i}: {point.get("タイトル", "")}</strong>
+                            {emoji} <strong>ポイント{point.get("番号", "")}: {point.get("タイトル", "")}</strong>
                         </div>
-                        <p>{point.get("説明", "")}</p>
+                        <p>{point.get("内容", "")}</p>
                     </div>
                 ''', unsafe_allow_html=True)
             
             # Display conclusion
             st.markdown("## 💡 結論")
             st.markdown(summary_data.get("結論", ""))
+            
+            # Display keywords
+            st.markdown("## 🔑 重要なキーワード")
+            for keyword in summary_data.get("キーワード", []):
+                st.markdown(f'''
+                    <div class="keyword-card">
+                        <strong>{keyword.get("用語", "")}</strong>: {keyword.get("説明", "")}
+                    </div>
+                ''', unsafe_allow_html=True)
             
         except Exception as e:
             logger.error(f"Summary display error: {str(e)}")

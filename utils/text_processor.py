@@ -47,35 +47,45 @@ class TextProcessor:
 
     def _create_summary_prompt(self, text: str) -> str:
         return f'''
-テキストを分析し、以下の形式で要約してください：
+テキストを分析し、以下の形式で要約してください。
+重要なポイントを明確に示し、簡潔にまとめてください。
 
 {{
-    "動画の概要": "【重要度の高い情報を含む、200文字以内の簡潔な概要】",
+    "動画の概要": "【200文字以内の簡潔な概要】",
     "ポイント": [
         {{
+            "番号": 1,
             "タイトル": "【15文字以内の明確なタイトル】",
-            "説明": "【40文字以内の具体的な説明】",
-            "重要度": 【4か5】  // 最重要ポイント
+            "内容": "【40文字以内の具体的な説明】",
+            "重要度": 5
         }},
         {{
+            "番号": 2,
             "タイトル": "【15文字以内の明確なタイトル】",
-            "説明": "【40文字以内の具体的な説明】",
-            "重要度": 【3】  // 重要なポイント
+            "内容": "【40文字以内の具体的な説明】",
+            "重要度": 4
         }},
         {{
+            "番号": 3,
             "タイトル": "【15文字以内の明確なタイトル】",
-            "説明": "【40文字以内の具体的な説明】",
-            "重要度": 【2】  // 補足的なポイント
+            "内容": "【40文字以内の具体的な説明】",
+            "重要度": 3
         }}
     ],
-    "結論": "【100文字以内の明確な結論】"
+    "結論": "【100文字以内の明確な結論】",
+    "キーワード": [
+        {{
+            "用語": "【キーワード】",
+            "説明": "【20文字以内の簡潔な説明】"
+        }}
+    ]
 }}
 
-要約の注意点:
-1. 重要度の分布を必ず分けること（5または4を1つ、3を1つ、2を1つ）
-2. タイトルは具体的な名詞や要点を含めること
-3. 説明は簡潔かつ具体的に
-4. 概要と結論で重複を避けること
+注意事項:
+1. 概要は要点を押さえて簡潔に
+2. ポイントは重要度順に配置
+3. キーワードは最大10個まで
+4. 説明は具体的かつ簡潔に
 
 分析対象テキスト:
 {text}
@@ -92,69 +102,89 @@ class TextProcessor:
                 "総合スコア": 0.0
             }
 
-            # 構造の完全性の評価
+            # 構造の完全性の評価（配点: 10点満点）
             structure_score = 0
-            required_keys = ["動画の概要", "ポイント", "結論"]
+            required_keys = ["動画の概要", "ポイント", "結論", "キーワード"]
             for key in required_keys:
                 if key in summary_data:
-                    structure_score += 3
-            
+                    structure_score += 2
+
             points = summary_data.get("ポイント", [])
             if len(points) == 3:  # 正確に3つのポイントがある
                 structure_score += 1
-                
+
             # ポイントの構造チェック
             point_structure_score = 0
             for point in points:
-                if all(key in point for key in ["タイトル", "説明", "重要度"]):
+                if all(key in point for key in ["番号", "タイトル", "内容", "重要度"]):
                     point_structure_score += 1
             structure_score += point_structure_score / len(points) if points else 0
-            
+
             scores["構造の完全性"] = min(structure_score, 10.0)
 
-            # 情報量の評価
+            # 情報量の評価（配点: 10点満点）
             info_score = 0
+            # 概要の情報量
             overview_length = len(summary_data.get("動画の概要", ""))
-            if 100 <= overview_length <= 200:  # 適切な長さの概要
+            if 100 <= overview_length <= 200:
                 info_score += 3
-            
+            elif 50 <= overview_length < 100:
+                info_score += 2
+
             # ポイントの情報量チェック
             for point in points:
                 title_len = len(point.get("タイトル", ""))
-                desc_len = len(point.get("説明", ""))
-                if 5 <= title_len <= 15:  # タイトルの長さが適切
-                    info_score += 1
-                if 20 <= desc_len <= 40:  # 説明の長さが適切
-                    info_score += 1
-            
-            conclusion_length = len(summary_data.get("結論", ""))
-            if 50 <= conclusion_length <= 100:  # 適切な長さの結論
+                content_len = len(point.get("内容", ""))
+                if 5 <= title_len <= 15:
+                    info_score += 0.5
+                if 20 <= content_len <= 40:
+                    info_score += 0.5
+
+            # キーワードの評価
+            keywords = summary_data.get("キーワード", [])
+            if 3 <= len(keywords) <= 10:
                 info_score += 2
-                
+            elif 1 <= len(keywords) < 3:
+                info_score += 1
+
+            # 結論の情報量
+            conclusion_length = len(summary_data.get("結論", ""))
+            if 50 <= conclusion_length <= 100:
+                info_score += 2
+            elif 20 <= conclusion_length < 50:
+                info_score += 1
+
             scores["情報量"] = min(info_score, 10.0)
 
-            # 簡潔性の評価
-            concise_score = 10.0  # 開始点を10とし、問題があれば減点
+            # 簡潔性の評価（配点: 10点満点）
+            concise_score = 10.0
             
             # 文字数制限オーバーのチェック
             if overview_length > 200:
                 concise_score -= 2
             if conclusion_length > 100:
                 concise_score -= 2
-                
+
             # ポイントの簡潔性チェック
             for point in points:
                 if len(point.get("タイトル", "")) > 15:
                     concise_score -= 1
-                if len(point.get("説明", "")) > 40:
+                if len(point.get("内容", "")) > 40:
                     concise_score -= 1
-                    
+
+            # キーワードの簡潔性
+            for keyword in keywords:
+                if len(keyword.get("説明", "")) > 20:
+                    concise_score -= 0.5
+
             scores["簡潔性"] = max(concise_score, 0.0)
 
-            # 総合スコアの計算
-            scores["総合スコア"] = (scores["構造の完全性"] * 0.4 + 
-                               scores["情報量"] * 0.3 + 
-                               scores["簡潔性"] * 0.3)
+            # 総合スコアの計算（重み付け平均）
+            scores["総合スコア"] = (
+                scores["構造の完全性"] * 0.4 +
+                scores["情報量"] * 0.3 +
+                scores["簡潔性"] * 0.3
+            )
 
             return scores
 
