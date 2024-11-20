@@ -169,7 +169,7 @@ class TextProcessor:
                         )
                     )
                     return response.text
-
+                
                 chunk_response = self._retry_with_backoff(process_single_chunk)
                 
                 # Validate JSON response
@@ -213,7 +213,7 @@ class TextProcessor:
         return None
 
     def _combine_chunk_summaries(self, summaries: List[Dict]) -> Dict:
-        """チャンクサマリーの統合処理の改善"""
+        """改善されたチャンクサマリーの統合処理"""
         if not summaries:
             raise ValueError("No valid summaries to combine")
 
@@ -224,31 +224,34 @@ class TextProcessor:
             "キーワード": []
         }
 
-        # Combine summaries with deduplication
-        seen_points = set()
-        seen_keywords = set()
-
+        # キーの存在を確認してから処理
         for summary in summaries:
-            combined["概要"] += summary.get("概要", "") + " "
+            if "概要" in summary:
+                combined["概要"] += summary["概要"] + " "
             
-            for point in summary.get("主要ポイント", []):
-                point_key = f"{point['タイトル']}_{point['説明'][:50]}"
-                if point_key not in seen_points:
-                    seen_points.add(point_key)
-                    combined["主要ポイント"].append(point)
+            if "主要ポイント" in summary:
+                for point in summary["主要ポイント"]:
+                    if isinstance(point, dict) and "タイトル" in point and "説明" in point:
+                        combined["主要ポイント"].append(point)
             
-            for analysis in summary.get("詳細分析", []):
-                combined["詳細分析"].append(analysis)
+            if "詳細分析" in summary:
+                for analysis in summary["詳細分析"]:
+                    if isinstance(analysis, dict) and "セクション" in analysis and "内容" in analysis:
+                        combined["詳細分析"].append({
+                            "セクション": analysis["セクション"],
+                            "内容": analysis["内容"],
+                            "キーポイント": analysis.get("キーポイント", [])
+                        })
             
-            for keyword in summary.get("キーワード", []):
-                if keyword["用語"] not in seen_keywords:
-                    seen_keywords.add(keyword["用語"])
-                    combined["キーワード"].append(keyword)
+            if "キーワード" in summary:
+                for keyword in summary["キーワード"]:
+                    if isinstance(keyword, dict) and "用語" in keyword and "説明" in keyword:
+                        combined["キーワード"].append(keyword)
 
-        # Trim and clean up
+        # Clean up and format
         combined["概要"] = combined["概要"].strip()[:150]
-        combined["主要ポイント"] = combined["主要ポイント"][:5]  # Keep top 5 points
-        
+        combined["主要ポイント"] = combined["主要ポイント"][:5]
+
         return combined
 
     def _retry_with_backoff(self, func, max_retries=5):
@@ -291,6 +294,33 @@ class TextProcessor:
                         raise Exception(f"要約生成中にエラーが発生しました: {str(e)}")
 
         raise last_error
+
+    def _split_text_into_chunks(self, text: str) -> List[str]:
+        """テキストを適切なサイズのチャンクに分割"""
+        chunks = []
+        current_chunk = ""
+        current_size = 0
+        
+        # 文章単位で分割（。や！や？で区切る）
+        sentences = re.split(r'([。！？])', text)
+        
+        for i in range(0, len(sentences)-1, 2):
+            sentence = sentences[i] + (sentences[i+1] if i+1 < len(sentences) else '')
+            sentence_size = len(sentence)
+            
+            if current_size + sentence_size > self.chunk_size:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = sentence
+                current_size = sentence_size
+            else:
+                current_chunk += sentence
+                current_size += sentence_size
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+            
+        return chunks
 
     def generate_summary(self, text: str, progress_callback: Optional[Callable] = None) -> str:
         """Gemini APIを使用した改善された要約生成プロセス"""
@@ -347,19 +377,27 @@ class TextProcessor:
             except Exception as e:
                 raise Exception(f"要約の統合に失敗しました: {str(e)}")
 
-            # JSONを整形されたテキストに変換
+            # Generate final summary text
             final_summary = f"# 概要\n{final_summary_data['概要']}\n\n"
+            
             final_summary += "# 主要ポイント\n"
             for point in final_summary_data['主要ポイント']:
-                final_summary += f"- {point['タイトル']}: {point['説明']}\n"
-            
+                if isinstance(point, dict) and "タイトル" in point and "説明" in point:
+                    final_summary += f"- {point['タイトル']}: {point['説明']}\n"
+
             final_summary += "\n# 詳細分析\n"
             for analysis in final_summary_data['詳細分析']:
-                final_summary += f"## {analysis['ポイント']}\n{analysis['分析']}\n\n"
-            
+                if isinstance(analysis, dict) and "セクション" in analysis and "内容" in analysis:
+                    final_summary += f"## {analysis['セクション']}\n{analysis['内容']}\n"
+                    if "キーポイント" in analysis:
+                        for point in analysis["キーポイント"]:
+                            final_summary += f"- {point}\n"
+                    final_summary += "\n"
+
             final_summary += "# キーワードと重要概念\n"
             for keyword in final_summary_data['キーワード']:
-                final_summary += f"- {keyword['用語']}: {keyword['説明']}\n"
+                if isinstance(keyword, dict) and "用語" in keyword and "説明" in keyword:
+                    final_summary += f"- {keyword['用語']}: {keyword['説明']}\n"
 
             # キャッシュに保存
             self.cache[cache_key] = final_summary
@@ -382,73 +420,20 @@ class TextProcessor:
             raise Exception(f"要約の生成に失敗しました: {error_msg}")
 
     def get_transcript(self, url: str) -> str:
-        """Get transcript from YouTube video with error handling and caching."""
+        """YouTubeの文字起こしを取得"""
         try:
-            video_id = self._extract_video_id(url)
+            video_id = re.findall(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', url)
+            if not video_id:
+                raise ValueError("Invalid YouTube URL")
             
-            # Check cache first
-            if video_id in self.cache:
-                return self.cache[video_id]
-            
-            def fetch_transcript():
-                transcript = YouTubeTranscriptApi.get_transcript(
-                    video_id,
-                    languages=['ja', 'en']
-                )
-                formatter = TextFormatter()
-                return formatter.format_transcript(transcript)
-            
-            # Use retry logic for transcript fetching
-            formatted_transcript = self._retry_with_backoff(fetch_transcript)
-            
-            # Cache the result
-            self.cache[video_id] = formatted_transcript
-            
-            return formatted_transcript
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id[0])
+            transcript = transcript_list.find_transcript(['ja', 'en'])
+            formatter = TextFormatter()
+            return formatter.format_transcript(transcript.fetch())
             
         except Exception as e:
             logger.error(f"Error getting transcript: {str(e)}")
-            raise Exception(f"Failed to get transcript: {str(e)}")
-
-    def _extract_video_id(self, url: str) -> str:
-        """Extract YouTube video ID from URL."""
-        try:
-            patterns = [
-                r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
-                r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})',
-                r'(?:embed\/)([0-9A-Za-z_-]{11})'
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, url)
-                if match:
-                    return match.group(1)
-            raise ValueError("Invalid YouTube URL format")
-        except Exception as e:
-            logger.error(f"Error extracting video ID: {str(e)}")
-            raise ValueError(f"Could not extract video ID from URL: {str(e)}")
-
-    def _split_text_into_chunks(self, text: str) -> List[str]:
-        """テキストを適切なサイズのチャンクに分割"""
-        words = text.split()
-        chunks = []
-        current_chunk = []
-        current_length = 0
-
-        for word in words:
-            word_length = len(word)
-            if current_length + word_length + 1 <= self.chunk_size:
-                current_chunk.append(word)
-                current_length += word_length + 1
-            else:
-                chunks.append(' '.join(current_chunk))
-                current_chunk = [word]
-                current_length = word_length
-
-        if current_chunk:
-            chunks.append(' '.join(current_chunk))
-
-        return chunks
+            raise Exception(f"文字起こしの取得に失敗しました: {str(e)}")
 
     def proofread_text(self, text: str, progress_callback: Optional[Callable] = None) -> str:
         """Proofread and enhance text using Gemini API."""
