@@ -60,22 +60,19 @@ class TextProcessor:
                 return match.group(1)
         raise ValueError("無効なYouTube URLです")
 
-    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 800) -> List[str]:
+    def _split_into_contextual_chunks(self, text: str, chunk_size: int = 500) -> List[str]:
         sentences = re.split('([。!?！？]+)', text)
         sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
         
         chunks = []
         current_chunk = []
         current_length = 0
-        overlap = 150  # Increased overlap for better context
         
         for sentence in sentences:
             if current_length + len(sentence) > chunk_size and current_chunk:
-                chunk_text = ''.join(current_chunk)
-                chunks.append(chunk_text)
-                # Keep last few sentences for overlap
-                current_chunk = current_chunk[-3:]  # Increased overlap sentences
-                current_length = sum(len(s) for s in current_chunk)
+                chunks.append(''.join(current_chunk))
+                current_chunk = []
+                current_length = 0
             current_chunk.append(sentence)
             current_length += len(sentence)
         
@@ -85,10 +82,7 @@ class TextProcessor:
         return chunks
 
     def _process_chunk_with_retry(self, chunk: str, chunk_index: int) -> Dict:
-        max_retries = 3
-        base_delay = 1
-        
-        for attempt in range(max_retries):
+        for attempt in range(3):
             try:
                 logger.info(f"Processing chunk {chunk_index + 1}, attempt {attempt + 1}")
                 response = self.model.generate_content(
@@ -97,29 +91,65 @@ class TextProcessor:
                         temperature=0.3,
                         top_p=0.8,
                         top_k=40,
-                        max_output_tokens=8192,
+                        max_output_tokens=4096,
                     )
                 )
                 
-                if response and response.text:
-                    logger.info(f"Raw API response for chunk {chunk_index + 1}: {response.text[:100]}...")
-                else:
-                    logger.warning(f"Empty response received for chunk {chunk_index + 1}")
+                if not response or not response.text:
+                    logger.warning(f"Empty response for chunk {chunk_index + 1}")
                     continue
-                    
-                chunk_data = self._validate_summary_response(response.text)
-                if chunk_data:
-                    logger.info(f"Successfully processed chunk {chunk_index + 1}")
-                    return chunk_data
+                
+                logger.info(f"Raw response: {response.text[:200]}")
+                data = self._validate_summary_response(response.text)
+                
+                if data:
+                    return data
                 
             except Exception as e:
-                delay = base_delay * (2 ** attempt)
-                logger.warning(f"Chunk {chunk_index + 1}, attempt {attempt + 1} failed: {str(e)}")
-                if attempt < max_retries - 1:
-                    time.sleep(delay)
-            
-        logger.error(f"All attempts failed for chunk {chunk_index + 1}")
-        return None  # Return None instead of raising exception
+                logger.error(f"Error processing chunk {chunk_index + 1}: {str(e)}")
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+        
+        return None
+
+    def _create_summary_prompt(self, text: str) -> str:
+        return f'''
+以下のテキストを要約してください。
+必ず以下のJSON形式で出力してください。
+
+{{
+    "主要ポイント": [
+        {{
+            "タイトル": "要点",
+            "説明": "詳細説明（30文字以内）",
+            "重要度": 3
+        }}
+    ],
+    "詳細分析": [
+        {{
+            "セクション": "セクション名",
+            "キーポイント": [
+                "重要ポイント1",
+                "重要ポイント2"
+            ]
+        }}
+    ],
+    "キーワード": [
+        {{
+            "用語": "キーワード",
+            "説明": "説明（20文字以内）"
+        }}
+    ]
+}}
+
+テキスト:
+{text}
+
+重要:
+1. 必ずJSON形式で出力すること
+2. 重要度は1から5の整数であること
+3. 説明は指定された文字数以内に収めること
+'''
 
     def _validate_summary_response(self, response_text: str) -> dict:
         try:
@@ -169,7 +199,7 @@ class TextProcessor:
             if cache_key in self._cache:
                 return self._cache[cache_key]
 
-            chunks = self._split_into_contextual_chunks(text, chunk_size=800)  # Reduced chunk size
+            chunks = self._split_into_contextual_chunks(text)
             summaries = []
             
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
@@ -200,38 +230,6 @@ class TextProcessor:
         except Exception as e:
             logger.error(f"要約の生成中にエラーが発生しました: {str(e)}")
             raise Exception(f"要約の生成に失敗しました: {str(e)}")
-
-    def _create_summary_prompt(self, text: str) -> str:
-        return f'''
-テキストの内容を解析し、以下の形式で要約してください。
-長さは元のテキストの30%程度を目標とし、重要なポイントを簡潔に抽出してください。
-
-出力形式（必ずJSONで出力）:
-{{
-    "主要ポイント": [
-        {{
-            "タイトル": "重要な論点や主題を端的に",
-            "説明": "具体的な内容を30文字以内で",
-            "重要度": 3  // 1-5の整数で表現
-        }}
-    ],
-    "詳細分析": [
-        {{
-            "セクション": "トピック名",
-            "キーポイント": ["具体的な要点を箇条書きで"]
-        }}
-    ],
-    "キーワード": [
-        {{
-            "用語": "重要な用語",
-            "説明": "20文字以内の解説"
-        }}
-    ]
-}}
-
-解析対象テキスト:
-{text}
-'''
 
     def _merge_summaries(self, summaries: List[Dict]) -> Dict:
         """複数のチャンク要約をマージ"""
