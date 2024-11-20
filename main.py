@@ -101,28 +101,6 @@ try:
     ''',
                 unsafe_allow_html=True)
 
-    # Feature Introduction
-    st.markdown('''
-    <div class="glass-container feature-container">
-        <h4 class="section-header" style="margin-top: 0;">🎯 Advanced Content Analysis</h4>
-        <div class="feature-grid">
-            <div class="feature-card">
-                <div class="feature-icon">📝</div>
-                <h5 class="feature-title">文字起こし</h5>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🤖</div>
-                <h5 class="feature-title">要約</h5>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🔄</div>
-                <h5 class="feature-title">マップ化</h5>
-            </div>
-        </div>
-    </div>
-    ''',
-                unsafe_allow_html=True)
-
     def get_step_status(step_number):
         try:
             if st.session_state.current_step > step_number:
@@ -202,11 +180,10 @@ try:
                     </div>
                 ''', unsafe_allow_html=True)
             
-            # Display conclusion
+            # Display conclusion and keywords sections
             st.markdown("## 💡 結論")
             st.markdown(summary_data.get("結論", ""))
             
-            # Display keywords
             st.markdown("## 🔑 重要なキーワード")
             for keyword in summary_data.get("キーワード", []):
                 st.markdown(f'''
@@ -215,9 +192,63 @@ try:
                     </div>
                 ''', unsafe_allow_html=True)
             
+            # Display quality scores inside a section
+            quality_scores = st.session_state.quality_scores
+            if quality_scores:
+                st.markdown('''
+                <div class="quality-score-section">
+                    <h3>要約品質スコア</h3>
+                    <div class="quality-score-container">
+                ''', unsafe_allow_html=True)
+                
+                render_quality_score(
+                    quality_scores["構造の完全性"],
+                    "構造の完全性",
+                    "要約の構造がどれだけ整っているか"
+                )
+                render_quality_score(
+                    quality_scores["情報量"],
+                    "情報量",
+                    "重要な情報をどれだけ含んでいるか"
+                )
+                render_quality_score(
+                    quality_scores["簡潔性"],
+                    "簡潔性",
+                    "簡潔に要点を示せているか"
+                )
+                render_quality_score(
+                    quality_scores["総合スコア"],
+                    "総合スコア",
+                    "全体的な要約の質"
+                )
+                
+                st.markdown('</div></div>', unsafe_allow_html=True)
+                
         except Exception as e:
             logger.error(f"Summary display error: {str(e)}")
             st.error("要約の表示中にエラーが発生しました")
+
+    # Feature Introduction
+    st.markdown('''
+    <div class="glass-container feature-container">
+        <h4 class="section-header" style="margin-top: 0;">🎯 Advanced Content Analysis</h4>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">📝</div>
+                <h5 class="feature-title">文字起こし</h5>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h5 class="feature-title">要約</h5>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔄</div>
+                <h5 class="feature-title">マップ化</h5>
+            </div>
+        </div>
+    </div>
+    ''',
+                unsafe_allow_html=True)
 
     # Main application logic
     try:
@@ -328,40 +359,6 @@ try:
                     if st.session_state.summary:
                         st.markdown("### AI Summary")
                         display_summary(st.session_state.summary)
-                        
-                        # Display quality scores
-                        st.markdown("### 要約品質スコア")
-                        quality_scores = st.session_state.quality_scores
-                        
-                        with st.container():
-                            st.markdown("""
-                            <div class="quality-score-container">
-                                <h4>品質評価指標</h4>
-                            """, unsafe_allow_html=True)
-                            
-                            render_quality_score(
-                                quality_scores["構造の完全性"],
-                                "構造の完全性",
-                                "要約の構造がどれだけ整っているか（見出し、段落、論理的な流れ）"
-                            )
-                            render_quality_score(
-                                quality_scores["情報量"],
-                                "情報量",
-                                "重要な情報をどれだけ含んでいるか（キーポイント、詳細、例示）"
-                            )
-                            render_quality_score(
-                                quality_scores["簡潔性"],
-                                "簡潔性",
-                                "簡潔に要点を示せているか（冗長性、重複の少なさ）"
-                            )
-                            st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
-                            render_quality_score(
-                                quality_scores["総合スコア"],
-                                "総合スコア",
-                                "全体的な要約の質（構造、情報量、簡潔性の総合評価）"
-                            )
-                            
-                            st.markdown("</div>", unsafe_allow_html=True)
 
                 with tabs[2]:
                     st.markdown("### Mind Map Visualization")
@@ -442,8 +439,8 @@ try:
                                 logger.error(f"Error in text enhancement: {str(e)}")
 
     except Exception as e:
-        st.error(f"アプリケーションエラー: {str(e)}")
         logger.error(f"Application error: {str(e)}")
+        st.error(f"アプリケーションエラーが発生しました: {str(e)}")
 
 except Exception as e:
     st.error(f"初期化エラー: {str(e)}")
