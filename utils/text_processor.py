@@ -19,20 +19,21 @@ logger = logging.getLogger(__name__)
 class DynamicRateLimiter:
     def __init__(self):
         self.last_request = 0
-        self.min_interval = 1.0
+        self.min_interval = 2.0  # 最小待機時間を2秒に増加
         self.backoff_multiplier = 1.0
-        self.max_interval = 5.0
+        self.max_interval = 10.0  # 最大待機時間を10秒に設定
         self.success_count = 0
         self.error_count = 0
+        self.quota_exceeded = False
 
     def wait(self):
         now = time.time()
         elapsed = now - self.last_request
         
-        # エラー率に基づいて待機時間を調整
-        if self.error_count + self.success_count > 0:
-            error_rate = self.error_count / (self.error_count + self.success_count)
-            self.backoff_multiplier = 1.0 + (error_rate * 2.0)
+        if self.quota_exceeded:
+            time.sleep(max(5.0, self.max_interval))  # クォータ超過時は長めの待機
+            self.quota_exceeded = False
+            return
         
         wait_time = max(0, self.min_interval * self.backoff_multiplier - elapsed)
         if wait_time > 0:
@@ -48,15 +49,20 @@ class DynamicRateLimiter:
         self.error_count += 1
         self.backoff_multiplier = min(self.max_interval, self.backoff_multiplier * 1.5)
 
+    def report_quota_exceeded(self):
+        self.quota_exceeded = True
+        self.error_count += 1
+        self.backoff_multiplier = min(self.max_interval, self.backoff_multiplier * 2.0)
+
 class TextProcessor:
     def __init__(self):
         self._initialize_api()
         self.rate_limiter = DynamicRateLimiter()
         self.cache = TTLCache(maxsize=100, ttl=3600)
-        self.chunk_size = 1500  # チャンクサイズを1500に縮小
-        self.overlap_size = 200  # オーバーラップを200に設定
-        self.max_retries = 3    # リトライ回数を3回に設定
-        self.backoff_factor = 2 # バックオフ係数を2に設定
+        self.chunk_size = 1500
+        self.overlap_size = 200
+        self.max_retries = 3
+        self.backoff_factor = 2
 
     def _initialize_api(self):
         """Initialize or reinitialize the Gemini API with current environment"""
@@ -65,6 +71,46 @@ class TextProcessor:
             raise ValueError("Gemini API key is not set in environment variables")
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
+
+    def _extract_video_id(self, url: str) -> str:
+        """Extract video ID from YouTube URL"""
+        video_id_match = re.search(r'(?:v=|/v/|youtu\.be/)([^&?/]+)', url)
+        if not video_id_match:
+            raise ValueError("Invalid YouTube URL format")
+        return video_id_match.group(1)
+
+    def get_transcript(self, url: str) -> str:
+        """Get transcript from YouTube video with improved error handling"""
+        try:
+            video_id = self._extract_video_id(url)
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            
+            # Try to get Japanese transcript first
+            try:
+                transcript = transcript_list.find_transcript(['ja'])
+            except Exception:
+                # If Japanese is not available, try English
+                try:
+                    transcript = transcript_list.find_transcript(['en'])
+                except Exception:
+                    # If no preferred language is available, get the first available
+                    transcript = transcript_list.find_manually_created_transcript()
+            
+            # Get the transcript
+            transcript_data = transcript.fetch()
+            
+            # Format the transcript
+            formatter = TextFormatter()
+            formatted_transcript = formatter.format_transcript(transcript_data)
+            
+            if not formatted_transcript:
+                raise ValueError("空の文字起こしデータが返されました")
+            
+            return formatted_transcript
+            
+        except Exception as e:
+            logger.error(f"Error getting transcript: {str(e)}")
+            raise Exception(f"文字起こしの取得に失敗しました: {str(e)}")
 
     def _validate_json_response(self, response_text: str) -> Optional[Dict]:
         """Improved JSON response validation with multiple recovery attempts"""
@@ -99,16 +145,13 @@ class TextProcessor:
             return None
 
     def _process_chunk_with_retries(self, chunk: str, context: Dict) -> Optional[Dict]:
-        for attempt in range(self.max_retries):
+        remaining_retries = self.max_retries
+        backoff_time = 1  # 初期バックオフ時間（秒）
+
+        while remaining_retries > 0:
             try:
-                self.rate_limiter.wait()  # レート制限を適用
+                self.rate_limiter.wait()
                 
-                # チャンクの前処理とバリデーション
-                if len(chunk.strip()) < 100:
-                    logger.warning("チャンクが短すぎます")
-                    return None
-                
-                # プロンプトの生成と要約処理
                 response = self.model.generate_content(
                     self._create_summary_prompt(chunk, context),
                     generation_config=genai.types.GenerationConfig(
@@ -120,27 +163,37 @@ class TextProcessor:
                 )
                 
                 if not response.text:
-                    raise ValueError("APIからの応答が空です")
+                    raise ValueError("Empty response received")
                 
-                # JSONの解析と検証
                 result = self._validate_json_response(response.text)
                 if result:
                     self.rate_limiter.report_success()
                     return result
-                    
-                # 待機時間を計算
-                wait_time = self.backoff_factor ** attempt
-                logger.warning(f"Attempt {attempt + 1} failed, waiting {wait_time} seconds...")
-                time.sleep(wait_time)
+                
+                raise ValueError("Invalid JSON response")
                 
             except Exception as e:
-                logger.error(f"Chunk processing error: {str(e)}")
-                self.rate_limiter.report_error()
-                if attempt < self.max_retries - 1:
-                    wait_time = self.backoff_factor ** attempt
-                    time.sleep(wait_time)
+                error_msg = str(e).lower()
+                remaining_retries -= 1
+                
+                if "quota" in error_msg or "429" in error_msg:
+                    self.rate_limiter.report_quota_exceeded()
+                    logger.warning(f"API quota exceeded, waiting {backoff_time} seconds...")
+                    time.sleep(backoff_time)
+                    backoff_time *= 2  # 指数バックオフ
+                    
+                    # APIキーの再初期化を試みる
+                    try:
+                        self._initialize_api()
+                    except Exception as key_error:
+                        logger.error(f"Failed to reinitialize API: {str(key_error)}")
                 else:
-                    logger.error("All retry attempts failed")
+                    self.rate_limiter.report_error()
+                
+                if remaining_retries > 0:
+                    logger.warning(f"Retrying chunk processing ({remaining_retries} attempts left)")
+                else:
+                    logger.error(f"Failed to process chunk after all retries: {str(e)}")
                     return None
         
         return None
@@ -276,7 +329,6 @@ class TextProcessor:
             "キーワード": []
         }
 
-        # キーの存在を確認してから処理
         for summary in summaries:
             if "概要" in summary:
                 combined["概要"] += summary["概要"] + " "
@@ -366,52 +418,99 @@ class TextProcessor:
             final_summary += "# 主要ポイント\n"
             for point in final_summary_data['主要ポイント']:
                 if isinstance(point, dict) and "タイトル" in point and "説明" in point:
-                    final_summary += f"## {point['タイトル']}\n{point['説明']}\n\n"
+                    final_summary += f"\n## {point['タイトル']}\n{point['説明']}\n"
 
-            final_summary += "# 詳細分析\n"
+            final_summary += "\n# 詳細分析\n"
             for analysis in final_summary_data['詳細分析']:
-                if isinstance(analysis, dict) and "セクション" in analysis and "内容" in analysis:
-                    final_summary += f"## {analysis['セクション']}\n{analysis['内容']}\n"
-                    if "キーポイント" in analysis and analysis["キーポイント"]:
-                        for point in analysis["キーポイント"]:
-                            final_summary += f"- {point}\n"
-                    final_summary += "\n"
+                final_summary += f"\n## {analysis['セクション']}\n{analysis['内容']}\n"
+                if analysis['キーポイント']:
+                    final_summary += "\nキーポイント:\n"
+                    for key_point in analysis['キーポイント']:
+                        final_summary += f"- {key_point}\n"
 
-            final_summary += "# キーワードと重要概念\n"
+            final_summary += "\n# キーワード\n"
             for keyword in final_summary_data['キーワード']:
-                if isinstance(keyword, dict) and "用語" in keyword and "説明" in keyword:
-                    final_summary += f"## {keyword['用語']}\n{keyword['説明']}\n"
-                    if "関連語" in keyword and keyword["関連語"]:
-                        final_summary += "関連キーワード: " + ", ".join(keyword["関連語"]) + "\n\n"
+                final_summary += f"\n## {keyword['用語']}\n"
+                final_summary += f"{keyword['説明']}\n"
+                if keyword['関連語']:
+                    final_summary += "関連キーワード: " + ", ".join(keyword['関連語']) + "\n"
 
             # Cache the result
             self.cache[cache_key] = final_summary
 
             if progress_callback:
-                progress_callback(1.0, "✨ 要約が完了しました")
+                progress_callback(1.0, "✨ 要約が完了しました!")
 
             return final_summary
 
         except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
+            logger.error(f"Error in generate_summary: {str(e)}")
+            if progress_callback:
+                progress_callback(1.0, f"❌ 要約の生成に失敗しました: {str(e)}")
             raise Exception(f"要約の生成に失敗しました: {str(e)}")
 
-    def get_transcript(self, youtube_url: str) -> str:
-        """YouTubeの文字起こしを取得"""
+    def proofread_text(self, text: str, progress_callback: Optional[Callable] = None) -> str:
+        """テキストの校正と整形を行う"""
         try:
-            video_id = re.findall(r'(?:v=|\/)([0-9A-Za-z_-]{11}).*', youtube_url)[0]
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            transcript = transcript_list.find_transcript(['ja'])
-            if not transcript:
-                transcript = transcript_list.find_transcript(['ja-JP'])
-            if not transcript:
-                transcript = transcript_list.find_transcript(['en'])
-                if transcript:
-                    transcript = transcript.translate('ja')
-            
-            formatter = TextFormatter()
-            return formatter.format_transcript(transcript.fetch())
-            
+            if not text:
+                raise ValueError("入力テキストが空です")
+
+            if progress_callback:
+                progress_callback(0.2, "テキストを解析中...")
+
+            # キャッシュチェック
+            cache_key = f"proofread_{hashlib.md5(text.encode()).hexdigest()}"
+            if cache_key in self.cache:
+                if progress_callback:
+                    progress_callback(1.0, "✨ キャッシュから校正済みテキストを取得しました")
+                return self.cache[cache_key]
+
+            if progress_callback:
+                progress_callback(0.4, "テキストを校正中...")
+
+            prompt = f"""以下のテキストを校正し、読みやすく整形してください。
+
+入力テキスト：
+{text}
+
+要件：
+1. 誤字脱字の修正
+2. 句読点の適切な配置
+3. 段落分けの最適化
+4. 文章の流れの改善
+5. 簡潔で分かりやすい表現への修正
+
+出力形式：
+- マークダウン形式で出力
+- 見出しレベルを適切に使用
+- 箇条書きやリストを活用
+"""
+
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.2,
+                    top_p=0.95,
+                    top_k=40,
+                    max_output_tokens=8192,
+                )
+            )
+
+            if not response.text:
+                raise ValueError("空の応答が返されました")
+
+            enhanced_text = response.text.strip()
+
+            # Cache the result
+            self.cache[cache_key] = enhanced_text
+
+            if progress_callback:
+                progress_callback(1.0, "✨ テキストの校正が完了しました!")
+
+            return enhanced_text
+
         except Exception as e:
-            logger.error(f"Error getting transcript: {str(e)}")
-            raise Exception(f"文字起こしの取得に失敗しました: {str(e)}")
+            logger.error(f"Error in proofread_text: {str(e)}")
+            if progress_callback:
+                progress_callback(1.0, f"❌ テキストの校正に失敗しました: {str(e)}")
+            raise Exception(f"テキストの校正に失敗しました: {str(e)}")
