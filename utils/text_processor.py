@@ -70,9 +70,9 @@ class TextProcessor:
         self._initialize_api()
         self.rate_limiter = DynamicRateLimiter()
         self.cache = TTLCache(maxsize=100, ttl=3600)
-        self.chunk_size = 2500  # より大きなチャンクサイズで回数を減らす
+        self.chunk_size = 2500
         self.overlap_size = 200
-        self.max_retries = 5  # リトライ回数を増やす
+        self.max_retries = 3  # Updated to match new implementation
         self.backoff_factor = 2
         self.context_memory = []
         self.max_context_memory = 5
