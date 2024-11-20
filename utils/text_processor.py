@@ -19,15 +19,15 @@ logger = logging.getLogger(__name__)
 class DynamicRateLimiter:
     def __init__(self):
         self.last_request = 0
-        self.min_interval = 3.0  # より長い最小待機時間
+        self.min_interval = 10.0  # 最小待機時間を10秒に増加
         self.backoff_multiplier = 1.0
-        self.max_interval = 15.0  # より長い最大待機時間
+        self.max_interval = 30.0  # 最大待機時間を30秒に増加
         self.success_count = 0
         self.error_count = 0
         self.quota_exceeded = False
         self.request_times = []
-        self.window_size = 60  # 1分間の時間枠
-        self.max_requests = 30  # 1分間あたりの最大リクエスト数を制限
+        self.window_size = 60
+        self.max_requests = 10  # 1分間あたりの最大リクエスト数を10に制限
 
     def wait(self):
         now = time.time()
@@ -41,7 +41,7 @@ class DynamicRateLimiter:
                 time.sleep(sleep_time)
         
         if self.quota_exceeded:
-            time.sleep(self.max_interval)
+            time.sleep(self.max_interval * 2)  # クォータ超過時は2倍の待機
             self.quota_exceeded = False
             return
         
@@ -72,7 +72,7 @@ class TextProcessor:
         self.cache = TTLCache(maxsize=100, ttl=3600)
         self.chunk_size = 2500
         self.overlap_size = 200
-        self.max_retries = 3  # Updated to match new implementation
+        self.max_retries = 2  # リトライ回数を2回に制限
         self.backoff_factor = 2
         self.context_memory = []
         self.max_context_memory = 5
@@ -86,38 +86,24 @@ class TextProcessor:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
 
-    def _split_text_into_chunks(self, text: str) -> List[str]:
-        if len(text) < self.chunk_size:
-            return [text]
-        
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        
-        # 文単位での分割（改行も考慮）
-        sentences = [s.strip() for s in re.split('[。.!?！？\n]', text) if s.strip()]
-        
-        for sentence in sentences:
-            if current_length + len(sentence) > self.chunk_size and current_chunk:
-                chunks.append(' '.join(current_chunk))
-                current_chunk = [sentence]
-                current_length = len(sentence)
-            else:
-                current_chunk.append(sentence)
-                current_length += len(sentence)
-        
-        if current_chunk:
-            chunks.append(' '.join(current_chunk))
-        
-        return chunks
-
     def _process_chunk_with_retries(self, chunk: str, context: Dict) -> Optional[Dict]:
-        max_retries = 5  # リトライ回数を増やす
-        base_wait_time = 3  # 基本待機時間を増やす
+        base_wait_time = 10  # 基本待機時間を10秒に設定
+        max_retries = 2      # リトライ回数を2回に制限
         
         for attempt in range(max_retries):
             try:
+                # APIリクエスト前の長めの待機
                 self.rate_limiter.wait()
+                time.sleep(base_wait_time)  # 固定の待機時間を追加
+                
+                # チャンクが短い場合は簡易処理
+                if len(chunk) < 500:
+                    return {
+                        "概要": chunk,
+                        "主要ポイント": [{"タイトル": "要点", "説明": chunk[:200], "重要度": 1}],
+                        "詳細分析": [{"セクション": "概要", "内容": chunk}],
+                        "キーワード": []
+                    }
                 
                 response = self.model.generate_content(
                     self._create_summary_prompt(chunk, context),
@@ -129,41 +115,42 @@ class TextProcessor:
                     )
                 )
                 
-                if not response.text:
-                    raise ValueError("Empty response received")
+                if response and response.text:
+                    result = self._validate_json_response(response.text)
+                    if result:
+                        self.rate_limiter.report_success()
+                        return result
                 
-                result = self._validate_json_response(response.text)
-                if result:
-                    self.rate_limiter.report_success()
-                    return result
-                
-                raise ValueError("Invalid JSON response")
+                # APIエラー時のフォールバック
+                return {
+                    "概要": chunk[:200] + "...",
+                    "主要ポイント": [{"タイトル": "要約失敗", "説明": "APIエラーにより要約できませんでした", "重要度": 1}],
+                    "詳細分析": [{"セクション": "エラー", "内容": "要約の生成に失敗しました。テキストの一部を表示します。"}],
+                    "キーワード": []
+                }
                 
             except Exception as e:
                 error_msg = str(e).lower()
                 self.rate_limiter.report_error()
                 
                 if "quota" in error_msg or "429" in error_msg:
-                    self.rate_limiter.report_quota_exceeded()
-                    wait_time = base_wait_time * (2 ** attempt)
+                    wait_time = base_wait_time * (4 ** attempt)  # より積極的なバックオフ
                     logger.warning(f"API quota exceeded, waiting {wait_time} seconds...")
                     time.sleep(wait_time)
-                    
-                    # APIキーの再初期化を試みる
-                    try:
-                        self._initialize_api()
-                    except Exception as key_error:
-                        logger.error(f"Failed to reinitialize API: {str(key_error)}")
+                    continue
                 
                 if attempt < max_retries - 1:
-                    wait_time = base_wait_time * (2 ** attempt)
+                    wait_time = base_wait_time * (3 ** attempt)
                     logger.warning(f"Retrying chunk processing ({max_retries - attempt - 1} attempts left)")
                     time.sleep(wait_time)
-                else:
-                    logger.error(f"Failed to process chunk after all retries: {str(e)}")
-                    return None
-        
-        return None
+
+        # 最終的なフォールバック
+        return {
+            "概要": chunk[:200] + "...",
+            "主要ポイント": [{"タイトル": "要約失敗", "説明": "APIエラーにより要約できませんでした", "重要度": 1}],
+            "詳細分析": [{"セクション": "エラー", "内容": "要約の生成に失敗しました。テキストの一部を表示します。"}],
+            "キーワード": []
+        }
 
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from YouTube URL"""
