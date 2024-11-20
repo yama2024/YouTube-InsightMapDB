@@ -19,6 +19,7 @@ class TextProcessor:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         self._cache = TTLCache(maxsize=100, ttl=3600)  # 1-hour cache
+        self._context_memory = []  # Store context across multiple summaries
 
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from YouTube URL"""
@@ -87,7 +88,9 @@ class TextProcessor:
             "main_topics": [],
             "subtopics": {},
             "relationships": [],
-            "topic_importance": {}
+            "topic_importance": {},
+            "topic_flow": [],
+            "context_connections": {}
         }
         
         for summary in summaries:
@@ -95,34 +98,68 @@ class TextProcessor:
                 for point in summary["主要ポイント"]:
                     topic = point.get("タイトル", "")
                     importance = point.get("重要度", 1)
+                    context = point.get("前セクションとの関連", "")
+                    
                     if topic:
                         if topic not in hierarchy["main_topics"]:
                             hierarchy["main_topics"].append(topic)
                             hierarchy["subtopics"][topic] = []
                             hierarchy["topic_importance"][topic] = importance
+                            hierarchy["context_connections"][topic] = context
+                            
+                            # Track topic flow
+                            if hierarchy["topic_flow"]:
+                                hierarchy["topic_flow"].append({
+                                    "from": hierarchy["topic_flow"][-1]["topic"],
+                                    "to": topic,
+                                    "transition_context": context
+                                })
+                            hierarchy["topic_flow"].append({"topic": topic, "importance": importance})
                         else:
-                            # Update importance if topic is mentioned again
+                            # Update importance and merge context if topic is mentioned again
                             hierarchy["topic_importance"][topic] = max(
                                 hierarchy["topic_importance"][topic],
                                 importance
                             )
+                            if context:
+                                existing_context = hierarchy["context_connections"].get(topic, "")
+                                hierarchy["context_connections"][topic] = f"{existing_context} {context}".strip()
                     
             if "詳細分析" in summary:
                 for analysis in summary["詳細分析"]:
                     section = analysis.get("セクション", "")
                     points = analysis.get("キーポイント", [])
+                    context_explanation = analysis.get("文脈説明", "")
+                    
                     if section in hierarchy["main_topics"]:
-                        # Avoid duplicate subtopics
-                        new_points = [p for p in points if p not in hierarchy["subtopics"][section]]
+                        # Avoid duplicate subtopics while preserving context
+                        new_points = []
+                        for point in points:
+                            if point not in hierarchy["subtopics"][section]:
+                                new_points.append(point)
+                                
+                                # Check for cross-references with other topics
+                                for other_topic in hierarchy["main_topics"]:
+                                    if other_topic != section and (
+                                        other_topic.lower() in point.lower() or
+                                        any(sub.lower() in point.lower() 
+                                            for sub in hierarchy["subtopics"].get(other_topic, []))
+                                    ):
+                                        relationship = {
+                                            "from": section,
+                                            "to": other_topic,
+                                            "context": point,
+                                            "type": "cross_reference"
+                                        }
+                                        if relationship not in hierarchy["relationships"]:
+                                            hierarchy["relationships"].append(relationship)
+                        
                         hierarchy["subtopics"][section].extend(new_points)
                         
-                        # Track relationships between topics
-                        for point in new_points:
-                            for topic in hierarchy["main_topics"]:
-                                if topic != section and any(word in point for word in topic.split()):
-                                    relationship = {"from": section, "to": topic, "context": point}
-                                    if relationship not in hierarchy["relationships"]:
-                                        hierarchy["relationships"].append(relationship)
+                        # Update context connections
+                        if context_explanation:
+                            existing_context = hierarchy["context_connections"].get(section, "")
+                            hierarchy["context_connections"][section] = f"{existing_context} {context_explanation}".strip()
                     
         return hierarchy
 
@@ -135,20 +172,22 @@ class TextProcessor:
             "topic_hierarchy": {},
             "importance_scores": {},
             "related_terms": {},
-            "topic_transitions": []
+            "topic_transitions": [],
+            "context_memory": self._context_memory.copy()  # Use persistent context memory
         }
         
         if not previous_summaries:
             return context
 
-        # Build enhanced topic hierarchy
+        # Build enhanced topic hierarchy with improved context tracking
         context["topic_hierarchy"] = self._build_topic_hierarchy(previous_summaries)
         
-        # Analyze last 3 summaries for immediate context with improved tracking
-        recent_summaries = previous_summaries[-3:]
-        previous_topics = set()
+        # Analyze all summaries for global context patterns
+        all_topics = set()
+        topic_frequency = {}
+        topic_connections = {}
         
-        for summary in recent_summaries:
+        for summary in previous_summaries:
             current_topics = set()
             
             # Track topics and their importance
@@ -158,46 +197,57 @@ class TextProcessor:
                     importance = point.get("重要度", 1)
                     if topic:
                         current_topics.add(topic)
-                        context["previous_topics"].append(topic)
-                        context["importance_scores"][topic] = importance
+                        all_topics.add(topic)
+                        topic_frequency[topic] = topic_frequency.get(topic, 0) + 1
+                        context["importance_scores"][topic] = max(
+                            context["importance_scores"].get(topic, 0),
+                            importance
+                        )
             
-            # Track topic transitions
-            if previous_topics:
-                context["topic_transitions"].append({
-                    "from": list(previous_topics),
-                    "to": list(current_topics)
-                })
-            previous_topics = current_topics
-            
-            # Track continuing themes with improved context
-            if "文脈連携" in summary:
-                themes = summary["文脈連携"].get("継続するトピック", [])
-                context["continuing_themes"].extend(themes)
-                
-                # Track new topics for context transitions
-                new_topics = summary["文脈連携"].get("新規トピック", [])
-                if new_topics:
-                    context["topic_transitions"].append({
-                        "type": "new_topics",
-                        "topics": new_topics
-                    })
-                
-            # Build enhanced related terms dictionary with context
-            if "キーワード" in summary:
-                for keyword in summary["キーワード"]:
-                    term = keyword.get("用語", "")
-                    if term:
-                        context["related_terms"][term] = {
-                            "説明": keyword.get("説明", ""),
-                            "関連トピック": [
-                                topic for topic in context["previous_topics"]
-                                if term in topic or topic in term
-                            ]
-                        }
+            # Track topic connections
+            for topic1 in current_topics:
+                for topic2 in current_topics:
+                    if topic1 != topic2:
+                        key = tuple(sorted([topic1, topic2]))
+                        topic_connections[key] = topic_connections.get(key, 0) + 1
         
-        # Remove duplicates while preserving order
-        context["previous_topics"] = list(dict.fromkeys(context["previous_topics"]))
-        context["continuing_themes"] = list(dict.fromkeys(context["continuing_themes"]))
+        # Identify strongest topic relationships
+        strong_connections = [
+            {"topics": list(topics), "strength": count}
+            for topics, count in topic_connections.items()
+            if count > 1  # Topics that appear together more than once
+        ]
+        context["topic_connections"] = strong_connections
+        
+        # Update context memory with new patterns
+        self._context_memory.extend([
+            {
+                "type": "topic_pattern",
+                "topics": list(topic_pair),
+                "frequency": count,
+                "timestamp": len(self._context_memory)
+            }
+            for topic_pair, count in topic_connections.items()
+            if count > 1
+        ])
+        
+        # Limit context memory size
+        if len(self._context_memory) > 100:
+            self._context_memory = self._context_memory[-100:]
+        
+        # Sort topics by frequency and importance
+        context["key_themes"] = [
+            {
+                "topic": topic,
+                "frequency": topic_frequency[topic],
+                "importance": context["importance_scores"].get(topic, 1)
+            }
+            for topic in all_topics
+        ]
+        context["key_themes"].sort(
+            key=lambda x: (x["frequency"], x["importance"]),
+            reverse=True
+        )
         
         return context
 
@@ -254,9 +304,10 @@ class TextProcessor:
                 以下のテキストを要約し、文脈を考慮したJSONフォーマットで出力してください。
 
                 前のセクションからの文脈情報：
-                - 継続中のトピック: {", ".join(context["continuing_themes"])}
-                - 重要キーワード: {json.dumps(context["related_terms"], ensure_ascii=False)}
-                - トピック階層: {json.dumps(context["topic_hierarchy"], ensure_ascii=False)}
+                - 継続中のトピック: {", ".join(context.get("continuing_themes", []))}
+                - 主要テーマ: {json.dumps([theme["topic"] for theme in context.get("key_themes", [])[:3]], ensure_ascii=False)}
+                - トピック間の関連: {json.dumps(context.get("topic_connections", [])[:3], ensure_ascii=False)}
+                - トピック階層: {json.dumps(context.get("topic_hierarchy", {}), ensure_ascii=False)}
                 
                 テキスト:
                 {chunk}
@@ -264,18 +315,34 @@ class TextProcessor:
                 出力フォーマット:
                 {{
                     "主要ポイント": [
-                        {{"タイトル": "トピック", "重要度": 1-5の数値, "前セクションとの関連": "説明"}}
+                        {{
+                            "タイトル": "トピック",
+                            "重要度": 1-5の数値,
+                            "前セクションとの関連": "説明",
+                            "継続性": "新規/継続/発展"
+                        }}
                     ],
                     "詳細分析": [
-                        {{"セクション": "セクション名", "キーポイント": ["ポイント1", "ポイント2"], "文脈説明": "前セクションとの関連性"}}
+                        {{
+                            "セクション": "セクション名",
+                            "キーポイント": ["ポイント1", "ポイント2"],
+                            "文脈説明": "前セクションとの関連性",
+                            "発展度": "基礎/応用/深化"
+                        }}
                     ],
                     "文脈連携": {{
                         "継続するトピック": ["トピック1", "トピック2"],
                         "新規トピック": ["新トピック1", "新トピック2"],
-                        "トピック遷移": "トピック間の関連性の説明"
+                        "トピック遷移": "トピック間の関連性の説明",
+                        "理解度要件": "前セクションの理解が必要な度合い（1-5）"
                     }},
                     "キーワード": [
-                        {{"用語": "キーワード", "説明": "説明文", "関連トピック": ["関連トピック1", "関連トピック2"]}}
+                        {{
+                            "用語": "キーワード",
+                            "説明": "説明文",
+                            "関連トピック": ["関連トピック1", "関連トピック2"],
+                            "重要度": 1-5の数値
+                        }}
                     ]
                 }}
                 '''
@@ -295,84 +362,69 @@ class TextProcessor:
                     previous_summaries.append(summary_data)
                     
                     # Format summary with enhanced context awareness
-                    formatted_summary = self._format_summary(summary_data, i == 0, context)
-                    summaries.append(formatted_summary)
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse JSON from chunk {i}, using raw text")
-                    summaries.append(response.text)
-            
-            return "\n\n".join(summaries)
-            
-        except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
-            raise Exception(f"Failed to generate summary: {str(e)}")
-
-    def _format_summary(self, summary_data: Dict, is_first_chunk: bool = False, context: Dict = None) -> str:
-        """Format summary data into readable markdown with enhanced context awareness"""
-        lines = []
-        
-        # Add header for first chunk
-        if is_first_chunk:
-            lines.append("# 📝 コンテンツ要約")
-        
-        # Add main points with context
-        if "主要ポイント" in summary_data:
-            lines.append("\n## 🎯 主要ポイント")
-            for point in summary_data["主要ポイント"]:
-                stars = "⭐" * point.get("重要度", 1)
-                title = point['タイトル']
-                context_info = point.get("前セクションとの関連", "")
-                
-                if context_info:
-                    lines.append(f"- **{title}** {stars}\n  > {context_info}")
-                else:
-                    lines.append(f"- **{title}** {stars}")
-        
-        # Add detailed analysis with context
-        if "詳細分析" in summary_data:
-            lines.append("\n## 📊 詳細分析")
-            for analysis in summary_data["詳細分析"]:
-                section = analysis['セクション']
-                context_explanation = analysis.get("文脈説明", "")
-                
-                if context_explanation:
-                    lines.append(f"\n### {section}\n> {context_explanation}")
-                else:
-                    lines.append(f"\n### {section}")
+                    formatted_summary = []
                     
-                for point in analysis['キーポイント']:
-                    lines.append(f"- {point}")
-        
-        # Add context connections
-        if "文脈連携" in summary_data:
-            lines.append("\n## 🔄 文脈の連続性")
-            context_data = summary_data["文脈連携"]
+                    # Add section title with context level
+                    if i > 0:
+                        formatted_summary.append(f"\n## セクション {i+1} (前セクションとの関連度: {summary_data['文脈連携']['理解度要件']}/5)")
+                    else:
+                        formatted_summary.append(f"\n## セクション {i+1}")
+                    
+                    # Format main points with context indicators
+                    formatted_summary.append("\n### 主要ポイント")
+                    for point in summary_data["主要ポイント"]:
+                        title = point["タイトル"]
+                        importance = "🔥" * point["重要度"]
+                        continuity = {
+                            "新規": "🆕",
+                            "継続": "⏩",
+                            "発展": "📈"
+                        }.get(point["継続性"], "")
+                        
+                        formatted_summary.append(f"\n- {title} {importance} {continuity}")
+                        if point["前セクションとの関連"]:
+                            formatted_summary.append(f"  - 前セクションとの関連: {point['前セクションとの関連']}")
+                    
+                    # Add detailed analysis with development indicators
+                    formatted_summary.append("\n### 詳細分析")
+                    for analysis in summary_data["詳細分析"]:
+                        development_indicator = {
+                            "基礎": "📚",
+                            "応用": "🔄",
+                            "深化": "🎯"
+                        }.get(analysis["発展度"], "")
+                        
+                        formatted_summary.append(f"\n#### {analysis['セクション']} {development_indicator}")
+                        for point in analysis["キーポイント"]:
+                            formatted_summary.append(f"- {point}")
+                        if analysis["文脈説明"]:
+                            formatted_summary.append(f"\n文脈: {analysis['文脈説明']}")
+                    
+                    # Add topic transition information
+                    if summary_data["文脈連携"]["トピック遷移"]:
+                        formatted_summary.append("\n### トピックの展開")
+                        formatted_summary.append(summary_data["文脈連携"]["トピック遷移"])
+                    
+                    # Add keywords with importance indicators
+                    if summary_data.get("キーワード"):
+                        formatted_summary.append("\n### 重要キーワード")
+                        for keyword in summary_data["キーワード"]:
+                            importance = "⭐" * keyword["重要度"]
+                            formatted_summary.append(f"\n- {keyword['用語']} {importance}")
+                            formatted_summary.append(f"  - {keyword['説明']}")
+                            if keyword["関連トピック"]:
+                                formatted_summary.append(f"  - 関連: {', '.join(keyword['関連トピック'])}")
+                    
+                    summaries.append("\n".join(formatted_summary))
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse summary JSON: {str(e)}")
+                    # Add error handling summary
+                    summaries.append(f"\n## セクション {i+1} (エラー処理)\n- テキストの解析に問題が発生しました。基本的な要約を表示します。\n{response.text}")
             
-            if context_data.get("トピック遷移"):
-                lines.append(f"\n**トピックの展開**: {context_data['トピック遷移']}")
-            
-            if context_data.get("継続するトピック"):
-                lines.append("\n**継続するトピック**:")
-                for topic in context_data["継続するトピック"]:
-                    lines.append(f"- {topic}")
-            
-            if context_data.get("新規トピック"):
-                lines.append("\n**新しく導入されたトピック**:")
-                for topic in context_data["新規トピック"]:
-                    lines.append(f"- {topic}")
-        
-        # Add keywords with enhanced context
-        if "キーワード" in summary_data:
-            lines.append("\n## 🔍 重要キーワード")
-            for keyword in summary_data["キーワード"]:
-                term = keyword['用語']
-                description = keyword['説明']
-                related_topics = keyword.get("関連トピック", [])
-                
-                if related_topics:
-                    topics_str = ", ".join(related_topics)
-                    lines.append(f"- **{term}**: {description}\n  > 関連トピック: {topics_str}")
-                else:
-                    lines.append(f"- **{term}**: {description}")
-        
-        return "\n".join(lines)
+            # Combine all summaries with proper spacing and context indicators
+            final_summary = "\n\n".join(summaries)
+            return final_summary
+
+except Exception as e:
+    logger.error(f"Error in summary generation: {str(e)}")
+    raise Exception(f"Failed to generate summary: {str(e)}")
