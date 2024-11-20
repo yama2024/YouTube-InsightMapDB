@@ -153,9 +153,21 @@ class TextProcessor:
         text = text.replace('\n', ' ').strip()
         text = re.sub(r'\s+', ' ', text)
         
-        # 文単位での分割
-        sentences = re.split('([。!?！？]+)', text)
-        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
+        # テキストが最小サイズより小さい場合は単一チャンクとして返す
+        if len(text) < 200:
+            return [text]
+        
+        # 文単位での分割（句読点も考慮）
+        sentences = []
+        temp = ''
+        for char in text:
+            temp += char
+            if char in ['。', '！', '？', '!', '?', '.']:
+                if temp.strip():
+                    sentences.append(temp.strip())
+                temp = ''
+        if temp.strip():
+            sentences.append(temp.strip())
         
         chunks = []
         current_chunk = []
@@ -166,27 +178,35 @@ class TextProcessor:
             if not sentence:
                 continue
                 
-            # チャンクサイズの確認
-            if current_length + len(sentence) > self.chunk_size and current_chunk:
+            sentence_length = len(sentence)
+            
+            # 1文が長すぎる場合は適切な位置で分割
+            if sentence_length > self.chunk_size:
+                sub_chunks = [sentence[i:i+self.chunk_size] 
+                             for i in range(0, len(sentence), self.chunk_size)]
+                for sub_chunk in sub_chunks:
+                    if sub_chunk:
+                        chunks.append(sub_chunk)
+                continue
+                
+            # 通常のチャンク処理
+            if current_length + sentence_length > self.chunk_size and current_chunk:
                 chunks.append(' '.join(current_chunk))
-                # オーバーラップを考慮して最後の文を保持
-                current_chunk = current_chunk[-2:] if len(current_chunk) > 2 else []
-                current_length = sum(len(s) for s in current_chunk)
+                current_chunk = []
+                current_length = 0
             
             current_chunk.append(sentence)
-            current_length += len(sentence)
+            current_length += sentence_length
         
         # 残りの文を処理
         if current_chunk:
             chunks.append(' '.join(current_chunk))
         
-        # チャンクの検証
-        valid_chunks = [chunk for chunk in chunks if len(chunk.strip()) >= 100]
+        # 最終チェック
+        if not chunks:
+            return [text]  # テキスト全体を1つのチャンクとして返す
         
-        if not valid_chunks:
-            raise ValueError("有効なチャンクを生成できませんでした")
-        
-        return valid_chunks
+        return chunks
 
     def _create_summary_prompt(self, text: str, context: Optional[Dict] = None) -> str:
         """Improved prompt with stricter JSON structure requirements"""
