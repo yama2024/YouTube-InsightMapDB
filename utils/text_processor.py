@@ -5,9 +5,10 @@ import re
 import os
 import time
 import random
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Callable
 from retrying import retry
 from cachetools import TTLCache, cached
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Enhanced logging setup
 logging.basicConfig(
@@ -21,6 +22,7 @@ class TextProcessor:
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
             raise ValueError("Gemini API key is not set in environment variables")
+        
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-1.5-pro')
         self.safety_settings = [
@@ -30,11 +32,21 @@ class TextProcessor:
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ]
         
-        # Initialize caches
+        # Enhanced caching with separate caches for different operations
         self.subtitle_cache = TTLCache(maxsize=100, ttl=3600)  # 1 hour TTL
-        self.processed_text_cache = TTLCache(maxsize=100, ttl=1800)  # 30 minutes TTL
+        self.summary_cache = TTLCache(maxsize=50, ttl=1800)    # 30 minutes TTL
+        self.chunk_cache = TTLCache(maxsize=200, ttl=900)      # 15 minutes TTL
         
-        # Enhanced noise patterns for Japanese text
+        # Rate limiting settings
+        self.request_timestamps = []
+        self.max_requests_per_minute = 50
+        self.min_request_interval = 1.2  # seconds
+        
+        # Initialize noise patterns
+        self._init_noise_patterns()
+
+    def _init_noise_patterns(self):
+        """Initialize enhanced noise patterns for better text cleaning"""
         self.noise_patterns = {
             'timestamps': r'\[?\(?\d{1,2}:\d{2}(?::\d{2})?\]?\)?',
             'speaker_tags': r'\[[^\]]*\]|\([^)]*\)',
@@ -45,153 +57,270 @@ class TextProcessor:
             'punctuation': r'([。．！？])\1+',
             'noise_symbols': r'[♪♫♬♩†‡◊◆◇■□▲△▼▽○●◎]',
             'parentheses': r'（[^）]*）|\([^)]*\)',
-            'unnecessary_symbols': r'[＊∗※#＃★☆►▷◁◀→←↑↓]',
-            'commercial_markers': r'(?:CM|広告|スポンサー)(?:\s*\d*)?',
-            'system_messages': r'(?:システム|エラー|通知)(?:：|:).*?(?:\n|$)',
-            'automated_tags': r'\[(?:音楽|拍手|笑|BGM|SE|効果音)\]'
-        }
-        
-        # Japanese text normalization
-        self.jp_normalization = {
-            'spaces': {
-                '　': ' ',
-                '\u3000': ' ',
-                '\xa0': ' '
-            },
-            'punctuation': {
-                '．': '。',
-                '…': '。',
-                '.': '。',
-                '｡': '。',
-                '､': '、'
-            }
+            'unnecessary_symbols': r'[＊∗※#＃★☆►▷◁◀→←↑↓]'
         }
 
-    def _handle_rate_limit(self, attempt: int, max_attempts: int = 5) -> float:
-        if attempt >= max_attempts:
-            raise Exception("最大リトライ回数を超えました")
+    def _enforce_rate_limit(self):
+        """Enhanced rate limiting with dynamic adjustment"""
+        current_time = time.time()
+        self.request_timestamps = [ts for ts in self.request_timestamps 
+                                 if current_time - ts < 60]
         
-        # Implement more gradual backoff
-        base_delay = min(60, (3 ** attempt))  # Increase base delay and use cubic growth
-        jitter = random.uniform(0, 0.2 * base_delay)  # Increase jitter to 20%
-        return base_delay + jitter
+        if len(self.request_timestamps) >= self.max_requests_per_minute:
+            sleep_time = 60 - (current_time - self.request_timestamps[0]) + 1
+            logger.warning(f"Rate limit reached, waiting {sleep_time:.2f} seconds")
+            time.sleep(sleep_time)
+        
+        time_since_last_request = (current_time - self.request_timestamps[-1] 
+                                 if self.request_timestamps else float('inf'))
+        if time_since_last_request < self.min_request_interval:
+            time.sleep(self.min_request_interval - time_since_last_request)
+        
+        self.request_timestamps.append(time.time())
 
-    def generate_summary(self, text: str) -> str:
-        """Generate a summary of the input text with improved rate limiting and chunking"""
+    async def _process_chunk_with_retry(self, chunk: str, attempt: int = 0) -> Optional[str]:
+        """Process a single chunk with enhanced error handling and retry logic"""
+        max_attempts = 5
         try:
-            # Reduce initial chunk size further
-            first_chunk_size = 150  # Even smaller first chunk
-            regular_chunk_size = 300  # Smaller regular chunks
-            chunks = []
+            self._enforce_rate_limit()
             
-            # Special handling for first chunk
-            if len(text) > first_chunk_size:
-                chunks.append(text[:first_chunk_size])
-                remaining_text = text[first_chunk_size:]
-                chunks.extend(self._chunk_text(remaining_text, chunk_size=regular_chunk_size, overlap=30))
-            else:
-                chunks = [text]
+            # Enhanced prompt with better context preservation
+            prompt = f'''
+            以下のテキストチャンクを要約してください。
+            重要な情報を保持しながら、簡潔で分かりやすい文章にまとめてください。
             
-            summaries = []
-            last_request_time = 0
-            min_request_interval = 5.0  # Longer minimum wait
+            チャンクの文脈を考慮し、前後の内容との一貫性を維持してください。
             
-            # Add exponential backoff between chunks
-            chunk_delay = lambda i: min(15.0, 3.0 + (i * 1.5))  # More gradual increase
+            テキスト:
+            {chunk}
+            '''
             
-            # Add longer delays after rate limit errors
-            rate_limit_delay = lambda attempt: 15.0 + (attempt * 5.0)
+            response = self.model.generate_content(
+                prompt,
+                safety_settings=self.safety_settings,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    top_p=0.8,
+                    top_k=40,
+                    max_output_tokens=400
+                )
+            )
             
-            for i, chunk in enumerate(chunks):
-                current_time = time.time()
-                if current_time - last_request_time < min_request_interval:
-                    time.sleep(min_request_interval - (current_time - last_request_time))
+            if not response or not response.text:
+                raise ValueError("Empty response from API")
                 
-                # Increase maximum retries
-                max_retries = 10 if i == 0 else 7  # More retries, especially for first chunk
-                success = False
-                
-                for attempt in range(max_retries):
-                    try:
-                        if attempt > 0:
-                            delay = rate_limit_delay(attempt)
-                            logger.info(f"チャンク {i+1} のリトライ {attempt+1}/{max_retries}, {delay}秒待機")
-                            time.sleep(delay)
-                        
-                        prompt = f'''
-                        以下のテキストを要約してください。
-                        重要なポイントを漏らさず、簡潔にまとめてください。
-
-                        テキスト:
-                        {chunk}
-                        '''
-                        
-                        response = self.model.generate_content(
-                            prompt,
-                            safety_settings=self.safety_settings,
-                            generation_config=genai.types.GenerationConfig(
-                                temperature=0.3,
-                                top_p=0.8,
-                                top_k=40,
-                                max_output_tokens=400,
-                            )
-                        )
-                        
-                        if response and response.text:
-                            summaries.append(response.text.strip())
-                            success = True
-                            last_request_time = time.time()
-                            # Apply chunk delay after successful processing
-                            time.sleep(chunk_delay(i))
-                            break
-                            
-                    except Exception as e:
-                        if 'Resource has been exhausted' in str(e):
-                            logger.warning(f"レート制限エラー (チャンク {i+1}): {str(e)}")
-                            if i == 0 and attempt < max_retries - 1:
-                                time.sleep(rate_limit_delay(attempt))  # Use rate limit delay for first chunk
-                            continue
-                        raise
-                
-                if not success:
-                    raise Exception(f"チャンク {i+1} の処理に失敗しました")
-
-            if not summaries:
-                raise ValueError("要約を生成できませんでした")
+            summary = response.text.strip()
             
-            # Final summary with improved error handling
-            final_text = "\n".join(summaries)
-            for attempt in range(max_retries):
-                try:
-                    delay = self._handle_rate_limit(attempt)
-                    time.sleep(delay)
-                    
-                    final_response = self.model.generate_content(
-                        f"以下の要約をさらに整理して、簡潔にまとめてください:\n\n{final_text}",
-                        safety_settings=self.safety_settings,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.3,
-                            top_p=0.8,
-                            top_k=40,
-                            max_output_tokens=800,
-                        )
-                    )
-                    
-                    if final_response and final_response.text:
-                        return final_response.text.strip()
-                        
-                except Exception as e:
-                    if 'Resource has been exhausted' in str(e) and attempt < max_retries - 1:
-                        logger.warning(f"最終要約でレート制限エラー: {str(e)}")
-                        time.sleep(rate_limit_delay(attempt))
-                        continue
-                    raise
-            
-            raise Exception("最終要約の生成に失敗しました")
+            # Validate summary quality
+            if len(summary) < 10 or len(summary) > len(chunk):
+                raise ValueError("Invalid summary length")
+                
+            return summary
             
         except Exception as e:
-            logger.error(f"要約生成エラー: {str(e)}")
+            if attempt < max_attempts - 1:
+                delay = 2 ** attempt * 1.5 + random.uniform(0, 1)
+                logger.warning(f"Retry {attempt + 1}/{max_attempts} after {delay:.2f}s: {str(e)}")
+                time.sleep(delay)
+                return await self._process_chunk_with_retry(chunk, attempt + 1)
+            else:
+                logger.error(f"Failed to process chunk after {max_attempts} attempts: {str(e)}")
+                return None
+
+    def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
+        """Enhanced text chunking with improved context preservation"""
+        if not text:
+            return []
+            
+        # Cache key based on text content and chunking parameters
+        cache_key = f"{hash(text)}_{chunk_size}_{overlap}"
+        cached_chunks = self.chunk_cache.get(cache_key)
+        if cached_chunks:
+            return cached_chunks
+            
+        # Split into sentences first
+        sentences = re.split('([。!?！？]+)', text)
+        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
+        
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for sentence in sentences:
+            sentence_length = len(sentence)
+            
+            if current_length + sentence_length > chunk_size:
+                if current_chunk:
+                    chunk_text = ''.join(current_chunk)
+                    chunks.append(chunk_text)
+                    
+                    # Keep overlap sentences
+                    overlap_size = 0
+                    overlap_chunk = []
+                    for s in reversed(current_chunk):
+                        if overlap_size + len(s) <= overlap:
+                            overlap_chunk.insert(0, s)
+                            overlap_size += len(s)
+                        else:
+                            break
+                    
+                    current_chunk = overlap_chunk
+                    current_length = sum(len(s) for s in current_chunk)
+            
+            current_chunk.append(sentence)
+            current_length += sentence_length
+        
+        if current_chunk:
+            chunks.append(''.join(current_chunk))
+        
+        # Cache the chunks
+        self.chunk_cache[cache_key] = chunks
+        return chunks
+
+    def generate_summary(self, text: str) -> str:
+        """Generate a summary with improved quality and performance"""
+        if not text:
+            return ""
+            
+        try:
+            # Check cache first
+            cache_key = hash(text)
+            cached_summary = self.summary_cache.get(cache_key)
+            if cached_summary:
+                logger.info("Using cached summary")
+                return cached_summary
+            
+            # Improve chunking with better context preservation
+            chunks = self._chunk_text(text, chunk_size=800, overlap=100)
+            
+            if not chunks:
+                raise ValueError("No valid chunks generated from text")
+            
+            # Process chunks with parallel execution
+            chunk_summaries = []
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                future_to_chunk = {
+                    executor.submit(self._process_chunk_with_retry, chunk): i 
+                    for i, chunk in enumerate(chunks)
+                }
+                
+                for future in as_completed(future_to_chunk):
+                    try:
+                        summary = future.result()
+                        if summary:
+                            chunk_summaries.append((future_to_chunk[future], summary))
+                    except Exception as e:
+                        logger.error(f"Chunk processing failed: {str(e)}")
+            
+            if not chunk_summaries:
+                raise ValueError("No valid summaries generated")
+            
+            # Sort summaries by original chunk order
+            chunk_summaries.sort(key=lambda x: x[0])
+            summaries = [summary for _, summary in chunk_summaries]
+            
+            # Generate final summary
+            final_text = "\n".join(summaries)
+            final_summary = self._generate_final_summary(final_text)
+            
+            if not final_summary:
+                raise ValueError("Failed to generate final summary")
+            
+            # Cache the result
+            self.summary_cache[cache_key] = final_summary
+            return final_summary
+            
+        except Exception as e:
+            logger.error(f"Summary generation failed: {str(e)}")
             raise Exception(f"要約の生成に失敗しました: {str(e)}")
+
+    def _generate_final_summary(self, text: str) -> Optional[str]:
+        """Generate final summary with enhanced coherence checks"""
+        try:
+            self._enforce_rate_limit()
+            
+            prompt = f'''
+            以下の要約をさらに整理し、一貫性のある簡潔な要約を作成してください：
+            
+            1. 重要なポイントを維持
+            2. 論理的な流れを保持
+            3. 簡潔で分かりやすい文章
+            4. 文脈の一貫性を確保
+            
+            テキスト:
+            {text}
+            '''
+            
+            response = self.model.generate_content(
+                prompt,
+                safety_settings=self.safety_settings,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,
+                    top_p=0.8,
+                    top_k=40,
+                    max_output_tokens=800
+                )
+            )
+            
+            if not response or not response.text:
+                return None
+                
+            final_summary = response.text.strip()
+            
+            # Validate final summary
+            if len(final_summary) < 50 or len(final_summary) > len(text):
+                logger.warning("Invalid final summary length")
+                return None
+                
+            return final_summary
+            
+        except Exception as e:
+            logger.error(f"Final summary generation failed: {str(e)}")
+            return None
+
+    @retry(stop_max_attempt_number=3, wait_fixed=2000)
+    def get_transcript(self, url: str) -> str:
+        """Get transcript with improved error handling and retries"""
+        video_id = self._extract_video_id(url)
+        if not video_id:
+            raise ValueError("無効なYouTube URLです")
+        
+        try:
+            # Check cache first
+            cached_transcript = self.subtitle_cache.get(video_id)
+            if cached_transcript:
+                logger.info("キャッシュされた字幕を使用します")
+                return cached_transcript
+            
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja', 'ja-JP', 'en'])
+            transcript = ' '.join([entry['text'] for entry in transcript_list])
+            
+            cleaned_transcript = self._clean_text(transcript)
+            self.subtitle_cache[video_id] = cleaned_transcript
+            return cleaned_transcript
+            
+        except Exception as e:
+            error_msg = f"字幕取得エラー: {str(e)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+    def _extract_video_id(self, url: str) -> Optional[str]:
+        """Extract YouTube video ID from URL"""
+        if not url:
+            return None
+            
+        patterns = [
+            r'(?:v=|/v/|^)([a-zA-Z0-9_-]{11})',
+            r'(?:youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
+            r'^[a-zA-Z0-9_-]{11}$'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+                
+        return None
 
     def _clean_text(self, text: str, progress_callback=None) -> str:
         """Enhanced text cleaning with progress tracking"""
@@ -345,47 +474,3 @@ class TextProcessor:
             if progress_callback:
                 progress_callback(1.0, f"❌ エラー: {str(e)}")
             return text
-
-    @retry(stop_max_attempt_number=3, wait_fixed=2000)
-    def get_transcript(self, url: str) -> str:
-        """Get transcript with improved error handling and retries"""
-        video_id = self._extract_video_id(url)
-        if not video_id:
-            raise ValueError("無効なYouTube URLです")
-        
-        try:
-            # Check cache first
-            cached_transcript = self.subtitle_cache.get(video_id)
-            if cached_transcript:
-                logger.info("キャッシュされた字幕を使用します")
-                return cached_transcript
-            
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja', 'ja-JP', 'en'])
-            transcript = ' '.join([entry['text'] for entry in transcript_list])
-            
-            cleaned_transcript = self._clean_text(transcript)
-            self.subtitle_cache[video_id] = cleaned_transcript
-            return cleaned_transcript
-            
-        except Exception as e:
-            error_msg = f"字幕取得エラー: {str(e)}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-    def _extract_video_id(self, url: str) -> Optional[str]:
-        """Extract YouTube video ID from URL"""
-        if not url:
-            return None
-            
-        patterns = [
-            r'(?:v=|/v/|^)([a-zA-Z0-9_-]{11})',
-            r'(?:youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
-            r'^[a-zA-Z0-9_-]{11}$'
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                return match.group(1)
-                
-        return None
