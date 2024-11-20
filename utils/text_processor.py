@@ -71,16 +71,17 @@ class TextProcessor:
         if attempt >= max_attempts:
             raise Exception("最大リトライ回数を超えました")
         
-        # Calculate delay with jitter
-        base_delay = min(32, (2 ** attempt))  # Exponential backoff capped at 32 seconds
-        jitter = random.uniform(0, 0.1 * base_delay)  # 10% jitter
+        # Implement more gradual backoff
+        base_delay = min(60, (3 ** attempt))  # Increase base delay and use cubic growth
+        jitter = random.uniform(0, 0.2 * base_delay)  # Increase jitter to 20%
         return base_delay + jitter
 
     def generate_summary(self, text: str) -> str:
+        """Generate a summary of the input text with improved rate limiting and chunking"""
         try:
-            # Smaller chunks for first processing
-            first_chunk_size = 200  # Reduced size for first chunk
-            regular_chunk_size = 400  # Size for subsequent chunks
+            # Reduce initial chunk size further
+            first_chunk_size = 150  # Even smaller first chunk
+            regular_chunk_size = 300  # Smaller regular chunks
             chunks = []
             
             # Special handling for first chunk
@@ -93,22 +94,27 @@ class TextProcessor:
             
             summaries = []
             last_request_time = 0
-            min_request_interval = 3.0  # Increased minimum interval
+            min_request_interval = 5.0  # Longer minimum wait
             
-            # Special handling for first chunk
+            # Add exponential backoff between chunks
+            chunk_delay = lambda i: min(15.0, 3.0 + (i * 1.5))  # More gradual increase
+            
+            # Add longer delays after rate limit errors
+            rate_limit_delay = lambda attempt: 15.0 + (attempt * 5.0)
+            
             for i, chunk in enumerate(chunks):
                 current_time = time.time()
                 if current_time - last_request_time < min_request_interval:
                     time.sleep(min_request_interval - (current_time - last_request_time))
                 
-                # Extended retries for first chunk
-                max_retries = 7 if i == 0 else 5
+                # Increase maximum retries
+                max_retries = 10 if i == 0 else 7  # More retries, especially for first chunk
                 success = False
                 
                 for attempt in range(max_retries):
                     try:
                         if attempt > 0:
-                            delay = self._handle_rate_limit(attempt)
+                            delay = rate_limit_delay(attempt)
                             logger.info(f"チャンク {i+1} のリトライ {attempt+1}/{max_retries}, {delay}秒待機")
                             time.sleep(delay)
                         
@@ -127,7 +133,7 @@ class TextProcessor:
                                 temperature=0.3,
                                 top_p=0.8,
                                 top_k=40,
-                                max_output_tokens=400,  # Reduced token limit
+                                max_output_tokens=400,
                             )
                         )
                         
@@ -135,57 +141,54 @@ class TextProcessor:
                             summaries.append(response.text.strip())
                             success = True
                             last_request_time = time.time()
-                            # Additional delay after successful first chunk
-                            if i == 0:
-                                time.sleep(5.0)
+                            # Apply chunk delay after successful processing
+                            time.sleep(chunk_delay(i))
                             break
                             
                     except Exception as e:
                         if 'Resource has been exhausted' in str(e):
                             logger.warning(f"レート制限エラー (チャンク {i+1}): {str(e)}")
                             if i == 0 and attempt < max_retries - 1:
-                                time.sleep(10.0)  # Extended delay for first chunk
+                                time.sleep(rate_limit_delay(attempt))  # Use rate limit delay for first chunk
                             continue
                         raise
                 
                 if not success:
                     raise Exception(f"チャンク {i+1} の処理に失敗しました")
-                
-                # Progressive delay between chunks
-                time.sleep(min(5.0, 2.0 + (i * 0.5)))
-                
-                if not summaries:
-                    raise ValueError("要約を生成できませんでした")
-                
-                # Final summary with improved error handling
-                final_text = "\n".join(summaries)
-                for attempt in range(5):
-                    try:
-                        delay = self._handle_rate_limit(attempt)
-                        time.sleep(delay)
-                        
-                        final_response = self.model.generate_content(
-                            f"以下の要約をさらに整理して、簡潔にまとめてください:\n\n{final_text}",
-                            safety_settings=self.safety_settings,
-                            generation_config=genai.types.GenerationConfig(
-                                temperature=0.3,
-                                top_p=0.8,
-                                top_k=40,
-                                max_output_tokens=800,
-                            )
+
+            if not summaries:
+                raise ValueError("要約を生成できませんでした")
+            
+            # Final summary with improved error handling
+            final_text = "\n".join(summaries)
+            for attempt in range(max_retries):
+                try:
+                    delay = self._handle_rate_limit(attempt)
+                    time.sleep(delay)
+                    
+                    final_response = self.model.generate_content(
+                        f"以下の要約をさらに整理して、簡潔にまとめてください:\n\n{final_text}",
+                        safety_settings=self.safety_settings,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.3,
+                            top_p=0.8,
+                            top_k=40,
+                            max_output_tokens=800,
                         )
+                    )
+                    
+                    if final_response and final_response.text:
+                        return final_response.text.strip()
                         
-                        if final_response and final_response.text:
-                            return final_response.text.strip()
-                            
-                    except Exception as e:
-                        if 'Resource has been exhausted' in str(e) and attempt < 4:
-                            logger.warning(f"最終要約でレート制限エラー: {str(e)}")
-                            continue
-                        raise
-                
-                raise Exception("最終要約の生成に失敗しました")
-                
+                except Exception as e:
+                    if 'Resource has been exhausted' in str(e) and attempt < max_retries - 1:
+                        logger.warning(f"最終要約でレート制限エラー: {str(e)}")
+                        time.sleep(rate_limit_delay(attempt))
+                        continue
+                    raise
+            
+            raise Exception("最終要約の生成に失敗しました")
+            
         except Exception as e:
             logger.error(f"要約生成エラー: {str(e)}")
             raise Exception(f"要約の生成に失敗しました: {str(e)}")
@@ -377,11 +380,12 @@ class TextProcessor:
         patterns = [
             r'(?:v=|/v/|^)([a-zA-Z0-9_-]{11})',
             r'(?:youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
-            r'(?:youtube\.com/shorts/)([a-zA-Z0-9_-]{11})'
+            r'^[a-zA-Z0-9_-]{11}$'
         ]
         
         for pattern in patterns:
             match = re.search(pattern, url)
             if match:
                 return match.group(1)
+                
         return None
