@@ -172,15 +172,14 @@ try:
             st.markdown("## 📑 動画の概要")
             st.markdown(summary_data.get("動画の概要", ""))
             
-            # Only display points and keywords for detailed style
             if st.session_state.current_summary_style == "detailed":
                 # Display points with proper type conversion
                 st.markdown("## 🎯 主要ポイント")
                 for point in summary_data.get("ポイント", []):
                     try:
-                        importance = int(point.get("重要度", 3))  # Convert to int with default value
+                        importance = int(point.get("重要度", 3))
                     except (ValueError, TypeError):
-                        importance = 3  # Default if conversion fails
+                        importance = 3
                     
                     emoji = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "ℹ️"
                     
@@ -202,42 +201,42 @@ try:
                             {f'<div class="related-terms">関連用語: {", ".join(keyword.get("関連用語", []))}</div>' if "関連用語" in keyword else ""}
                         </div>
                     ''', unsafe_allow_html=True)
+                
+                # Display quality scores only in detailed mode
+                quality_scores = st.session_state.quality_scores
+                if quality_scores:
+                    st.markdown('''
+                    <div class="quality-score-section">
+                        <h3>要約品質スコア</h3>
+                        <div class="quality-score-container">
+                    ''', unsafe_allow_html=True)
+                    
+                    render_quality_score(
+                        quality_scores["構造の完全性"],
+                        "構造の完全性",
+                        "要約の構造がどれだけ整っているか"
+                    )
+                    render_quality_score(
+                        quality_scores["情報量"],
+                        "情報量",
+                        "重要な情報をどれだけ含んでいるか"
+                    )
+                    render_quality_score(
+                        quality_scores["簡潔性"],
+                        "簡潔性",
+                        "簡潔に要点を示せているか"
+                    )
+                    render_quality_score(
+                        quality_scores["総合スコア"],
+                        "総合スコア",
+                        "全体的な要約の質"
+                    )
+                    
+                    st.markdown('</div></div>', unsafe_allow_html=True)
             
             # Always display conclusion
             st.markdown("## 💡 結論")
             st.markdown(summary_data.get("結論", ""))
-            
-            # Display quality scores
-            quality_scores = st.session_state.quality_scores
-            if quality_scores:
-                st.markdown('''
-                <div class="quality-score-section">
-                    <h3>要約品質スコア</h3>
-                    <div class="quality-score-container">
-                ''', unsafe_allow_html=True)
-                
-                render_quality_score(
-                    quality_scores["構造の完全性"],
-                    "構造の完全性",
-                    "要約の構造がどれだけ整っているか"
-                )
-                render_quality_score(
-                    quality_scores["情報量"],
-                    "情報量",
-                    "重要な情報をどれだけ含んでいるか"
-                )
-                render_quality_score(
-                    quality_scores["簡潔性"],
-                    "簡潔性",
-                    "簡潔に要点を示せているか"
-                )
-                render_quality_score(
-                    quality_scores["総合スコア"],
-                    "総合スコア",
-                    "全体的な要約の質"
-                )
-                
-                st.markdown('</div></div>', unsafe_allow_html=True)
                 
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {str(e)}")
