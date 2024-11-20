@@ -57,21 +57,96 @@ class TextProcessor:
         # Initialize noise patterns
         self._init_noise_patterns()
 
-    def _validate_input_text(self, text: str) -> bool:
-        """Validate input text length and content"""
-        if not text:
-            raise ValueError("入力テキストが空です")
+    def _preprocess_text(self, text: str) -> str:
+        """Preprocess text with enhanced normalization"""
+        # Remove noise patterns
+        for pattern in self.noise_patterns.values():
+            text = re.sub(pattern, ' ', text)
+            
+        # Apply Japanese text normalization
+        for brackets in self.jp_normalization['brackets'].items():
+            text = text.replace(brackets[0], brackets[1])
+        for punct in self.jp_normalization['punctuation'].items():
+            text = text.replace(punct[0], punct[1])
+            
+        # Clean up whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
+    def _chunk_text(self, text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
+        # 入力検証の強化
+        if not text or len(text.strip()) < 200:
+            raise ValueError("入力テキストが短すぎます（最小200文字必要）")
         
-        text = text.strip()
-        if len(text) < 100:
-            raise ValueError("入力テキストが短すぎます（最小100文字必要）")
+        # 文章の前処理
+        text = self._preprocess_text(text)
+        
+        # 文単位での分割
+        sentences = re.split('([。!?！？]+)', text)
+        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
+        
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # チャンクサイズの動的調整
+            if current_length + len(sentence) > chunk_size and current_chunk:
+                chunk_text = ' '.join(current_chunk)
+                if len(chunk_text) >= 200:
+                    chunks.append(chunk_text)
+                # オーバーラップの処理
+                overlap_text = ' '.join(current_chunk[-2:])  # 最後の2文を保持
+                current_chunk = [overlap_text] if overlap_text else []
+                current_length = len(overlap_text) if overlap_text else 0
             
-        # Check for meaningful content
-        normalized_text = ''.join(text.split())
-        if len(normalized_text) < 50:
-            raise ValueError("有効なテキストコンテンツが不足しています（実質的な内容が50文字未満）")
-            
-        return True
+            current_chunk.append(sentence)
+            current_length += len(sentence)
+        
+        # 残りのテキストの処理
+        if current_chunk:
+            final_chunk = ' '.join(current_chunk)
+            if len(final_chunk) >= 200:
+                chunks.append(final_chunk)
+        
+        # チャンクの検証
+        if not chunks:
+            raise ValueError("有効なチャンクを生成できませんでした")
+        
+        return chunks
+
+    def _generate_chunk_summary(self, chunk: str) -> str:
+        prompt = f'''
+        以下のテキストチャンクを要約してください：
+        
+        要件：
+        1. 重要な情報を保持
+        2. 文脈を維持
+        3. 簡潔で分かりやすい表現
+        4. 前後のチャンクとの一貫性を考慮
+        
+        テキスト：
+        {chunk}
+        '''
+        
+        response = self.model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.3,
+                top_p=0.8,
+                top_k=40,
+                max_output_tokens=400
+            )
+        )
+        
+        if not response or not response.text:
+            raise ValueError("要約の生成に失敗しました")
+        
+        return response.text.strip()
 
     def _init_noise_patterns(self):
         """Initialize enhanced noise patterns for better text cleaning"""
@@ -105,251 +180,57 @@ class TextProcessor:
         
         self.request_timestamps.append(time.time())
 
-    def _chunk_text(self, text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
-        """Enhanced text chunking with improved validation and error handling"""
-        if not text:
-            raise ValueError("空のテキストが入力されました")
-
-        # Validate parameters
-        if chunk_size <= 0:
-            raise ValueError("チャンクサイズは正の整数である必要があります")
-        if chunk_size < 200:
-            raise ValueError("チャンクサイズが小さすぎます（最小200文字必要）")
-        if overlap < 0 or overlap >= chunk_size:
-            raise ValueError("オーバーラップは0以上かつチャンクサイズ未満である必要があります")
-            
-        # Cache key based on text content and chunking parameters
-        cache_key = f"{hash(text)}_{chunk_size}_{overlap}"
-        cached_chunks = self.chunk_cache.get(cache_key)
-        if cached_chunks:
-            return cached_chunks
-            
-        # Normalize whitespace
-        text = re.sub(r'[\s　]+', ' ', text).strip()
-            
-        # Split into sentences first
-        sentences = re.split('([。!?！？]+)', text)
-        sentences = [''.join(i) for i in zip(sentences[0::2], sentences[1::2])]
-        
-        chunks = []
-        current_chunk = []
-        current_length = 0
-        
-        for sentence in sentences:
-            sentence = sentence.strip()
-            sentence_length = len(sentence)
-            
-            # Skip empty sentences
-            if not sentence:
-                continue
-                
-            if current_length + sentence_length > chunk_size:
-                if current_chunk:
-                    chunk_text = ' '.join(current_chunk)
-                    # Validate minimum chunk size
-                    if len(chunk_text) >= 200:  # Minimum 200 characters
-                        chunks.append(chunk_text)
-                    else:
-                        logger.warning(f"チャンクサイズが小さすぎます（{len(chunk_text)}文字）")
-                    
-                    # Keep overlap sentences
-                    overlap_size = 0
-                    overlap_chunk = []
-                    for s in reversed(current_chunk):
-                        if overlap_size + len(s) <= overlap:
-                            overlap_chunk.insert(0, s)
-                            overlap_size += len(s)
-                        else:
-                            break
-                    
-                    current_chunk = overlap_chunk
-                    current_length = sum(len(s) for s in current_chunk)
-            
-            current_chunk.append(sentence)
-            current_length += sentence_length
-        
-        # Handle remaining text
-        if current_chunk:
-            final_chunk = ' '.join(current_chunk)
-            if len(final_chunk) >= 200:
-                chunks.append(final_chunk)
-        
-        # Validate maximum chunks
-        max_chunks = 20  # Arbitrary limit to prevent excessive processing
-        if len(chunks) > max_chunks:
-            logger.warning(f"チャンク数が多すぎます（{len(chunks)}）。最初の{max_chunks}チャンクのみを使用します。")
-            chunks = chunks[:max_chunks]
-        
-        # Validate final chunks
-        if not chunks:
-            raise ValueError("有効なチャンクを生成できませんでした。テキストが短すぎるか、不適切な形式です。")
-        
-        # Cache the chunks
-        self.chunk_cache[cache_key] = chunks
-        return chunks
-
     def generate_summary(self, text: str, chunk_size: int = 800) -> str:
         """Generate a summary with improved quality and performance"""
         try:
-            # Validate input text
-            self._validate_input_text(text)
-            
-            # Check cache first
+            # Input validation
+            if not text or len(text.strip()) < 200:
+                raise ValueError("入力テキストが短すぎます（最小200文字必要）")
+
+            # Cache check
             cache_key = hash(text)
             cached_summary = self.summary_cache.get(cache_key)
             if cached_summary:
                 logger.info("キャッシュされた要約を使用します")
                 return cached_summary
-            
-            # Validate chunk size
-            if chunk_size < 200:
-                raise ValueError("チャンクサイズが小さすぎます（最小200文字必要）")
-            if chunk_size > 2000:
-                raise ValueError("チャンクサイズが大きすぎます（最大2000文字まで）")
-            
-            # Improve chunking with better context preservation
-            chunks = self._chunk_text(text, chunk_size=chunk_size, overlap=min(100, chunk_size // 4))
-            
-            if not chunks:
-                raise ValueError("テキストの分割に失敗しました。テキストが短すぎるか、不適切な形式です。")
-            
+
+            # Process text in chunks
+            chunks = self._chunk_text(text, chunk_size=chunk_size)
+            summaries = []
+
             # Process chunks with parallel execution
-            chunk_summaries = []
             with ThreadPoolExecutor(max_workers=3) as executor:
-                future_to_chunk = {
-                    executor.submit(self._process_chunk_with_retry, chunk): i 
-                    for i, chunk in enumerate(chunks)
-                }
+                future_to_chunk = {executor.submit(self._generate_chunk_summary, chunk): i 
+                                 for i, chunk in enumerate(chunks)}
                 
                 for future in as_completed(future_to_chunk):
                     try:
-                        summary = future.result()
-                        if summary:
-                            chunk_summaries.append((future_to_chunk[future], summary))
+                        chunk_summary = future.result()
+                        if chunk_summary:
+                            summaries.append((future_to_chunk[future], chunk_summary))
                     except Exception as e:
-                        logger.error(f"チャンク処理エラー（チャンク {future_to_chunk[future] + 1}/{len(chunks)}）: {str(e)}")
-            
-            if not chunk_summaries:
-                raise ValueError("有効な要約を生成できませんでした。すべてのチャンクの処理に失敗しました。")
-            
+                        logger.error(f"チャンク処理エラー: {str(e)}")
+
+            if not summaries:
+                raise ValueError("要約の生成に失敗しました")
+
             # Sort summaries by original chunk order
-            chunk_summaries.sort(key=lambda x: x[0])
-            summaries = [summary for _, summary in chunk_summaries]
-            
+            summaries.sort(key=lambda x: x[0])
+            final_text = "\n".join([summary for _, summary in summaries])
+
             # Generate final summary
-            final_text = "\n".join(summaries)
-            final_summary = self._generate_final_summary(final_text)
-            
+            final_summary = self._generate_chunk_summary(final_text)
             if not final_summary:
-                raise ValueError("最終要約の生成に失敗しました。要約の品質が基準を満たしていません。")
-            
+                raise ValueError("最終要約の生成に失敗しました")
+
             # Cache the result
             self.summary_cache[cache_key] = final_summary
             return final_summary
-            
+
         except Exception as e:
-            error_msg = f"要約生成エラー: {str(e)}\n処理されたチャンク数: {len(chunk_summaries) if 'chunk_summaries' in locals() else 0}"
+            error_msg = f"要約生成エラー: {str(e)}"
             logger.error(error_msg)
             raise Exception(error_msg)
-
-    async def _process_chunk_with_retry(self, chunk: str, attempt: int = 0) -> Optional[str]:
-        """Process a single chunk with enhanced error handling and retry logic"""
-        max_attempts = 5
-        try:
-            self._enforce_rate_limit()
-            
-            # Enhanced prompt with better context preservation
-            prompt = f'''
-            以下のテキストチャンクを要約してください。
-            重要な情報を保持しながら、簡潔で分かりやすい文章にまとめてください。
-            
-            チャンクの文脈を考慮し、前後の内容との一貫性を維持してください。
-            
-            テキスト:
-            {chunk}
-            '''
-            
-            response = self.model.generate_content(
-                prompt,
-                safety_settings=self.safety_settings,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.3,
-                    top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=400
-                )
-            )
-            
-            if not response or not response.text:
-                raise ValueError("APIからの応答が空です")
-                
-            summary = response.text.strip()
-            
-            # Validate summary quality
-            if len(summary) < 10:
-                raise ValueError("要約が短すぎます")
-            if len(summary) > len(chunk):
-                raise ValueError("要約が元のテキストより長くなっています")
-                
-            return summary
-            
-        except Exception as e:
-            if attempt < max_attempts - 1:
-                delay = 2 ** attempt * 1.5 + random.uniform(0, 1)
-                logger.warning(f"リトライ {attempt + 1}/{max_attempts} ({delay:.2f}秒後): {str(e)}")
-                time.sleep(delay)
-                return await self._process_chunk_with_retry(chunk, attempt + 1)
-            else:
-                logger.error(f"{max_attempts}回の試行後も処理に失敗しました: {str(e)}")
-                return None
-
-    def _generate_final_summary(self, text: str) -> Optional[str]:
-        """Generate final summary with enhanced coherence checks"""
-        try:
-            self._enforce_rate_limit()
-            
-            prompt = f'''
-            以下の要約をさらに整理し、一貫性のある簡潔な要約を作成してください：
-            
-            1. 重要なポイントを維持
-            2. 論理的な流れを保持
-            3. 簡潔で分かりやすい文章
-            4. 文脈の一貫性を確保
-            
-            テキスト:
-            {text}
-            '''
-            
-            response = self.model.generate_content(
-                prompt,
-                safety_settings=self.safety_settings,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.3,
-                    top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=800
-                )
-            )
-            
-            if not response or not response.text:
-                logger.error("最終要約のAPIレスポンスが空です")
-                return None
-                
-            final_summary = response.text.strip()
-            
-            # Validate final summary
-            if len(final_summary) < 50:
-                logger.warning("最終要約が短すぎます")
-                return None
-            if len(final_summary) > len(text):
-                logger.warning("最終要約が元のテキストより長くなっています")
-                return None
-                
-            return final_summary
-            
-        except Exception as e:
-            logger.error(f"最終要約の生成に失敗しました: {str(e)}")
-            return None
 
     @retry(stop_max_attempt_number=3, wait_fixed=2000)
     def get_transcript(self, url: str) -> str:
@@ -368,32 +249,42 @@ class TextProcessor:
             transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['ja', 'ja-JP', 'en'])
             transcript = ' '.join([entry['text'] for entry in transcript_list])
             
-            cleaned_transcript = self._clean_text(transcript)
+            cleaned_transcript = self._preprocess_text(transcript)
             self.subtitle_cache[video_id] = cleaned_transcript
             return cleaned_transcript
             
         except Exception as e:
             error_msg = f"字幕取得エラー: {str(e)}"
             logger.error(error_msg)
-            raise ValueError(error_msg)
+            raise Exception(error_msg)
 
     def _extract_video_id(self, url: str) -> Optional[str]:
         """Extract YouTube video ID from URL"""
-        if not url:
-            return None
-            
         patterns = [
-            r'(?:v=|/v/|^)([a-zA-Z0-9_-]{11})',
-            r'(?:youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
-            r'^[a-zA-Z0-9_-]{11}$'
+            r'(?:v=|\/videos\/|embed\/|youtu.be\/|\/v\/|\/e\/|watch\?v%3D|watch\?feature=player_embedded&v=|%2Fvideos%2F|embed%\u200C\u200B2F|youtu.be%2F|%2Fv%2F)([^#\&\?\n]*)',
         ]
         
         for pattern in patterns:
             match = re.search(pattern, url)
             if match:
                 return match.group(1)
-                
         return None
+
+    def _validate_input_text(self, text: str) -> bool:
+        """Validate input text length and content"""
+        if not text:
+            raise ValueError("入力テキストが空です")
+        
+        text = text.strip()
+        if len(text) < 100:
+            raise ValueError("入力テキストが短すぎます（最小100文字必要）")
+            
+        # Check for meaningful content
+        normalized_text = ''.join(text.split())
+        if len(normalized_text) < 50:
+            raise ValueError("有効なテキストコンテンツが不足しています（実質的な内容が50文字未満）")
+            
+        return True
 
     def _clean_text(self, text: str, progress_callback=None) -> str:
         """Enhanced text cleaning with progress tracking"""
