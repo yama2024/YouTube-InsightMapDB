@@ -375,6 +375,55 @@ try:
                         st.session_state.current_summary_style != summary_style):
                         
                         # Clear previous summary when style changes
+                        st.session_state.current_summary_style = summary_style
+                        try:
+                            text_processor = TextProcessor()
+                            summary, quality_scores = text_processor.generate_summary(
+                                st.session_state.transcript, summary_style)
+                            st.session_state.summary = summary
+                            st.session_state.quality_scores = quality_scores
+                            st.session_state.current_summary_style = summary_style
+                            update_step_progress('summary')
+                        except Exception as e:
+                            logger.error(f"Summary generation error: {str(e)}")
+                            st.error("要約の生成に失敗しました。もう一度お試しください。")
+                            st.stop()
+
+                    display_summary(st.session_state.summary)
+
+                with tabs[2]:
+                    st.markdown("### 🔄 Mind Map")
+                    if not MERMAID_AVAILABLE:
+                        st.error("マインドマップ機能が利用できません。依存関係を確認してください。")
+                    elif st.session_state.summary:
+                        try:
+                            if ('mindmap' not in st.session_state or 
+                                st.session_state.current_summary_style != summary_style):
+                                
+                                mindmap_generator = MindMapGenerator()
+                                mindmap_content, success = mindmap_generator.generate_mindmap(
+                                    st.session_state.summary)
+                                
+                                if success:
+                                    st.session_state.mindmap = mindmap_content
+                                    update_step_progress('mindmap')
+                                    logger.info("マインドマップを生成しました")
+                                else:
+                                    st.warning("マインドマップの生成に問題が発生しました。簡略化されたマップを表示します。")
+                            
+                            # Display mindmap with error handling
+                            try:
+                                if st.session_state.mindmap:
+                                    st_mermaid(st.session_state.mindmap, height="800px")
+                                else:
+                                    st.warning("マインドマップのデータがありません")
+                            except Exception as e:
+                                logger.error(f"Mindmap display error: {str(e)}")
+                                st.error("マインドマップの表示中にエラーが発生しました")
+                                
+                        except Exception as e:
+                            logger.error(f"Mindmap generation error: {str(e)}")
+                            st.error("マインドマップの生成中にエラーが発生しました")
                         if st.session_state.current_summary_style != summary_style:
                             st.session_state.summary = None
                             st.session_state.quality_scores = None
