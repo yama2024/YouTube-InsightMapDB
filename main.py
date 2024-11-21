@@ -374,17 +374,71 @@ try:
                         try:
                             text_processor = TextProcessor()
                             summary, quality_scores = text_processor.generate_summary(
-                                st.session_state.transcript, summary_style)
+                                st.session_state.transcript,
+                                style=summary_style
+                            )
                             st.session_state.summary = summary
                             st.session_state.quality_scores = quality_scores
-                            st.session_state.current_summary_style = summary_style
                             update_step_progress('summary')
+                            st.experimental_rerun()
                         except Exception as e:
-                            logger.error(f"Summary generation error: {str(e)}")
-                            st.error("要約の生成に失敗しました。もう一度お試しください。")
+                            st.error(f"要約の生成に失敗しました: {str(e)}")
+                            logger.error(f"Error in summary generation: {str(e)}")
                             st.stop()
+                    
+                    if st.session_state.summary:
+                        display_summary(st.session_state.summary)
 
-                    display_summary(st.session_state.summary)
+                with tabs[2]:
+                    if not st.session_state.mindmap:
+                        st.markdown("### マインドマップを生成中...")
+                        try:
+                            logger.info("Starting mindmap generation process")
+                            mindmap_generator = MindMapGenerator()
+                            mindmap_content, success = mindmap_generator.generate_mindmap(st.session_state.summary)
+                            if success:
+                                st.session_state.mindmap = mindmap_content
+                                logger.info("マインドマップを生成し、セッションに保存しました")
+                                update_step_progress('mindmap')
+                                st.experimental_rerun()
+                            else:
+                                st.error("マインドマップの生成に失敗しました")
+                        except Exception as e:
+                            st.error(f"マインドマップの生成中にエラーが発生しました: {str(e)}")
+                            logger.error(f"Error in mindmap generation: {str(e)}")
+
+                    if st.session_state.mindmap:
+                        try:
+                            st_mermaid(st.session_state.mindmap)
+                        except Exception as e:
+                            st.error(f"マインドマップの表示中にエラーが発生しました: {str(e)}")
+                            logger.error(f"Error displaying mindmap: {str(e)}")
+
+                with tabs[3]:
+                    if not st.session_state.enhanced_text:
+                        st.markdown("### テキストを校正中...")
+                        try:
+                            # Generate proofread text using the text processor
+                            proofread_prompt = f"""
+                            以下のテキストを校正し、より読みやすく、正確な日本語に修正してください。
+                            句読点の適切な使用、漢字とかなの使い分け、文の構造を整理し、
+                            より分かりやすい表現に修正してください。
+
+                            元のテキスト:
+                            {st.session_state.transcript}
+                            """
+                            response = text_processor.model.generate_content(proofread_prompt)
+                            st.session_state.enhanced_text = response.text
+                            st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
+                            logger.error(f"Error in text proofreading: {str(e)}")
+
+                    if st.session_state.enhanced_text:
+                        st.markdown("### ✨ テキスト校正が完了しました！")
+                        st.markdown(st.session_state.enhanced_text)
+                        st.success("校正が完了しました。上記が校正済みのテキストです。")
+                        update_step_progress('proofread')
 
                 with tabs[2]:
                     st.markdown("### 🔄 Mind Map")
@@ -465,26 +519,28 @@ try:
                             del st.session_state.mindmap  # Clear invalid mindmap
 
                 with tabs[3]:
-                    st.markdown("### Text Enhancement")
-                    if st.button("Generate Enhanced Text"):
-                        if st.session_state.transcript:
-                            try:
-                                # Enhancement logic here
-                                st.session_state.enhancement_progress = {
-                                    'progress': 1.0,
-                                    'message': '✨ Text enhancement completed!'
-                                }
-                                update_step_progress('proofread')
-                            except Exception as e:
-                                st.error(f"テキスト強化に失敗しました: {str(e)}")
-                                logger.error(f"Text enhancement error: {str(e)}")
-                        else:
-                            st.warning("テキスト強化を開始するには、まず文字起こしを生成してください。")
+                    st.markdown("### テキスト校正")
+                    if not st.session_state.enhanced_text:
+                        if st.button("校正テキストを生成"):
+                            if st.session_state.transcript:
+                                st.markdown("### テキストを校正中...")
+                                try:
+                                    proofread_prompt = f"""
+                                    以下のテキストを校正し、より読みやすく、正確な日本語に修正してください。
+                                    句読点の適切な使用、漢字とかなの使い分け、文の構造を整理し、
+                                    より分かりやすい表現に修正してください。
 
-                    # Show progress
-                    if st.session_state.enhancement_progress['progress'] > 0:
-                        st.progress(st.session_state.enhancement_progress['progress'])
-                        st.info(st.session_state.enhancement_progress['message'])
+                                    元のテキスト:
+                                    {st.session_state.transcript}
+                                    """
+                                    response = text_processor.model.generate_content(proofread_prompt)
+                                    st.session_state.enhanced_text = response.text
+                                    st.experimental_rerun()
+                                except Exception as e:
+                                    st.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
+                                    logger.error(f"Error in text proofreading: {str(e)}")
+                            else:
+                                st.warning("校正を開始するには、まず文字起こしを生成してください。")
 
     except Exception as e:
         st.error(f"アプリケーションエラー: {str(e)}")
