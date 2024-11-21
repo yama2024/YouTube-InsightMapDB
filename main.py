@@ -433,20 +433,22 @@ try:
                                 st.markdown("### テキストを校正中...")
                                 try:
                                     proofread_prompt = f'''
-以下のテキストを包括的に校正してください。以下の点に注意して修正を行ってください：
+以下のテキストを高品質な文章に校正してください。以下の観点から包括的に改善を行ってください：
 
-1. 文章の論理構造を整理
-2. 適切な句読点の配置
-3. 漢字とかなの適切な使い分け
-4. 文体の統一
-5. 冗長な表現の簡潔化
-6. 専門用語の適切な使用
-7. わかりやすい文章構造への改善
+1. 文章の論理構造と文脈の一貫性を整理
+2. 読点・句点の適切な配置による読みやすさの向上
+3. 漢字とかなの使い分けの最適化
+4. 文体の統一性と自然な文章の流れの確保
+5. 冗長な表現の簡潔化と明確な意味伝達
+6. 専門用語の適切な使用と必要に応じた説明の追加
+7. 段落構成の改善による理解しやすい文章構造
+8. 話し言葉から書き言葉への適切な変換
 
 入力テキスト:
 {st.session_state.transcript}
 
-上記のテキストを、より読みやすく自然な日本語に校正してください。
+上記のテキストを、論理的で読みやすい自然な日本語に校正してください。
+文章全体の一貫性と文脈を維持しながら、より洗練された表現に改善してください。
 '''
                                     response = st.session_state.text_processor.model.generate_content(proofread_prompt)
                                     st.session_state.enhanced_text = response.text
@@ -457,9 +459,9 @@ try:
                                     logger.error(f"Error in text proofreading: {str(e)}")
 
                         if st.session_state.enhanced_text:
-                            st.markdown("### ✨ テキスト校正が完了しました！")
+                            st.markdown("### ✨ 文章校正が完了しました！")
                             st.markdown(st.session_state.enhanced_text)
-                            st.success("校正が完了しました。上記が校正済みのテキストです。")
+                            st.success("校正が完了しました。文章の論理構造、読みやすさ、表現の適切性を改善しました。")
 
     except Exception as e:
         st.error(f"アプリケーションエラー: {str(e)}")
