@@ -143,6 +143,17 @@ class MindMapGenerator:
         """Create a more informative fallback mindmap when generation fails"""
         return """mindmap
   root[コンテンツ解析結果]
+    1[⚠️ 処理状態]
+      1.1[マインドマップの生成に問題が発生しました]
+      1.2[以下をご確認ください]
+        1.2.1[・入力データの形式]
+        1.2.2[・テキストの長さ]
+        1.2.3[・特殊文字の使用]
+    2[🔄 次のステップ]
+      2.1[・ページを更新]
+      2.2[・入力を確認]
+      2.3[・再度実行]"""
+
     def _verify_mermaid_syntax(self, content: str) -> bool:
         """Verify if the generated mindmap follows the correct syntax"""
         required_patterns = [
@@ -156,16 +167,6 @@ class MindMapGenerator:
         except Exception as e:
             logger.error(f"Mermaid syntax verification failed: {str(e)}")
             return False
-    1[⚠️ 処理状態]
-      1.1[マインドマップの生成に問題が発生しました]
-      1.2[以下をご確認ください]
-        1.2.1[・入力データの形式]
-        1.2.2[・テキストの長さ]
-        1.2.3[・特殊文字の使用]
-    2[🔄 次のステップ]
-      2.1[・ページを更新]
-      2.2[・入力を確認]
-      2.3[・再度実行]"""
 
     def _validate_json_structure(self, data: Dict) -> bool:
         """Validate the JSON structure with enhanced validation and logging"""
