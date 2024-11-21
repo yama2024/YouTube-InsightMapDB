@@ -432,14 +432,22 @@ try:
                             if st.button("文章を校正する"):
                                 st.markdown("### テキストを校正中...")
                                 try:
-                                    proofread_prompt = f"""
-                                    以下のテキストを校正し、より読みやすく、正確な日本語に修正してください。
-                                    句読点の適切な使用、漢字とかなの使い分け、文の構造を整理し、
-                                    より分かりやすい表現に修正してください。
+                                    proofread_prompt = f'''
+以下のテキストを包括的に校正してください。以下の点に注意して修正を行ってください：
 
-                                    元のテキスト:
-                                    {st.session_state.transcript}
-                                    """
+1. 文章の論理構造を整理
+2. 適切な句読点の配置
+3. 漢字とかなの適切な使い分け
+4. 文体の統一
+5. 冗長な表現の簡潔化
+6. 専門用語の適切な使用
+7. わかりやすい文章構造への改善
+
+入力テキスト:
+{st.session_state.transcript}
+
+上記のテキストを、より読みやすく自然な日本語に校正してください。
+'''
                                     response = st.session_state.text_processor.model.generate_content(proofread_prompt)
                                     st.session_state.enhanced_text = response.text
                                     update_step_progress('proofread')
