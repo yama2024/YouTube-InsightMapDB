@@ -6,109 +6,74 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-import re
 class MindMapGenerator:
     def __init__(self):
         self._cache = {}
 
     def _create_mermaid_mindmap(self, data: Dict) -> str:
-        """Generate Mermaid mindmap syntax with enhanced styling and readability"""
+        """Generate Mermaid mindmap syntax with proper escaping and validation"""
         try:
             logger.debug(f"Starting mindmap creation with data structure: {list(data.keys())}")
-            
-            # Initialize mindmap without custom styling for better compatibility
             lines = ["mindmap"]
             
-            # Root node with enhanced styling
+            # Root node from video overview
             overview = self._clean_text(data.get("動画の概要", "コンテンツ概要"))
-            if len(overview) > 35:
-                overview = overview[:32] + "..."
-            lines.append(f"  root((( 📑 {overview} )))")
-            logger.debug(f"Added styled root node: {overview}")
+            if len(overview) > 50:
+                overview = overview[:47] + "..."
+            lines.append(f"  root[{overview}]")
+            logger.debug(f"Added root node: {overview}")
             
-            # Process points as primary branches with enhanced organization
+            # Process points as primary branches
             points = data.get("ポイント", [])
             if not points:
                 logger.warning("No points found in data")
                 return self._create_fallback_mindmap()
-            
-            # Group points by importance for better organization
-            grouped_points = {
-                "high": [], "medium": [], "low": []
-            }
-            
+                
+            logger.debug(f"Processing {len(points)} points")
             for i, point in enumerate(points, 1):
                 if not isinstance(point, dict):
+                    logger.error(f"Invalid point structure at index {i}")
+                    continue
+                    
+                title = self._clean_text(point.get("タイトル", ""))
+                if not title:
+                    logger.warning(f"Empty title for point {i}")
                     continue
                 
+                # Add importance indicator
                 importance = point.get("重要度", 3)
-                if importance >= 4:
-                    grouped_points["high"].append((i, point))
-                elif importance >= 2:
-                    grouped_points["medium"].append((i, point))
-                else:
-                    grouped_points["low"].append((i, point))
+                importance_mark = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "・"
+                lines.append(f"    {i}[{importance_mark} {title}]")
+                
+                # Add content as sub-branch
+                content = self._clean_text(point.get("内容", ""))
+                if content:
+                    # Split long content into multiple lines
+                    content_parts = [content[j:j+40] for j in range(0, len(content), 40)]
+                    for j, part in enumerate(content_parts, 1):
+                        if part.strip():
+                            lines.append(f"      {i}.{j}[{part}]")
+                
+                # Add supplementary info if available
+                if "補足情報" in point and point["補足情報"]:
+                    suppl_info = self._clean_text(point["補足情報"])
+                    if suppl_info:
+                        lines.append(f"      {i}.s[💡 {suppl_info[:40]}...]")
             
-            # Process grouped points with visual hierarchy
-            for importance_level, points_group in [
-                ("high", grouped_points["high"]),
-                ("medium", grouped_points["medium"]),
-                ("low", grouped_points["low"])
-            ]:
-                for i, point in points_group:
-                    title = self._clean_text(point.get("タイトル", ""))
-                    if not title:
-                        continue
-                    
-                    # Style based on importance
-                    if importance_level == "high":
-                        lines.append(f"    {i}[🔥 {title}]:::important")
-                    elif importance_level == "medium":
-                        lines.append(f"    {i}[⭐ {title}]:::notable")
-                    else:
-                        lines.append(f"    {i}[・ {title}]:::normal")
-                    
-                    # Add content with improved formatting
-                    content = self._clean_text(point.get("内容", ""))
-                    if content:
-                        content_parts = [content[j:j+30] for j in range(0, len(content), 30)]
-                        for j, part in enumerate(content_parts, 1):
-                            if part.strip():
-                                lines.append(f"      {i}.{j}({part})")
-                    
-                    # Add styled supplementary info
-                    if "補足情報" in point and point["補足情報"]:
-                        suppl_info = self._clean_text(point["補足情報"])
-                        if suppl_info:
-                            info_parts = [suppl_info[j:j+30] for j in range(0, len(suppl_info), 30)]
-                            for j, part in enumerate(info_parts, 1):
-                                if part.strip():
-                                    lines.append(f"      {i}.s.{j}[💡 {part}]:::info")
-            
-            # Add styled conclusion section
+            # Add conclusion as a separate branch
             conclusion = self._clean_text(data.get("結論", ""))
             if conclusion:
-                lines.append("    c{{💡 結論}}:::conclusion")
-                conclusion_parts = [conclusion[i:i+30] for i in range(0, len(conclusion), 30)]
-                for i, part in enumerate(conclusion_parts, 1):
-                    if part.strip():
-                        lines.append(f"      c.{i}({part}):::conclusion")
-            
-            # Add style definitions
-            lines.extend([
-                "  classDef important fill:#FFE5E5,stroke:#FF7676,stroke-width:2px",
-                "  classDef notable fill:#FFF8E5,stroke:#FFB347,stroke-width:1.5px",
-                "  classDef normal fill:#F5F5F5,stroke:#88A0A8,stroke-width:1px",
-                "  classDef info fill:#E5F6FF,stroke:#2E6B8C,stroke-width:1px",
-                "  classDef conclusion fill:#E5FFE5,stroke:#4CAF50,stroke-width:2px"
-            ])
+                lines.append("    c[💡 結論]")
+                if len(conclusion) > 40:
+                    conclusion_parts = [conclusion[i:i+40] for i in range(0, len(conclusion), 40)]
+                    for i, part in enumerate(conclusion_parts, 1):
+                        if part.strip():
+                            lines.append(f"      c.{i}[{part}]")
+                else:
+                    lines.append(f"      c.1[{conclusion}]")
             
             mindmap = "\n".join(lines)
-            logger.debug(f"Generated enhanced mindmap structure:\n{mindmap}")
-            
-            if not self._verify_mermaid_syntax(mindmap):
-                logger.error("Generated mindmap failed syntax verification")
-                return self._create_fallback_mindmap()
+            logger.debug(f"Generated mindmap structure:\n{mindmap}")
             return mindmap
             
         except Exception as e:
@@ -119,25 +84,15 @@ class MindMapGenerator:
         """Clean and escape text for Mermaid syntax"""
         if not isinstance(text, str):
             text = str(text)
-        # Remove or escape problematic characters
-        replacements = {
-            '"': "'",
-            '\n': ' ',
-            '[': '(',
-            ']': ')',
-            '{': '(',
-            '}': ')',
-            '|': '-',
-            '<': '＜',
-            '>': '＞',
-            '\\': '＼',
-            '^': '＾',
-            '`': "'",
-            '#': '＃'
-        }
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        return text.strip()
+        return (text.replace('"', "'")
+                   .replace("\n", " ")
+                   .replace("[", "「")
+                   .replace("]", "」")
+                   .replace("(", "（")
+                   .replace(")", "）")
+                   .replace("<", "＜")
+                   .replace(">", "＞")
+                   .strip())
 
     def _create_fallback_mindmap(self) -> str:
         """Create a more informative fallback mindmap when generation fails"""
@@ -154,20 +109,6 @@ class MindMapGenerator:
       2.2[・入力を確認]
       2.3[・再度実行]"""
 
-    def _verify_mermaid_syntax(self, content: str) -> bool:
-        """Verify if the generated mindmap follows the correct syntax"""
-        required_patterns = [
-            r'^mindmap\s*$',
-            r'^\s+\w+[\(\[\{].*[\)\]\}]\s*$'
-        ]
-        try:
-            lines = content.split('\n')
-            return all(any(re.match(pattern, line) for pattern in required_patterns) 
-                      for line in lines if line.strip())
-        except Exception as e:
-            logger.error(f"Mermaid syntax verification failed: {str(e)}")
-            return False
-
     def _validate_json_structure(self, data: Dict) -> bool:
         """Validate the JSON structure with enhanced validation and logging"""
         try:
@@ -178,18 +119,6 @@ class MindMapGenerator:
             # Basic type validation
             if not isinstance(data, dict):
                 logger.error(f"Invalid data type: expected dict, got {type(data)}")
-                return False
-                
-            # Check for maximum content length
-            serialized = json.dumps(data, ensure_ascii=False)
-            if len(serialized) > 50000:  # Maximum content length check
-                logger.error("Content exceeds maximum length limit")
-                return False
-                
-            # Verify special characters
-            invalid_chars = set('<>{|}\\^[]`')
-            if any(char in serialized for char in invalid_chars):
-                logger.error("Content contains invalid special characters")
                 return False
             
             # Required keys validation with content length check
