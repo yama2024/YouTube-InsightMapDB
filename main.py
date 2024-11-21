@@ -423,20 +423,47 @@ try:
                             
                             with st.spinner("マインドマップを生成中..."):
                                 try:
-                                    # Progress indicator
-                                    progress_bar = st.progress(0)
-                                    status_text = st.empty()
-                                    
-                                    # Update progress
-                                    status_text.text("マインドマップジェネレーターを初期化中...")
-                                    progress_bar.progress(20)
-                                    
-                                    mindmap_generator = MindMapGenerator()
-                                    logger.info("Starting mindmap generation process")
-                                    
-                                    # Update progress
-                                    status_text.text("データを解析中...")
-                                    progress_bar.progress(40)
+                                    # Progress indicator with more detailed steps
+                                    progress_container = st.container()
+                                    with progress_container:
+                                        col1, col2 = st.columns([3, 1])
+                                        with col1:
+                                            progress_bar = st.progress(0)
+                                        with col2:
+                                            status_text = st.empty()
+                                        
+                                        # Initialize progress with better visibility
+                                        status_text.markdown("""
+                                        <div class="progress-message">
+                                            🔄 <span>初期化中...</span>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                        progress_bar.progress(10)
+                                        
+                                        mindmap_generator = MindMapGenerator()
+                                        logger.info("Starting mindmap generation process")
+                                        
+                                        # Content validation progress
+                                        status_text.markdown("""
+                                        <div class="progress-message">
+                                            🔍 <span>データを検証中...</span>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                        progress_bar.progress(25)
+                                        
+                                        # Data structure check with enhanced validation
+                                        if not isinstance(st.session_state.summary, str):
+                                            raise ValueError("要約データの形式が正しくありません")
+                                        if not st.session_state.summary.strip():
+                                            raise ValueError("要約データが空です")
+                                        
+                                        # Update progress for analysis
+                                        status_text.markdown("""
+                                        <div class="progress-message">
+                                            📊 <span>データを解析中...</span>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                        progress_bar.progress(40)
                                     
                                     mindmap_content, success = mindmap_generator.generate_mindmap(
                                         st.session_state.summary)
@@ -489,23 +516,33 @@ try:
                             try:
                                 st.markdown("#### マインドマップの表示")
                                 mindmap_content = st.session_state.mindmap
+                                display_mindmap = True
                                 if mindmap_content is None:
                                     st.warning("マインドマップのデータが見つかりません。")
-                                else:
+                                    display_mindmap = False
+                                elif not mindmap_content.strip():
+                                    st.warning("マインドマップの内容が空です。")
+                                    display_mindmap = False
+                                
+                                if display_mindmap:
                                     mindmap_content = mindmap_content.strip()
                                 
                                 # Add container for better styling
                                 mindmap_container = st.container()
                                 with mindmap_container:
                                     if mindmap_content.startswith('mindmap'):
-                                        # Remove height parameter and add error boundary
                                         try:
-                                            st_mermaid(mindmap_content, key="mindmap_display")
+                                            with st.container():
+                                                st.markdown("#### マインドマップ")
+                                                st_mermaid(
+                                                    mindmap_content,
+                                                    key="mindmap_display"
+                                                )
                                         except Exception as e:
                                             logger.error(f"Mermaid rendering error: {str(e)}")
-                                            st.error("マインドマップのレンダリングに失敗しました")
-                                            # Show raw mermaid code for debugging
-                                            with st.expander("デバッグ情報"):
+                                            st.error("マインドマップの表示中にエラーが発生しました")
+                                            # Show diagnostic information
+                                            with st.expander("詳細情報"):
                                                 st.code(mindmap_content, language="mermaid")
                                     else:
                                         st.error("マインドマップの形式が正しくありません")

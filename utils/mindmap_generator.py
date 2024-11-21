@@ -166,6 +166,18 @@ class MindMapGenerator:
             if not isinstance(data, dict):
                 logger.error(f"Invalid data type: expected dict, got {type(data)}")
                 return False
+                
+            # Check for maximum content length
+            serialized = json.dumps(data, ensure_ascii=False)
+            if len(serialized) > 50000:  # Maximum content length check
+                logger.error("Content exceeds maximum length limit")
+                return False
+                
+            # Verify special characters
+            invalid_chars = set('<>{|}\\^[]`')
+            if any(char in serialized for char in invalid_chars):
+                logger.error("Content contains invalid special characters")
+                return False
             
             # Required keys validation with content length check
             required_keys = ["動画の概要", "ポイント", "結論"]
