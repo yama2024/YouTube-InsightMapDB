@@ -11,17 +11,17 @@ class MindMapGenerator:
         self._cache = {}
 
     def _create_mermaid_mindmap(self, data: Dict) -> str:
-        """Generate Mermaid mindmap syntax with enhanced formatting and validation"""
+        """Generate Mermaid mindmap syntax with proper formatting for version 10.2.4"""
         try:
             logger.debug(f"Starting mindmap creation with data structure: {list(data.keys())}")
             lines = ["mindmap"]
             
-            # Root node with improved formatting
+            # Root node with proper Mermaid 10.2.4 syntax
             overview = self._clean_text(data.get("動画の概要", "コンテンツ概要"))
-            MAX_OVERVIEW_LENGTH = 60
+            MAX_OVERVIEW_LENGTH = 50  # Reduced for better display
             if len(overview) > MAX_OVERVIEW_LENGTH:
                 overview = overview[:MAX_OVERVIEW_LENGTH-3] + "..."
-            lines.append(f"  root((( 📝 {overview})))")
+            lines.append(f"  root((概要：{overview}))")
             logger.debug(f"Added root node: {overview}")
             
             # Process points with enhanced validation
@@ -58,32 +58,41 @@ class MindMapGenerator:
                     }
                     importance_mark = importance_marks[importance]
                     
-                    # Add formatted title node
-                    title_node = f"    {point_counter}[{importance_mark} {title}]"
+                    # Add formatted title node with consistent indentation
+                    title_node = f"  {point_counter}[{importance_mark} {title}]"
                     lines.append(title_node)
                     
                     # Process content with improved chunking
                     content = self._clean_text(point.get("内容", ""))
                     if content:
-                        # Smarter content chunking
-                        chunk_size = 50 if importance >= 4 else 40
+                        # Optimized content chunking
+                        chunk_size = 40  # Consistent chunk size
                         content_parts = []
                         current_part = ""
                         
-                        for word in content.split():
-                            if len(current_part) + len(word) + 1 <= chunk_size:
-                                current_part += f" {word}" if current_part else word
+                        # Split by Japanese sentence endings for more natural breaks
+                        sentences = [s.strip() for s in re.split('[。．！？]', content) if s.strip()]
+                        for sentence in sentences:
+                            if len(sentence) <= chunk_size:
+                                content_parts.append(sentence)
                             else:
+                                # Split long sentences
+                                words = sentence.split()
+                                for word in words:
+                                    if len(current_part) + len(word) + 1 <= chunk_size:
+                                        current_part += f" {word}" if current_part else word
+                                    else:
+                                        if current_part:
+                                            content_parts.append(current_part.strip())
+                                        current_part = word
                                 if current_part:
                                     content_parts.append(current_part.strip())
-                                current_part = word
-                        if current_part:
-                            content_parts.append(current_part.strip())
+                                    current_part = ""
                         
-                        # Add content nodes with formatting
+                        # Add content nodes with proper indentation
                         for j, part in enumerate(content_parts, 1):
                             if part.strip():
-                                content_node = f"      {point_counter}.{j}[{part}]"
+                                content_node = f"    {point_counter}.{j}[{part}]"
                                 lines.append(content_node)
                     
                     # Enhanced supplementary info handling
@@ -94,26 +103,34 @@ class MindMapGenerator:
                     
                     point_counter += 1
             
-            # Enhanced conclusion formatting
+            # Conclusion formatting with proper Mermaid syntax
             conclusion = self._clean_text(data.get("結論", ""))
             if conclusion:
-                lines.append("    c((💡 結論))")
-                # Smart conclusion chunking
-                words = conclusion.split()
-                current_chunk = ""
-                chunk_counter = 1
-                
-                for word in words:
-                    if len(current_chunk) + len(word) + 1 <= 45:
-                        current_chunk += f" {word}" if current_chunk else word
-                    else:
+                lines.append("  c[結論]")
+                # Split conclusion into meaningful chunks
+                sentences = [s.strip() for s in re.split('[。．！？]', conclusion) if s.strip()]
+                for i, sentence in enumerate(sentences, 1):
+                    if len(sentence) > 40:
+                        # Split long sentences into smaller chunks
+                        chunks = []
+                        current_chunk = ""
+                        words = sentence.split()
+                        for word in words:
+                            if len(current_chunk) + len(word) + 1 <= 40:
+                                current_chunk += f" {word}" if current_chunk else word
+                            else:
+                                if current_chunk:
+                                    chunks.append(current_chunk.strip())
+                                current_chunk = word
                         if current_chunk:
-                            lines.append(f"      c.{chunk_counter}[{current_chunk}]")
-                            chunk_counter += 1
-                            current_chunk = word
-                
-                if current_chunk:
-                    lines.append(f"      c.{chunk_counter}[{current_chunk}]")
+                            chunks.append(current_chunk.strip())
+                        
+                        # Add chunked sentences
+                        for j, chunk in enumerate(chunks, 1):
+                            lines.append(f"    c.{i}.{j}[{chunk}]")
+                    else:
+                        # Add short sentences directly
+                        lines.append(f"    c.{i}[{sentence}]")
             
             mindmap = "\n".join(lines)
             logger.debug(f"Generated mindmap structure:\n{mindmap}")
@@ -124,7 +141,7 @@ class MindMapGenerator:
             return self._create_fallback_mindmap()
 
     def _clean_text(self, text: str) -> str:
-        """Clean and normalize text for Mermaid syntax with enhanced formatting preservation"""
+        """Clean and normalize text for Mermaid 10.2.4 syntax with strict character handling"""
         try:
             # Input validation
             if not isinstance(text, str):
@@ -133,7 +150,7 @@ class MindMapGenerator:
                 return "内容なし"
                 
             # Length validation
-            MAX_LENGTH = 200
+            MAX_LENGTH = 150  # Reduced for better display
             if len(text) > MAX_LENGTH:
                 text = text[:MAX_LENGTH-3] + "..."
             
@@ -141,22 +158,34 @@ class MindMapGenerator:
             text = text.strip()
             text = " ".join(text.split())  # Normalize whitespace
             
-            # Special character handling with semantic preservation
+            # Mermaid syntax characters that need escaping
             replacements = {
-                '"': "'",  # Smart quotes
-                '\n': " ",  # Newlines to space
-                '[': "「",  # Japanese brackets
-                ']': "」",
-                '(': "（",  # Japanese parentheses
+                '"': "'",    # Replace quotes
+                '\n': " ",   # Replace newlines
+                '[': "［",   # Safe brackets
+                ']': "］",
+                '(': "（",   # Safe parentheses
                 ')': "）",
-                '<': "＜",  # Japanese angle brackets
+                '<': "＜",   # Safe angle brackets
                 '>': "＞",
-                '|': "｜",  # Vertical bar
-                '*': "＊",  # Asterisk
-                '#': "＃",  # Hash
-                '^': "＾",  # Caret
-                '~': "～",  # Tilde
-                '`': "｀",  # Backtick
+                '|': "｜",   # Safe vertical bar
+                '*': "＊",   # Safe asterisk
+                '#': "＃",   # Safe hash
+                '^': "＾",   # Safe caret
+                '~': "～",   # Safe tilde
+                '`': "｀",   # Safe backtick
+                ':': "：",   # Safe colon
+                ';': "；",   # Safe semicolon
+                '&': "＆",   # Safe ampersand
+                '%': "％",   # Safe percent
+                '$': "＄",   # Safe dollar
+                '@': "＠",   # Safe at
+                '!': "！",   # Safe exclamation
+                '?': "？",   # Safe question mark
+                '+': "＋",   # Safe plus
+                '=': "＝",   # Safe equals
+                '{': "｛",   # Safe braces
+                '}': "｝",
             }
             
             # Apply replacements while preserving important formatting
