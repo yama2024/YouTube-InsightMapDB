@@ -446,36 +446,59 @@ try:
                                         proofread_prompt = f"""
                                         以下のテキストを校正し、より読みやすく、正確な日本語に修正してください。
 
-                                        重要な要件:
-                                        1. テキスト全体を完全に保持すること（必須）:
-                                           - 省略や要約は厳禁
-                                           - すべての情報を維持
-                                           - 文脈と意味を保持
-                                        2. 文章の改善:
-                                           - 句読点の適切な使用
-                                           - 漢字とかなの使い分けの最適化
-                                           - 文の構造を整理し、読みやすさを向上
-                                           - 一貫性のある表現スタイルの維持
+                                        最重要要件（必須）:
+                                        1. テキスト文字数の厳密な維持:
+                                           - 入力文字数: {len(chunk)}文字
+                                           - 必要出力文字数: {len(chunk)}文字以上
+                                           - 許容範囲: 入力文字数の80-120%
                                         
-                                        校正要件:
-                                        - 入力文字数: {len(chunk)}
+                                        2. 内容の完全性:
+                                           - すべての情報を完全に保持
+                                           - 省略・要約は厳禁
+                                           - 文脈と意味の維持を保証
+                                        
+                                        3. 文章品質の向上:
+                                           - 句読点の最適化
+                                           - 漢字/かなの適切な使用
+                                           - 文の構造改善
+                                           - 表現の一貫性維持
+                                        
+                                        処理情報:
                                         - チャンク番号: {chunk_idx}/{total_chunks}
-                                        - 必要出力文字数: 入力と同等以上
-                                        - 完全性の確認が必要
+                                        - 要求される最小文字数: {int(len(chunk) * 0.8)}
+                                        - 推奨文字数範囲: {int(len(chunk) * 0.8)}-{int(len(chunk) * 1.2)}
                                         
                                         元のテキスト:
                                         {chunk}
                                         
-                                        応答は校正済みのテキスト全体のみを含めてください。
-                                        校正前後で情報の欠落がないことを確認してください。
+                                        応答要件:
+                                        1. 校正済みテキストのみを返信
+                                        2. 完全性の明示的な確認
+                                        3. 文字数要件の厳守
                                         """
                                         
                                         response = st.session_state.text_processor.model.generate_content(proofread_prompt)
                                         proofread_chunk = response.text.strip()
                                         
-                                        # Validate chunk integrity
-                                        if len(proofread_chunk) < len(chunk) * 0.9:
-                                            raise ValueError(f"チャンク {chunk_idx} の校正後のテキストが著しく短くなっています")
+                                        # Validate chunk integrity with retry mechanism
+                                        max_retries = 3
+                                        retry_count = 0
+                                        
+                                        while len(proofread_chunk) < len(chunk) * 0.8 and retry_count < max_retries:
+                                            st.markdown(f"チャンク {chunk_idx} を再処理中... (試行 {retry_count + 1}/{max_retries})")
+                                            response = st.session_state.text_processor.model.generate_content(proofread_prompt)
+                                            proofread_chunk = response.text.strip()
+                                            retry_count += 1
+                                        
+                                        if len(proofread_chunk) < len(chunk) * 0.8:
+                                            actual_length = len(proofread_chunk)
+                                            expected_length = len(chunk)
+                                            raise ValueError(
+                                                f"チャンク {chunk_idx} の校正に失敗しました:\n"
+                                                f"- 期待される文字数: {expected_length}\n"
+                                                f"- 実際の文字数: {actual_length}\n"
+                                                f"- 不足文字数: {expected_length - actual_length}"
+                                            )
                                         
                                         # Validate key content preservation
                                         original_keywords = set(re.findall(r'[一-龯]{2,}', chunk))
