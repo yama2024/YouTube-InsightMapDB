@@ -394,63 +394,42 @@ try:
                         display_summary(st.session_state.summary)
 
                 with tabs[2]:
-                    if not st.session_state.mindmap:
-                        st.markdown("### マインドマップを生成中...")
-                        try:
-                            logger.info("Starting mindmap generation process")
-                            mindmap_generator = MindMapGenerator()
-                            mindmap_content, success = mindmap_generator.generate_mindmap(st.session_state.summary)
-                            if success:
-                                st.session_state.mindmap = mindmap_content
-                                logger.info("マインドマップを生成し、セッションに保存しました")
-                                update_step_progress('mindmap')
-                                st.rerun()
-                            else:
-                                st.error("マインドマップの生成に失敗しました")
-                        except Exception as e:
-                            st.error(f"マインドマップの生成中にエラーが発生しました: {str(e)}")
-                            logger.error(f"Error in mindmap generation: {str(e)}")
+                    st.markdown("### 🔄 Mind Map")
+                    if not st.session_state.summary:
+                        st.info("マインドマップを生成するには、まず要約を生成してください。")
+                    else:
+                        generate_mindmap = st.button("マインドマップ生成")
+                        if generate_mindmap:
+                            st.markdown("### マインドマップを生成中...")
+                            try:
+                                logger.info("Starting mindmap generation process")
+                                mindmap_generator = MindMapGenerator()
+                                mindmap_content, success = mindmap_generator.generate_mindmap(st.session_state.summary)
+                                if success:
+                                    st.session_state.mindmap = mindmap_content
+                                    logger.info("マインドマップを生成し、セッションに保存しました")
+                                    update_step_progress('mindmap')
+                                    st.rerun()
+                                else:
+                                    st.error("マインドマップの生成に失敗しました")
+                            except Exception as e:
+                                st.error(f"マインドマップの生成中にエラーが発生しました: {str(e)}")
+                                logger.error(f"Error in mindmap generation: {str(e)}")
 
-                    if st.session_state.mindmap:
-                        try:
-                            st_mermaid(st.session_state.mindmap, key="mindmap_display_1")
-                        except Exception as e:
-                            st.error(f"マインドマップの表示中にエラーが発生しました: {str(e)}")
-                            logger.error(f"Error displaying mindmap: {str(e)}")
-
-                with tabs[3]:
-                    if not st.session_state.enhanced_text:
-                        st.markdown("### テキストを校正中...")
-                        try:
-                            # Generate proofread text using the text processor
-                            proofread_prompt = f"""
-                            以下のテキストを校正し、より読みやすく、正確な日本語に修正してください。
-                            句読点の適切な使用、漢字とかなの使い分け、文の構造を整理し、
-                            より分かりやすい表現に修正してください。
-
-                            元のテキスト:
-                            {st.session_state.transcript}
-                            """
-                            response = st.session_state.text_processor.model.generate_content(proofread_prompt)
-                            st.session_state.enhanced_text = response.text
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
-                            logger.error(f"Error in text proofreading: {str(e)}")
-
-                    if st.session_state.enhanced_text:
-                        st.markdown("### ✨ テキスト校正が完了しました！")
-                        st.markdown(st.session_state.enhanced_text)
-                        st.success("校正が完了しました。上記が校正済みのテキストです。")
-                        update_step_progress('proofread')
-
-                
+                        if st.session_state.mindmap:
+                            try:
+                                st_mermaid(st.session_state.mindmap, key="mindmap_display_1")
+                            except Exception as e:
+                                st.error(f"マインドマップの表示中にエラーが発生しました: {str(e)}")
+                                logger.error(f"Error displaying mindmap: {str(e)}")
 
                 with tabs[3]:
-                    st.markdown("### テキスト校正")
-                    if not st.session_state.enhanced_text:
-                        if st.button("校正テキストを生成"):
-                            if st.session_state.transcript:
+                    st.markdown("### ✨ Proofreading")
+                    if not st.session_state.transcript:
+                        st.info("校正を開始するには、まず文字起こしを生成してください。")
+                    else:
+                        if not st.session_state.enhanced_text:
+                            if st.button("文章を校正する"):
                                 st.markdown("### テキストを校正中...")
                                 try:
                                     proofread_prompt = f"""
@@ -463,12 +442,16 @@ try:
                                     """
                                     response = st.session_state.text_processor.model.generate_content(proofread_prompt)
                                     st.session_state.enhanced_text = response.text
+                                    update_step_progress('proofread')
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
                                     logger.error(f"Error in text proofreading: {str(e)}")
-                            else:
-                                st.warning("校正を開始するには、まず文字起こしを生成してください。")
+
+                        if st.session_state.enhanced_text:
+                            st.markdown("### ✨ テキスト校正が完了しました！")
+                            st.markdown(st.session_state.enhanced_text)
+                            st.success("校正が完了しました。上記が校正済みのテキストです。")
 
     except Exception as e:
         st.error(f"アプリケーションエラー: {str(e)}")
