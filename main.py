@@ -432,27 +432,65 @@ try:
                             if st.button("文章を校正する"):
                                 st.markdown("### テキストを校正中...")
                                 try:
-                                    proofread_prompt = f"""
-                                    以下のテキストを校正し、より読みやすく、正確な日本語に修正してください。
+                                    # Split text into manageable chunks
+                                    chunk_size = 2000
+                                    text_chunks = [st.session_state.transcript[i:i+chunk_size] 
+                                                 for i in range(0, len(st.session_state.transcript), chunk_size)]
                                     
-                                    要件:
-                                    1. テキスト全体を完全に保持すること（省略や要約は不可）
-                                    2. 句読点の適切な使用
-                                    3. 漢字とかなの使い分けの最適化
-                                    4. 文の構造を整理し、読みやすさを向上
-                                    5. 一貫性のある表現スタイルの維持
+                                    processed_chunks = []
+                                    total_chunks = len(text_chunks)
                                     
-                                    元のテキスト（文字数: {len(st.session_state.transcript)}文字）:
-                                    {st.session_state.transcript}
+                                    for chunk_idx, chunk in enumerate(text_chunks, 1):
+                                        st.markdown(f"チャンク {chunk_idx}/{total_chunks} を処理中...")
+                                        
+                                        proofread_prompt = f"""
+                                        以下のテキストを校正し、より読みやすく、正確な日本語に修正してください。
+
+                                        重要な要件:
+                                        1. テキスト全体を完全に保持すること（必須）:
+                                           - 省略や要約は厳禁
+                                           - すべての情報を維持
+                                           - 文脈と意味を保持
+                                        2. 文章の改善:
+                                           - 句読点の適切な使用
+                                           - 漢字とかなの使い分けの最適化
+                                           - 文の構造を整理し、読みやすさを向上
+                                           - 一貫性のある表現スタイルの維持
+                                        
+                                        校正要件:
+                                        - 入力文字数: {len(chunk)}
+                                        - チャンク番号: {chunk_idx}/{total_chunks}
+                                        - 必要出力文字数: 入力と同等以上
+                                        - 完全性の確認が必要
+                                        
+                                        元のテキスト:
+                                        {chunk}
+                                        
+                                        応答は校正済みのテキスト全体のみを含めてください。
+                                        校正前後で情報の欠落がないことを確認してください。
+                                        """
+                                        
+                                        response = st.session_state.text_processor.model.generate_content(proofread_prompt)
+                                        proofread_chunk = response.text.strip()
+                                        
+                                        # Validate chunk integrity
+                                        if len(proofread_chunk) < len(chunk) * 0.9:
+                                            raise ValueError(f"チャンク {chunk_idx} の校正後のテキストが著しく短くなっています")
+                                        
+                                        # Validate key content preservation
+                                        original_keywords = set(re.findall(r'[一-龯]{2,}', chunk))
+                                        proofread_keywords = set(re.findall(r'[一-龯]{2,}', proofread_chunk))
+                                        if len(original_keywords - proofread_keywords) > len(original_keywords) * 0.2:
+                                            raise ValueError(f"チャンク {chunk_idx} で重要な内容が失われています")
+                                        
+                                        processed_chunks.append(proofread_chunk)
                                     
-                                    応答は校正済みのテキスト全体を含めてください。
-                                    """
-                                    response = st.session_state.text_processor.model.generate_content(proofread_prompt)
-                                    proofread_text = response.text
+                                    # Combine processed chunks
+                                    proofread_text = "\n".join(processed_chunks)
                                     
-                                    # Validate response length
-                                    if len(proofread_text) < len(st.session_state.transcript) * 0.8:
-                                        raise ValueError("校正後のテキストが元のテキストより著しく短くなっています")
+                                    # Final validation
+                                    if len(proofread_text) < len(st.session_state.transcript) * 0.9:
+                                        raise ValueError("校正後の全体テキストが元のテキストより著しく短くなっています")
                                     
                                     st.session_state.enhanced_text = proofread_text
                                     st.session_state.enhanced_text_length = len(proofread_text)
