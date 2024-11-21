@@ -1,3 +1,4 @@
+import re
 from utils.youtube_helper import YouTubeHelper
 from utils.text_processor import TextProcessor
 from utils.mindmap_generator import MindMapGenerator
