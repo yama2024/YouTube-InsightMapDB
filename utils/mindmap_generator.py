@@ -116,17 +116,29 @@ class MindMapGenerator:
     def generate_mindmap(self, text: str) -> Tuple[str, bool]:
         """Generate a mindmap from the analyzed text with enhanced validation"""
         try:
+            if not text or not isinstance(text, str):
+                logger.error(f"Invalid input text type: {type(text)}")
+                return self._create_fallback_mindmap(), False
+
+            logger.info(f"Generating mindmap for text of length: {len(text)}")
+            
             # Check cache with reliable key generation
             cache_key = hash(f"{text}_{self.__class__.__name__}")
             if cache_key in self._cache:
                 logger.info("キャッシュからマインドマップを取得しました")
-                return self._cache[cache_key], True
+                cached_content = self._cache[cache_key]
+                logger.debug(f"Cached mindmap length: {len(cached_content)}")
+                return cached_content, True
 
             # Parse and validate JSON
             try:
+                logger.debug("Attempting to parse JSON data")
                 data = json.loads(text)
+                logger.info("JSON parsing successful")
+                
                 if not self._validate_json_structure(data):
-                    logger.warning("Invalid JSON structure, using fallback structure")
+                    logger.warning("Invalid JSON structure detected, using fallback structure")
+                    logger.debug(f"Received data structure: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
                     data = {
                         "動画の概要": "コンテンツの要約",
                         "ポイント": [
@@ -138,7 +150,8 @@ class MindMapGenerator:
                         ],
                         "結論": "内容を確認できませんでした"
                     }
-            except json.JSONDecodeError:
+                    logger.info("Using fallback data structure")
+            except json.JSONDecodeError as e:
                 logger.warning("Invalid JSON format, creating basic structure")
                 data = {
                     "動画の概要": "コンテンツ概要",

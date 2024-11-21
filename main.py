@@ -15,13 +15,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-try:
-    from streamlit_mermaid import st_mermaid
-    MERMAID_AVAILABLE = True
-except Exception as e:
-    logger.error(f"Failed to import streamlit_mermaid: {str(e)}")
-    st.error("マインドマップコンポーネントの読み込みに失敗しました")
-    MERMAID_AVAILABLE = False
+# Import streamlit_mermaid at the top level
+from streamlit_mermaid import st_mermaid
 
 try:
     # Page configuration
@@ -394,44 +389,69 @@ try:
                 with tabs[2]:
                     st.markdown("### 🔄 Mind Map")
                     
-                    # Check if streamlit-mermaid is available
-                    if not MERMAID_AVAILABLE:
-                        st.error("マインドマップ機能が利用できません。依存関係を確認してください。")
-                        logger.error("streamlit-mermaid is not available")
-                        st.stop()
-                        
                     # Check if we have summary data
                     if not st.session_state.summary:
+                        logger.warning("No summary data available for mindmap generation")
                         st.info("マインドマップを生成するには、まず要約を生成してください。")
                         st.stop()
-                        
+
+                    # Log summary data structure
+                    logger.debug(f"Summary data type: {type(st.session_state.summary)}")
+                    logger.info(f"Current summary style: {st.session_state.current_summary_style}")
+                    
                     try:
+                        # Validate summary data
+                        if not isinstance(st.session_state.summary, str):
+                            logger.error(f"Invalid summary data type: {type(st.session_state.summary)}")
+                            st.error("要約データの形式が正しくありません")
+                            st.stop()
+                            
                         # Generate new mindmap if needed
-                        if ('mindmap' not in st.session_state or 
-                            st.session_state.current_summary_style != summary_style):
+                        should_generate = (
+                            'mindmap' not in st.session_state or
+                            st.session_state.current_summary_style != summary_style or
+                            not st.session_state.get('mindmap')  # Check if mindmap is empty
+                        )
+                        
+                        if should_generate:
                             
                             with st.spinner("マインドマップを生成中..."):
                                 mindmap_generator = MindMapGenerator()
+                                logger.info("Starting mindmap generation process")
                                 mindmap_content, success = mindmap_generator.generate_mindmap(
                                     st.session_state.summary)
                                 
-                                if success:
-                                    st.session_state.mindmap = mindmap_content
-                                    update_step_progress('mindmap')
-                                    logger.info("マインドマップを生成しました")
+                                if success and mindmap_content:
+                                    logger.info("Mindmap generated successfully")
+                                    logger.debug(f"Mindmap content length: {len(mindmap_content)}")
+                                    
+                                    # Validate mindmap content
+                                    if mindmap_content.startswith("mindmap") and "\n" in mindmap_content:
+                                        st.session_state.mindmap = mindmap_content
+                                        update_step_progress('mindmap')
+                                        logger.info("マインドマップを生成し、セッションに保存しました")
+                                    else:
+                                        logger.error("Generated mindmap has invalid format")
+                                        st.session_state.mindmap = mindmap_generator._create_fallback_mindmap()
+                                        st.warning("マインドマップの形式が正しくありません。基本的なマップを表示します。")
                                 else:
+                                    logger.warning("Using fallback mindmap due to generation failure")
+                                    st.session_state.mindmap = mindmap_generator._create_fallback_mindmap()
                                     st.warning("マインドマップの生成に問題が発生しました。基本的なマップを表示します。")
-                                    logger.warning("Using fallback mindmap")
                         
                         # Display mindmap
                         if st.session_state.mindmap:
                             try:
-                                st_mermaid(st.session_state.mindmap)
+                                # Add container for mindmap display
+                                with st.container():
+                                    st.markdown("#### マインドマップの表示")
+                                    st_mermaid(st.session_state.mindmap, height=400)
                             except Exception as e:
                                 logger.error(f"Mindmap display error: {str(e)}")
                                 st.error("マインドマップの表示中にエラーが発生しました")
-                                # Fallback to code display
-                                st.code(st.session_state.mindmap, language="mermaid")
+                                # Show mindmap as code for debugging
+                                with st.expander("デバッグ情報"):
+                                    st.code(st.session_state.mindmap, language="mermaid")
                         else:
                             st.warning("マインドマップのデータがありません")
                             
