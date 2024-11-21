@@ -434,14 +434,28 @@ try:
                                 try:
                                     proofread_prompt = f"""
                                     以下のテキストを校正し、より読みやすく、正確な日本語に修正してください。
-                                    句読点の適切な使用、漢字とかなの使い分け、文の構造を整理し、
-                                    より分かりやすい表現に修正してください。
-
-                                    元のテキスト:
+                                    
+                                    要件:
+                                    1. テキスト全体を完全に保持すること（省略や要約は不可）
+                                    2. 句読点の適切な使用
+                                    3. 漢字とかなの使い分けの最適化
+                                    4. 文の構造を整理し、読みやすさを向上
+                                    5. 一貫性のある表現スタイルの維持
+                                    
+                                    元のテキスト（文字数: {len(st.session_state.transcript)}文字）:
                                     {st.session_state.transcript}
+                                    
+                                    応答は校正済みのテキスト全体を含めてください。
                                     """
                                     response = st.session_state.text_processor.model.generate_content(proofread_prompt)
-                                    st.session_state.enhanced_text = response.text
+                                    proofread_text = response.text
+                                    
+                                    # Validate response length
+                                    if len(proofread_text) < len(st.session_state.transcript) * 0.8:
+                                        raise ValueError("校正後のテキストが元のテキストより著しく短くなっています")
+                                    
+                                    st.session_state.enhanced_text = proofread_text
+                                    st.session_state.enhanced_text_length = len(proofread_text)
                                     update_step_progress('proofread')
                                     st.rerun()
                                 except Exception as e:
@@ -450,7 +464,18 @@ try:
 
                         if st.session_state.enhanced_text:
                             st.markdown("### ✨ テキスト校正が完了しました！")
-                            st.markdown(st.session_state.enhanced_text)
+                            st.markdown(f"校正前の文字数: {len(st.session_state.transcript)}文字")
+                            st.markdown(f"校正後の文字数: {st.session_state.enhanced_text_length}文字")
+                            
+                            # Chunk text for better display
+                            chunk_size = 1000
+                            text_chunks = [st.session_state.enhanced_text[i:i+chunk_size] 
+                                         for i in range(0, len(st.session_state.enhanced_text), chunk_size)]
+                            
+                            for i, chunk in enumerate(text_chunks, 1):
+                                with st.expander(f"校正済みテキスト - パート{i}/{len(text_chunks)}"):
+                                    st.markdown(chunk)
+                            
                             st.success("校正が完了しました。上記が校正済みのテキストです。")
 
     except Exception as e:
