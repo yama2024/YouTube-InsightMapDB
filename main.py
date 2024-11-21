@@ -357,7 +357,7 @@ try:
                 )
 
                 tabs = st.tabs([
-                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Enhancement"
+                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Proofreading"
                 ])
 
                 with tabs[0]:
