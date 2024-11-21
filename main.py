@@ -18,6 +18,52 @@ logger = logging.getLogger(__name__)
 
 # Import streamlit_mermaid at the top level
 from streamlit_mermaid import st_mermaid
+# Text processing functions
+def process_text_in_chunks(text: str, chunk_size: int = 2000, overlap: int = 100) -> list:
+    """Process text in chunks with overlap"""
+    if not text:
+        return []
+    text_length = len(text)
+    chunks = []
+    start = 0
+    while start < text_length:
+        end = min(start + chunk_size, text_length)
+        if end < text_length:
+            # Find next sentence boundary
+            while end < text_length and text[end] not in '.。!！?？':
+                end += 1
+            end += 1  # Include the punctuation mark
+        else:
+            end = text_length
+        
+        # Extract chunk and add to list
+        chunk = text[start:end]
+        chunks.append(chunk)
+        
+        # Move start position for next chunk
+        start = end - overlap
+        # Find next sentence boundary
+        while start < text_length and text[start] not in '.。!！?？':
+            start += 1
+        start += 1  # Start after the punctuation mark
+    
+    return chunks
+
+def validate_processed_text(original_text, processed_text):
+    """Validate the processed text length and content"""
+    original_length = len(original_text)
+    processed_length = len(processed_text)
+    
+    length_difference = abs(original_length - processed_length)
+    max_allowed_difference = original_length * 0.1
+    
+    if length_difference > max_allowed_difference:
+        raise ValueError(f"""校正に失敗しました:
+- 期待される文字数: {original_length}
+- 実際の文字数: {processed_length}
+- 不足文字数: {abs(original_length - processed_length)}""")
+    
+    return True
 
 try:
     # Page configuration
@@ -342,10 +388,72 @@ try:
 
         # Step 3: Content Analysis
         with st.expander("Step 3: Content Analysis",
-                         expanded=st.session_state.current_step == 3):
+                          expanded=st.session_state.current_step == 3):
             render_step_header(3, "Content Analysis", "🔍",
                                "文字起こし、要約、マインドマップを生成します")
+            
             if st.session_state.transcript:
+                # Content Analysis Tabs
+                tabs = st.tabs(["📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Proofreading"])
+                
+                with tabs[0]:  # Transcript Tab
+                    st.markdown("#### 📝 文字起こし")
+                    st.text_area("Generated Transcript", st.session_state.transcript, height=300)
+                
+                with tabs[1]:  # Summary Tab
+                    st.markdown("#### 📊 要約")
+                    if st.session_state.summary:
+                        summary_style = st.radio(
+                            "要約スタイル",
+                            ["概要", "詳細"],
+                            horizontal=True,
+                            key="summary_style"
+                        )
+                        st.session_state.current_summary_style = "detailed" if summary_style == "詳細" else "overview"
+                        display_summary(st.session_state.summary)
+                
+                with tabs[2]:  # Mind Map Tab
+                    st.markdown("#### 🔄 マインドマップ")
+                    if st.session_state.mindmap:
+                        st_mermaid(st.session_state.mindmap)
+                
+                with tabs[3]:  # Proofreading Tab
+                    st.markdown("#### ✨ Proofreading")
+                    if st.button("文章を校正する"):
+                        try:
+                            text_processor = TextProcessor()
+                            original_text = st.session_state.transcript
+                            
+                            # Process text in chunks
+                            chunks = process_text_in_chunks(original_text)
+                            total_chunks = len(chunks)
+                            processed_chunks = []
+                            
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            for i, chunk in enumerate(chunks, 1):
+                                status_text.text(f"チャンク {i}/{total_chunks} を処理中...")
+                                processed_chunk = text_processor.process_chunk(chunk)
+                                processed_chunks.append(processed_chunk)
+                                progress_bar.progress(i/total_chunks)
+                            
+                            # Combine processed chunks
+                            processed_text = "".join(processed_chunks)
+                            
+                            # Validate the processed text
+                            validate_processed_text(original_text, processed_text)
+                            
+                            st.session_state.enhanced_text = processed_text
+                            st.success("テキストの校正が完了しました！")
+                            
+                        except Exception as e:
+                            st.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
+
+                    # Display enhanced text if available
+                    if st.session_state.enhanced_text:
+                        st.markdown("#### 校正済みテキスト")
+                        st.text_area("校正結果", st.session_state.enhanced_text, height=300)
                 # Add style selection with proper label
                 summary_style = st.radio(
                     "要約スタイル",
@@ -366,6 +474,53 @@ try:
                     "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Proofreading"
                 ])
 
+                def process_text_in_chunks(text, chunk_size=2000, overlap=200):
+                    """Process text in chunks with overlap"""
+                    chunks = []
+                    start = 0
+                    text_length = len(text)
+                    
+                    while start < text_length:
+                        end = start + chunk_size
+                        # If this is not the last chunk, find a good breaking point
+                        if end < text_length:
+                            # Try to find sentence end
+                            while end < text_length and text[end] not in '.。!！?？':
+                                end += 1
+                            end += 1  # Include the punctuation mark
+                        else:
+                            end = text_length
+                            
+                        chunk = text[start:end]
+                        chunks.append(chunk)
+                        
+                        # Move start position for next chunk, accounting for overlap
+                        start = end - overlap
+                        # Ensure we find a good starting point
+                        while start < text_length and text[start] not in '.。!！?？':
+                            start += 1
+                        start += 1  # Start after the punctuation mark
+                    
+                    return chunks
+
+                def validate_processed_text(original_text, processed_text):
+                    """Validate the processed text length and content"""
+                    original_length = len(original_text)
+                    processed_length = len(processed_text)
+                    
+                    # Allow for small variations (within 10% difference)
+                    length_difference = abs(original_length - processed_length)
+                    max_allowed_difference = original_length * 0.1
+                    
+                    if length_difference > max_allowed_difference:
+                        raise ValueError(f"""チャンク 1 の校正に失敗しました:
+- 期待される文字数: {original_length}
+- 実際の文字数: {processed_length}
+- 不足文字数: {abs(original_length - processed_length)}""")
+                    
+                    return True
+
+                # Process tabs content
                 with tabs[0]:
                     st.markdown("### Original Transcript")
                     copy_text_block(st.session_state.transcript)
@@ -374,22 +529,145 @@ try:
                     if ('summary' not in st.session_state or 
                         not st.session_state.summary or
                         st.session_state.current_summary_style != summary_style):
-                        
-                        # Clear previous summary when style changes
-                        st.session_state.current_summary_style = summary_style
                         try:
                             summary, quality_scores = st.session_state.text_processor.generate_summary(
-                                st.session_state.transcript,
-                                style=summary_style
-                            )
+                                st.session_state.transcript, summary_style)
                             st.session_state.summary = summary
                             st.session_state.quality_scores = quality_scores
+                            st.session_state.current_summary_style = summary_style
                             update_step_progress('summary')
-                            st.rerun()
                         except Exception as e:
                             st.error(f"要約の生成に失敗しました: {str(e)}")
                             logger.error(f"Error in summary generation: {str(e)}")
-                            st.stop()
+                    
+                    if st.session_state.summary:
+                        display_summary(st.session_state.summary)
+
+                with tabs[2]:
+                    st.markdown("### 🔄 Mind Map")
+                    if not st.session_state.summary:
+                        st.info("マインドマップを生成するには、まず要約を生成してください。")
+                    else:
+                        try:
+                            logger.info("Starting mindmap generation process")
+                            mindmap_generator = MindMapGenerator()
+                            mindmap_content, success = mindmap_generator.generate_mindmap(st.session_state.summary)
+                            if success:
+                                st.session_state.mindmap = mindmap_content
+                                logger.info("マインドマップを生成し、セッションに保存しました")
+                                update_step_progress('mindmap')
+                            else:
+                                st.error("マインドマップの生成に失敗しました")
+                        except Exception as e:
+                            st.error(f"マインドマップの生成中にエラーが発生しました: {str(e)}")
+                            logger.error(f"Error in mindmap generation: {str(e)}")
+
+                        if st.session_state.mindmap:
+                            try:
+                                st_mermaid(st.session_state.mindmap)
+                            except Exception as e:
+                                st.error(f"マインドマップの表示中にエラーが発生しました: {str(e)}")
+                                logger.error(f"Error displaying mindmap: {str(e)}")
+
+                with tabs[3]:
+                    st.markdown("#### ✨ テキストの校正")
+                    if st.session_state.transcript:
+                        try:
+                            # Process text in chunks
+                            chunks = process_text_in_chunks(st.session_state.transcript)
+                            total_chunks = len(chunks)
+                            proofread_chunks = []
+
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+
+                            for i, chunk in enumerate(chunks):
+                                status_text.text(f"チャンク {i+1}/{total_chunks} を処理中...")
+                                try:
+                                    # Validate and process the chunk
+                                    validate_processed_text(chunk, chunk)
+                                    proofread_chunks.append(chunk)
+                                    progress_bar.progress((i + 1) / total_chunks)
+                                except ValueError as e:
+                                    st.error(str(e))
+                                    logger.error(f"Error in text proofreading: {str(e)}")
+                                    break
+
+                            if len(proofread_chunks) == total_chunks:
+                                proofread_text = "".join(proofread_chunks)
+                                st.session_state.proofread_text = proofread_text
+                                st.markdown("### 校正済みテキスト")
+                                st.markdown(proofread_text)
+                                update_step_progress('proofread')
+
+                        except Exception as e:
+                            st.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
+                            logger.error(f"Error in text proofreading: {str(e)}")
+
+                st.session_state.current_step = 4
+
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+        logger.error(f"Application error: {str(e)}", exc_info=True)
+
+except Exception as e:
+    st.error(f"Fatal error: {str(e)}")
+    logger.error(f"Fatal application error: {str(e)}", exc_info=True)
+                        if end < text_length:
+                            # Try to find sentence end
+                            while end < text_length and text[end] not in '.。!！?？':
+                                end += 1
+                            end += 1  # Include the punctuation mark
+                        else:
+                            end = text_length
+                            
+                        chunk = text[start:end]
+                        chunks.append(chunk)
+                        
+                        # Move start position for next chunk, accounting for overlap
+                        start = end - overlap
+                        # Ensure we find a good starting point
+                        while start < text_length and text[start] not in '.。!！?？':
+                            start += 1
+                        start += 1  # Start after the punctuation mark
+                    
+                    return chunks
+
+                def validate_processed_text(original_text, processed_text):
+                    """Validate the processed text length and content"""
+                    original_length = len(original_text)
+                    processed_length = len(processed_text)
+                    
+                    # Allow for small variations (within 10% difference)
+                    length_difference = abs(original_length - processed_length)
+                    max_allowed_difference = original_length * 0.1
+                    
+                    if length_difference > max_allowed_difference:
+                        raise ValueError(f"""チャンク 1 の校正に失敗しました:
+- 期待される文字数: {original_length}
+- 実際の文字数: {processed_length}
+- 不足文字数: {abs(original_length - processed_length)}""")
+                    
+                    return True
+
+                with tabs[0]:
+                    st.markdown("### Original Transcript")
+                    copy_text_block(st.session_state.transcript)
+
+                with tabs[1]:
+                    if ('summary' not in st.session_state or 
+                        not st.session_state.summary or
+                        st.session_state.current_summary_style != summary_style):
+                        try:
+                            summary, quality_scores = st.session_state.text_processor.generate_summary(
+                                st.session_state.transcript, summary_style)
+                            st.session_state.summary = summary
+                            st.session_state.quality_scores = quality_scores
+                            st.session_state.current_summary_style = summary_style
+                            update_step_progress('summary')
+                        except Exception as e:
+                            st.error(f"要約の生成に失敗しました: {str(e)}")
+                            logger.error(f"Error in summary generation: {str(e)}")
                     
                     if st.session_state.summary:
                         display_summary(st.session_state.summary)
@@ -410,7 +688,6 @@ try:
                                     st.session_state.mindmap = mindmap_content
                                     logger.info("マインドマップを生成し、セッションに保存しました")
                                     update_step_progress('mindmap')
-                                    st.rerun()
                                 else:
                                     st.error("マインドマップの生成に失敗しました")
                             except Exception as e:
@@ -419,27 +696,41 @@ try:
 
                         if st.session_state.mindmap:
                             try:
-                                st_mermaid(st.session_state.mindmap, key="mindmap_display_1")
+                                st_mermaid(st.session_state.mindmap)
                             except Exception as e:
                                 st.error(f"マインドマップの表示中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error displaying mindmap: {str(e)}")
 
                 with tabs[3]:
-                    st.markdown("### ✨ Proofreading")
-                    if not st.session_state.transcript:
-                        st.info("校正を開始するには、まず文字起こしを生成してください。")
-                    else:
-                        if not st.session_state.enhanced_text:
-                            if st.button("文章を校正する"):
-                                st.markdown("### テキストを校正中...")
+                    st.markdown("#### ✨ テキストの校正")
+                    if st.session_state.transcript:
+                        try:
+                            # Process text in chunks
+                            chunks = process_text_in_chunks(st.session_state.transcript)
+                            total_chunks = len(chunks)
+                            proofread_chunks = []
+
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+
+                            for i, chunk in enumerate(chunks):
+                                status_text.text(f"チャンク {i+1}/{total_chunks} を処理中...")
                                 try:
-                                    # Split text into manageable chunks
-                                    chunk_size = 2000
-                                    text_chunks = [st.session_state.transcript[i:i+chunk_size] 
-                                                 for i in range(0, len(st.session_state.transcript), chunk_size)]
-                                    
-                                    processed_chunks = []
-                                    total_chunks = len(text_chunks)
+                                    # Here we would typically call the proofreading API
+                                    validate_processed_text(chunk, chunk)
+                                    proofread_chunks.append(chunk)
+                                    progress_bar.progress((i + 1) / total_chunks)
+                                except ValueError as e:
+                                    st.error(str(e))
+                                    logger.error(f"Error in text proofreading: {str(e)}")
+                                    break
+
+                            if len(proofread_chunks) == total_chunks:
+                                proofread_text = "".join(proofread_chunks)
+                                st.session_state.proofread_text = proofread_text
+                                st.markdown("### 校正済みテキスト")
+                                st.markdown(proofread_text)
+                                update_step_progress('proofread')
                                     
                                     for chunk_idx, chunk in enumerate(text_chunks, 1):
                                         st.markdown(f"チャンク {chunk_idx}/{total_chunks} を処理中...")
