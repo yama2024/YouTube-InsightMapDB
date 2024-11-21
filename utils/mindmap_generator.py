@@ -11,69 +11,115 @@ class MindMapGenerator:
         self._cache = {}
 
     def _create_mermaid_mindmap(self, data: Dict) -> str:
-        """Generate Mermaid mindmap syntax with proper escaping and validation"""
+        """Generate Mermaid mindmap syntax with enhanced styling and readability"""
         try:
             logger.debug(f"Starting mindmap creation with data structure: {list(data.keys())}")
-            lines = ["mindmap"]
             
-            # Root node from video overview
+            # Initialize mindmap with styling
+            lines = [
+                "mindmap",
+                "  %%{",
+                "    init: {",
+                "      'theme': 'base',",
+                "      'themeVariables': {",
+                "        'fontSize': '16px',",
+                "        'fontFamily': 'arial',",
+                "        'lineColor': '#88A0A8',",
+                "        'mainBkg': '#fff',",
+                "        'nodeBorder': '#2E6B8C',",
+                "        'nodeTextColor': '#2C3D4F',",
+                "        'tertiaryColor': '#EBF3F5'",
+                "      }",
+                "    }",
+                "  }%%"
+            ]
+            
+            # Root node with enhanced styling
             overview = self._clean_text(data.get("動画の概要", "コンテンツ概要"))
-            if len(overview) > 50:
-                overview = overview[:47] + "..."
-            lines.append(f"  root[{overview}]")
-            logger.debug(f"Added root node: {overview}")
+            if len(overview) > 35:
+                overview = overview[:32] + "..."
+            lines.append(f"  root((( 📑 {overview} )))")
+            logger.debug(f"Added styled root node: {overview}")
             
-            # Process points as primary branches
+            # Process points as primary branches with enhanced organization
             points = data.get("ポイント", [])
             if not points:
                 logger.warning("No points found in data")
                 return self._create_fallback_mindmap()
-                
-            logger.debug(f"Processing {len(points)} points")
+            
+            # Group points by importance for better organization
+            grouped_points = {
+                "high": [], "medium": [], "low": []
+            }
+            
             for i, point in enumerate(points, 1):
                 if not isinstance(point, dict):
-                    logger.error(f"Invalid point structure at index {i}")
-                    continue
-                    
-                title = self._clean_text(point.get("タイトル", ""))
-                if not title:
-                    logger.warning(f"Empty title for point {i}")
                     continue
                 
-                # Add importance indicator
                 importance = point.get("重要度", 3)
-                importance_mark = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "・"
-                lines.append(f"    {i}[{importance_mark} {title}]")
-                
-                # Add content as sub-branch
-                content = self._clean_text(point.get("内容", ""))
-                if content:
-                    # Split long content into multiple lines
-                    content_parts = [content[j:j+40] for j in range(0, len(content), 40)]
-                    for j, part in enumerate(content_parts, 1):
-                        if part.strip():
-                            lines.append(f"      {i}.{j}[{part}]")
-                
-                # Add supplementary info if available
-                if "補足情報" in point and point["補足情報"]:
-                    suppl_info = self._clean_text(point["補足情報"])
-                    if suppl_info:
-                        lines.append(f"      {i}.s[💡 {suppl_info[:40]}...]")
+                if importance >= 4:
+                    grouped_points["high"].append((i, point))
+                elif importance >= 2:
+                    grouped_points["medium"].append((i, point))
+                else:
+                    grouped_points["low"].append((i, point))
             
-            # Add conclusion as a separate branch
+            # Process grouped points with visual hierarchy
+            for importance_level, points_group in [
+                ("high", grouped_points["high"]),
+                ("medium", grouped_points["medium"]),
+                ("low", grouped_points["low"])
+            ]:
+                for i, point in points_group:
+                    title = self._clean_text(point.get("タイトル", ""))
+                    if not title:
+                        continue
+                    
+                    # Style based on importance
+                    if importance_level == "high":
+                        lines.append(f"    {i}[🔥 {title}]:::important")
+                    elif importance_level == "medium":
+                        lines.append(f"    {i}[⭐ {title}]:::notable")
+                    else:
+                        lines.append(f"    {i}[・ {title}]:::normal")
+                    
+                    # Add content with improved formatting
+                    content = self._clean_text(point.get("内容", ""))
+                    if content:
+                        content_parts = [content[j:j+30] for j in range(0, len(content), 30)]
+                        for j, part in enumerate(content_parts, 1):
+                            if part.strip():
+                                lines.append(f"      {i}.{j}({part})")
+                    
+                    # Add styled supplementary info
+                    if "補足情報" in point and point["補足情報"]:
+                        suppl_info = self._clean_text(point["補足情報"])
+                        if suppl_info:
+                            info_parts = [suppl_info[j:j+30] for j in range(0, len(suppl_info), 30)]
+                            for j, part in enumerate(info_parts, 1):
+                                if part.strip():
+                                    lines.append(f"      {i}.s.{j}[💡 {part}]:::info")
+            
+            # Add styled conclusion section
             conclusion = self._clean_text(data.get("結論", ""))
             if conclusion:
-                lines.append("    c[💡 結論]")
-                if len(conclusion) > 40:
-                    conclusion_parts = [conclusion[i:i+40] for i in range(0, len(conclusion), 40)]
-                    for i, part in enumerate(conclusion_parts, 1):
-                        if part.strip():
-                            lines.append(f"      c.{i}[{part}]")
-                else:
-                    lines.append(f"      c.1[{conclusion}]")
+                lines.append("    c{{💡 結論}}:::conclusion")
+                conclusion_parts = [conclusion[i:i+30] for i in range(0, len(conclusion), 30)]
+                for i, part in enumerate(conclusion_parts, 1):
+                    if part.strip():
+                        lines.append(f"      c.{i}({part}):::conclusion")
+            
+            # Add style definitions
+            lines.extend([
+                "  classDef important fill:#FFE5E5,stroke:#FF7676,stroke-width:2px",
+                "  classDef notable fill:#FFF8E5,stroke:#FFB347,stroke-width:1.5px",
+                "  classDef normal fill:#F5F5F5,stroke:#88A0A8,stroke-width:1px",
+                "  classDef info fill:#E5F6FF,stroke:#2E6B8C,stroke-width:1px",
+                "  classDef conclusion fill:#E5FFE5,stroke:#4CAF50,stroke-width:2px"
+            ])
             
             mindmap = "\n".join(lines)
-            logger.debug(f"Generated mindmap structure:\n{mindmap}")
+            logger.debug(f"Generated enhanced mindmap structure:\n{mindmap}")
             return mindmap
             
         except Exception as e:
