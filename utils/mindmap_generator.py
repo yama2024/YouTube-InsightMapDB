@@ -71,40 +71,97 @@ class MindMapGenerator:
                    .strip())
 
     def _create_fallback_mindmap(self) -> str:
-        """Create a simple fallback mindmap when generation fails"""
+        """Create a more informative fallback mindmap when generation fails"""
         return """mindmap
-  root((コンテンツ概要))
-    1((エラーが発生しました))
-      1.1((マインドマップの生成に失敗しました))"""
+  root[コンテンツ解析結果]
+    1[⚠️ 処理状態]
+      1.1[マインドマップの生成に問題が発生しました]
+      1.2[以下をご確認ください]
+        1.2.1[・入力データの形式]
+        1.2.2[・テキストの長さ]
+        1.2.3[・特殊文字の使用]
+    2[🔄 次のステップ]
+      2.1[・ページを更新]
+      2.2[・入力を確認]
+      2.3[・再度実行]"""
 
-    def generate_mindmap(self, text: str) -> Tuple[str, bool]:
-        """Generate a mindmap from the analyzed text with fallback handling"""
+    def _validate_json_structure(self, data: Dict) -> bool:
+        """Validate the JSON structure for mindmap generation"""
         try:
-            # Check cache first
-            cache_key = hash(text)
-            if cache_key in self._cache:
-                return self._cache[cache_key], True
-
-            # If text is already in JSON format (from TextProcessor), parse it
-            try:
-                data = json.loads(text)
-            except json.JSONDecodeError:
-                # If not JSON, create a simple structure
-                data = {
-                    "タイトル": "コンテンツ概要",
-                    "主要ポイント": [{
-                        "タイトル": "テキスト概要",
-                        "説明": text[:100] + "...",
-                    }]
-                }
-
-            # Generate mindmap
-            mermaid_syntax = self._create_mermaid_mindmap(data)
-            
-            # Cache the result
-            self._cache[cache_key] = mermaid_syntax
-            return mermaid_syntax, True
+            # Check for required keys
+            if not isinstance(data, dict):
+                return False
+                
+            # Validate main structure
+            if "動画の概要" not in data or "ポイント" not in data or "結論" not in data:
+                return False
+                
+            # Validate points structure
+            points = data.get("ポイント", [])
+            if not isinstance(points, list) or not points:
+                return False
+                
+            for point in points:
+                if not isinstance(point, dict):
+                    return False
+                if "タイトル" not in point or "内容" not in point:
+                    return False
+                    
+            return True
             
         except Exception as e:
-            logger.error(f"マインドマップの生成に失敗しました: {str(e)}")
+            logger.error(f"JSON構造の検証中にエラーが発生しました: {str(e)}")
+            return False
+            
+    def generate_mindmap(self, text: str) -> Tuple[str, bool]:
+        """Generate a mindmap from the analyzed text with enhanced validation"""
+        try:
+            # Check cache with reliable key generation
+            cache_key = hash(f"{text}_{self.__class__.__name__}")
+            if cache_key in self._cache:
+                logger.info("キャッシュからマインドマップを取得しました")
+                return self._cache[cache_key], True
+
+            # Parse and validate JSON
+            try:
+                data = json.loads(text)
+                if not self._validate_json_structure(data):
+                    logger.warning("Invalid JSON structure, using fallback structure")
+                    data = {
+                        "動画の概要": "コンテンツの要約",
+                        "ポイント": [
+                            {
+                                "タイトル": "主要なポイント",
+                                "内容": "動画の内容を確認できませんでした",
+                                "重要度": 3
+                            }
+                        ],
+                        "結論": "内容を確認できませんでした"
+                    }
+            except json.JSONDecodeError:
+                logger.warning("Invalid JSON format, creating basic structure")
+                data = {
+                    "動画の概要": "コンテンツ概要",
+                    "ポイント": [{
+                        "タイトル": "概要",
+                        "内容": text[:100] + "..." if len(text) > 100 else text,
+                        "重要度": 3
+                    }],
+                    "結論": "テキストの解析に失敗しました"
+                }
+
+            # Generate mindmap with validated data
+            mermaid_syntax = self._create_mermaid_mindmap(data)
+            
+            # Cache only valid results
+            if mermaid_syntax and mermaid_syntax.count('\n') > 2:
+                self._cache[cache_key] = mermaid_syntax
+                logger.info("新しいマインドマップを生成してキャッシュしました")
+                return mermaid_syntax, True
+            
+            logger.warning("生成されたマインドマップが無効です")
+            return self._create_fallback_mindmap(), False
+            
+        except Exception as e:
+            logger.error(f"マインドマップの生成中にエラーが発生しました: {str(e)}")
             return self._create_fallback_mindmap(), False

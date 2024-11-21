@@ -393,13 +393,24 @@ try:
 
                 with tabs[2]:
                     st.markdown("### 🔄 Mind Map")
+                    
+                    # Check if streamlit-mermaid is available
                     if not MERMAID_AVAILABLE:
                         st.error("マインドマップ機能が利用できません。依存関係を確認してください。")
-                    elif st.session_state.summary:
-                        try:
-                            if ('mindmap' not in st.session_state or 
-                                st.session_state.current_summary_style != summary_style):
-                                
+                        logger.error("streamlit-mermaid is not available")
+                        st.stop()
+                        
+                    # Check if we have summary data
+                    if not st.session_state.summary:
+                        st.info("マインドマップを生成するには、まず要約を生成してください。")
+                        st.stop()
+                        
+                    try:
+                        # Generate new mindmap if needed
+                        if ('mindmap' not in st.session_state or 
+                            st.session_state.current_summary_style != summary_style):
+                            
+                            with st.spinner("マインドマップを生成中..."):
                                 mindmap_generator = MindMapGenerator()
                                 mindmap_content, success = mindmap_generator.generate_mindmap(
                                     st.session_state.summary)
@@ -409,62 +420,26 @@ try:
                                     update_step_progress('mindmap')
                                     logger.info("マインドマップを生成しました")
                                 else:
-                                    st.warning("マインドマップの生成に問題が発生しました。簡略化されたマップを表示します。")
-                            
-                            # Display mindmap with error handling
+                                    st.warning("マインドマップの生成に問題が発生しました。基本的なマップを表示します。")
+                                    logger.warning("Using fallback mindmap")
+                        
+                        # Display mindmap
+                        if st.session_state.mindmap:
                             try:
-                                if st.session_state.mindmap:
-                                    st_mermaid(st.session_state.mindmap, height="800px")
-                                else:
-                                    st.warning("マインドマップのデータがありません")
+                                st_mermaid(st.session_state.mindmap)
                             except Exception as e:
                                 logger.error(f"Mindmap display error: {str(e)}")
                                 st.error("マインドマップの表示中にエラーが発生しました")
-                                
-                        except Exception as e:
-                            logger.error(f"Mindmap generation error: {str(e)}")
-                            st.error("マインドマップの生成中にエラーが発生しました")
-                        if st.session_state.current_summary_style != summary_style:
-                            st.session_state.summary = None
-                            st.session_state.quality_scores = None
-                        
-                        st.session_state.current_summary_style = summary_style
-                        
-                        with st.spinner("AI要約を生成中..."):
-                            try:
-                                text_processor = TextProcessor()
-                                summary, quality_scores = text_processor.generate_summary(
-                                    st.session_state.transcript,
-                                    style=summary_style
-                                )
-                                st.session_state.summary = summary
-                                st.session_state.quality_scores = quality_scores
-                            except Exception as e:
-                                st.error(f"要約の生成に失敗しました: {str(e)}")
-                                logger.error(f"Summary generation error: {str(e)}")
-                    
-                    if st.session_state.summary:
-                        display_summary(st.session_state.summary)
-                        update_step_progress('summary')
-
-                with tabs[2]:
-                    if st.session_state.summary:
-                        try:
-                            mindmap_generator = MindMapGenerator()
-                            mindmap_syntax = mindmap_generator.generate_mindmap(st.session_state.summary)
+                                # Fallback to code display
+                                st.code(st.session_state.mindmap, language="mermaid")
+                        else:
+                            st.warning("マインドマップのデータがありません")
                             
-                            if MERMAID_AVAILABLE:
-                                st_mermaid(mindmap_syntax)
-                            else:
-                                st.warning("マインドマップの表示機能は現在利用できません。代替表示を使用します。")
-                                st.code(mindmap_syntax, language="mermaid")
-                            
-                            update_step_progress('mindmap')
-                        except Exception as e:
-                            st.error(f"マインドマップの生成に失敗しました: {str(e)}")
-                            logger.error(f"Mindmap generation error: {str(e)}")
-                    else:
-                        st.info("マインドマップを生成するには、まず要約を生成してください。")
+                    except Exception as e:
+                        logger.error(f"Mindmap generation/display error: {str(e)}")
+                        st.error("マインドマップの処理中にエラーが発生しました")
+                        if 'mindmap' in st.session_state:
+                            del st.session_state.mindmap  # Clear invalid mindmap
 
                 with tabs[3]:
                     st.markdown("### Text Enhancement")
