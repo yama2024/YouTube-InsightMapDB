@@ -380,7 +380,7 @@ try:
                             st.session_state.summary = summary
                             st.session_state.quality_scores = quality_scores
                             update_step_progress('summary')
-                            st.experimental_rerun()
+                            st.rerun()
                         except Exception as e:
                             st.error(f"要約の生成に失敗しました: {str(e)}")
                             logger.error(f"Error in summary generation: {str(e)}")
@@ -400,7 +400,7 @@ try:
                                 st.session_state.mindmap = mindmap_content
                                 logger.info("マインドマップを生成し、セッションに保存しました")
                                 update_step_progress('mindmap')
-                                st.experimental_rerun()
+                                st.rerun()
                             else:
                                 st.error("マインドマップの生成に失敗しました")
                         except Exception as e:
@@ -429,7 +429,7 @@ try:
                             """
                             response = text_processor.model.generate_content(proofread_prompt)
                             st.session_state.enhanced_text = response.text
-                            st.experimental_rerun()
+                            st.rerun()
                         except Exception as e:
                             st.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
                             logger.error(f"Error in text proofreading: {str(e)}")
@@ -535,7 +535,7 @@ try:
                                     """
                                     response = text_processor.model.generate_content(proofread_prompt)
                                     st.session_state.enhanced_text = response.text
-                                    st.experimental_rerun()
+                                    st.rerun()
                                 except Exception as e:
                                     st.error(f"テキストの校正中にエラーが発生しました: {str(e)}")
                                     logger.error(f"Error in text proofreading: {str(e)}")
