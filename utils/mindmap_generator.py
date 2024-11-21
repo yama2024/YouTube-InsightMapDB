@@ -86,27 +86,54 @@ class MindMapGenerator:
       2.3[・再度実行]"""
 
     def _validate_json_structure(self, data: Dict) -> bool:
-        """Validate the JSON structure for mindmap generation"""
+        """Validate the JSON structure for mindmap generation with detailed logging"""
         try:
-            # Check for required keys
+            # Validate data type
             if not isinstance(data, dict):
+                logger.error(f"Invalid data type: expected dict, got {type(data)}")
                 return False
-                
-            # Validate main structure
-            if "動画の概要" not in data or "ポイント" not in data or "結論" not in data:
+            
+            # Log received keys
+            logger.debug(f"Received JSON keys: {list(data.keys())}")
+            
+            # Validate required keys
+            required_keys = ["動画の概要", "ポイント", "結論"]
+            missing_keys = [key for key in required_keys if key not in data]
+            if missing_keys:
+                logger.error(f"Missing required keys: {missing_keys}")
                 return False
-                
+            
             # Validate points structure
             points = data.get("ポイント", [])
-            if not isinstance(points, list) or not points:
+            if not isinstance(points, list):
+                logger.error(f"Points is not a list: {type(points)}")
                 return False
-                
-            for point in points:
+            
+            if not points:
+                logger.error("Points list is empty")
+                return False
+            
+            # Validate each point
+            for i, point in enumerate(points):
                 if not isinstance(point, dict):
+                    logger.error(f"Point {i} is not a dictionary: {type(point)}")
                     return False
-                if "タイトル" not in point or "内容" not in point:
+                
+                required_point_keys = ["タイトル", "内容"]
+                missing_point_keys = [key for key in required_point_keys if key not in point]
+                if missing_point_keys:
+                    logger.error(f"Point {i} missing keys: {missing_point_keys}")
                     return False
-                    
+                
+                # Validate data types of point fields
+                if not isinstance(point.get("タイトル"), str):
+                    logger.error(f"Point {i} title is not a string")
+                    return False
+                if not isinstance(point.get("内容"), str):
+                    logger.error(f"Point {i} content is not a string")
+                    return False
+            
+            logger.info("JSON structure validation successful")
             return True
             
         except Exception as e:

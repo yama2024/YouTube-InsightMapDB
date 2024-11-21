@@ -442,16 +442,15 @@ try:
                         # Display mindmap
                         if st.session_state.mindmap:
                             try:
-                                # Add container for mindmap display
-                                with st.container():
-                                    st.markdown("#### マインドマップの表示")
-                                    st_mermaid(st.session_state.mindmap, height=400)
+                                # Display mindmap
+                                st.markdown("#### マインドマップの表示")
+                                st_mermaid(st.session_state.mindmap)
                             except Exception as e:
                                 logger.error(f"Mindmap display error: {str(e)}")
                                 st.error("マインドマップの表示中にエラーが発生しました")
-                                # Show mindmap as code for debugging
-                                with st.expander("デバッグ情報"):
-                                    st.code(st.session_state.mindmap, language="mermaid")
+                                # Log the error details
+                                logger.debug(f"Mindmap content: {st.session_state.mindmap}")
+                                st.code(st.session_state.mindmap, language="mermaid")
                         else:
                             st.warning("マインドマップのデータがありません")
                             
