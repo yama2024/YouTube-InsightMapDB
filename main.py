@@ -356,6 +356,11 @@ try:
                     help="要約の詳細度を選択してください"
                 )
 
+                # Initialize text processor outside tabs to ensure proper scope
+                if 'text_processor' not in st.session_state:
+                    st.session_state.text_processor = TextProcessor()
+                
+                # Initialize tabs
                 tabs = st.tabs([
                     "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Proofreading"
                 ])
@@ -372,8 +377,7 @@ try:
                         # Clear previous summary when style changes
                         st.session_state.current_summary_style = summary_style
                         try:
-                            text_processor = TextProcessor()
-                            summary, quality_scores = text_processor.generate_summary(
+                            summary, quality_scores = st.session_state.text_processor.generate_summary(
                                 st.session_state.transcript,
                                 style=summary_style
                             )
@@ -427,7 +431,7 @@ try:
                             元のテキスト:
                             {st.session_state.transcript}
                             """
-                            response = text_processor.model.generate_content(proofread_prompt)
+                            response = st.session_state.text_processor.model.generate_content(proofread_prompt)
                             st.session_state.enhanced_text = response.text
                             st.rerun()
                         except Exception as e:
@@ -533,7 +537,7 @@ try:
                                     元のテキスト:
                                     {st.session_state.transcript}
                                     """
-                                    response = text_processor.model.generate_content(proofread_prompt)
+                                    response = st.session_state.text_processor.model.generate_content(proofread_prompt)
                                     st.session_state.enhanced_text = response.text
                                     st.rerun()
                                 except Exception as e:
