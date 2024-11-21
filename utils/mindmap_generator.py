@@ -18,22 +18,37 @@ class MindMapGenerator:
             # Escape special characters and clean the title
             root_title = data.get("タイトル", "コンテンツ概要")
             root_title = self._clean_text(root_title)
-            lines.append(f"  root(({root_title}))")
+            lines.append(f"  root[{root_title}]")
             
             # Process main points as primary branches
             if "主要ポイント" in data:
-                for i, point in enumerate(data["主要ポイント"]):
+                for i, point in enumerate(data["主要ポイント"], 1):
                     # Clean and escape the title
                     title = self._clean_text(point.get("タイトル", ""))
-                    lines.append(f"    {i}({title})")
+                    if not title:
+                        continue
+                    
+                    # Add importance indicator
+                    importance = point.get("重要度", 3)
+                    importance_mark = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "・"
+                    lines.append(f"    {i}[{importance_mark} {title}]")
                     
                     # Add sub-points with proper escaping
                     if "説明" in point:
                         explanation = self._clean_text(point["説明"])
-                        # Truncate long explanations
+                        # Split long explanations into multiple lines
                         if len(explanation) > 50:
-                            explanation = explanation[:47] + "..."
-                        lines.append(f"      {i}.1({explanation})")
+                            parts = [explanation[i:i+50] for i in range(0, len(explanation), 50)]
+                            for j, part in enumerate(parts, 1):
+                                lines.append(f"      {i}.{j}[{part}]")
+                        else:
+                            lines.append(f"      {i}.1[{explanation}]")
+                    
+                    # Add keywords if available
+                    if "キーワード" in point:
+                        for j, keyword in enumerate(point["キーワード"], 1):
+                            keyword_text = self._clean_text(keyword)
+                            lines.append(f"        {i}.k{j}[📌 {keyword_text}]")
             
             return "\n".join(lines)
             
@@ -43,10 +58,16 @@ class MindMapGenerator:
 
     def _clean_text(self, text: str) -> str:
         """Clean and escape text for Mermaid syntax"""
+        if not isinstance(text, str):
+            text = str(text)
         return (text.replace('"', "'")
                    .replace("\n", " ")
-                   .replace("(", "[")
-                   .replace(")", "]")
+                   .replace("[", "「")
+                   .replace("]", "」")
+                   .replace("(", "（")
+                   .replace(")", "）")
+                   .replace("<", "＜")
+                   .replace(">", "＞")
                    .strip())
 
     def _create_fallback_mindmap(self) -> str:
