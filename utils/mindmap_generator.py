@@ -6,6 +6,7 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+import re
 class MindMapGenerator:
     def __init__(self):
         self._cache = {}
@@ -15,24 +16,8 @@ class MindMapGenerator:
         try:
             logger.debug(f"Starting mindmap creation with data structure: {list(data.keys())}")
             
-            # Initialize mindmap with styling
-            lines = [
-                "mindmap",
-                "  %%{",
-                "    init: {",
-                "      'theme': 'base',",
-                "      'themeVariables': {",
-                "        'fontSize': '16px',",
-                "        'fontFamily': 'arial',",
-                "        'lineColor': '#88A0A8',",
-                "        'mainBkg': '#fff',",
-                "        'nodeBorder': '#2E6B8C',",
-                "        'nodeTextColor': '#2C3D4F',",
-                "        'tertiaryColor': '#EBF3F5'",
-                "      }",
-                "    }",
-                "  }%%"
-            ]
+            # Initialize mindmap without custom styling for better compatibility
+            lines = ["mindmap"]
             
             # Root node with enhanced styling
             overview = self._clean_text(data.get("動画の概要", "コンテンツ概要"))
@@ -120,6 +105,10 @@ class MindMapGenerator:
             
             mindmap = "\n".join(lines)
             logger.debug(f"Generated enhanced mindmap structure:\n{mindmap}")
+            
+            if not self._verify_mermaid_syntax(mindmap):
+                logger.error("Generated mindmap failed syntax verification")
+                return self._create_fallback_mindmap()
             return mindmap
             
         except Exception as e:
@@ -130,20 +119,43 @@ class MindMapGenerator:
         """Clean and escape text for Mermaid syntax"""
         if not isinstance(text, str):
             text = str(text)
-        return (text.replace('"', "'")
-                   .replace("\n", " ")
-                   .replace("[", "「")
-                   .replace("]", "」")
-                   .replace("(", "（")
-                   .replace(")", "）")
-                   .replace("<", "＜")
-                   .replace(">", "＞")
-                   .strip())
+        # Remove or escape problematic characters
+        replacements = {
+            '"': "'",
+            '\n': ' ',
+            '[': '(',
+            ']': ')',
+            '{': '(',
+            '}': ')',
+            '|': '-',
+            '<': '＜',
+            '>': '＞',
+            '\\': '＼',
+            '^': '＾',
+            '`': "'",
+            '#': '＃'
+        }
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        return text.strip()
 
     def _create_fallback_mindmap(self) -> str:
         """Create a more informative fallback mindmap when generation fails"""
         return """mindmap
   root[コンテンツ解析結果]
+    def _verify_mermaid_syntax(self, content: str) -> bool:
+        """Verify if the generated mindmap follows the correct syntax"""
+        required_patterns = [
+            r'^mindmap\s*$',
+            r'^\s+\w+[\(\[\{].*[\)\]\}]\s*$'
+        ]
+        try:
+            lines = content.split('\n')
+            return all(any(re.match(pattern, line) for pattern in required_patterns) 
+                      for line in lines if line.strip())
+        except Exception as e:
+            logger.error(f"Mermaid syntax verification failed: {str(e)}")
+            return False
     1[⚠️ 処理状態]
       1.1[マインドマップの生成に問題が発生しました]
       1.2[以下をご確認ください]
