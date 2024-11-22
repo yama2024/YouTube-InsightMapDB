@@ -17,10 +17,38 @@ class MindMapGenerator:
             logger.debug(f"Starting mindmap creation with data structure: {list(data.keys())}")
             lines = ["mindmap"]
             
-            # Define style classes
+            # Enhanced style definitions
             lines.extend([
-                "  %%{init: {'theme': 'forest'}}%%",
-                "  %%{init: {'flowchart': {'curve': 'monotoneX'}}}%%"
+                "  %%{init: {",
+                "    'theme': 'base',",
+                "    'themeVariables': {",
+                "      'primaryColor': '#57C7FF',",
+                "      'primaryTextColor': '#000',",
+                "      'primaryBorderColor': '#7C0000',",
+                "      'lineColor': '#00B5AA',",
+                "      'fontSize': '16px'",
+                "    },",
+                "    'mindmap': {",
+                "      'padding': 16,",
+                "      'nodeSpacing': 50",
+                "    },",
+                "    'flowchart': {",
+                "      'curve': 'basis',",
+                "      'htmlLabels': true,",
+                "      'rankSpacing': 80,",
+                "      'nodeSpacing': 50",
+                "    }",
+                "  }}%%",
+                "",
+                "  classDef root fill:#FF9999,stroke:#FF0000,stroke-width:2px,color:#000",
+                "  classDef category fill:#99FF99,stroke:#00FF00,stroke-width:2px,color:#000",
+                "  classDef critical fill:#FF7070,stroke:#FF0000,stroke-width:2px,color:#000,font-weight:bold",
+                "  classDef important fill:#FFB570,stroke:#FF7F00,stroke-width:2px,color:#000",
+                "  classDef normal fill:#70FF70,stroke:#00FF00,stroke-width:1px,color:#000",
+                "  classDef auxiliary fill:#70B5FF,stroke:#0000FF,stroke-width:1px,color:#000",
+                "  classDef note fill:#FFE070,stroke:#FFD700,stroke-width:1px,color:#000,font-style:italic",
+                "  classDef content fill:#FFFFFF,stroke:#CCCCCC,stroke-width:1px,color:#000",
+                "  classDef conclusion fill:#FF99CC,stroke:#FF69B4,stroke-width:2px,color:#000,font-weight:bold"
             ])
             
             # Root node with enhanced styling
@@ -111,20 +139,32 @@ class MindMapGenerator:
                    .replace(">", "＞")
                    .strip())
 
-    def _create_fallback_mindmap(self) -> str:
-        """Create a more informative fallback mindmap when generation fails"""
-        return """mindmap
-  root[コンテンツ解析結果]
-    1[⚠️ 処理状態]
-      1.1[マインドマップの生成に問題が発生しました]
-      1.2[以下をご確認ください]
-        1.2.1[・入力データの形式]
-        1.2.2[・テキストの長さ]
-        1.2.3[・特殊文字の使用]
-    2[🔄 次のステップ]
-      2.1[・ページを更新]
-      2.2[・入力を確認]
-      2.3[・再度実行]"""
+    def _create_fallback_mindmap(self, error_details: str = None) -> str:
+        """より詳細な情報を含むフォールバックマインドマップの生成"""
+        lines = [
+            "mindmap",
+            "  %%{init: {'theme': 'base'}}%%",
+            "  classDef error fill:#FFE6E6,stroke:#FF0000,stroke-width:2px,color:#FF0000",
+            "  classDef warning fill:#FFF3E6,stroke:#FFA500,stroke-width:2px,color:#FFA500",
+            "  classDef info fill:#E6F3FF,stroke:#0066CC,stroke-width:1px,color:#0066CC",
+            "",
+            "  root((⚠️ マインドマップ生成エラー)):::error",
+            "    error[問題が発生しました]:::error",
+            f"      details[\"{error_details if error_details else 'マインドマップの生成に問題が発生しました'}\"]:::warning",
+            "    check[確認事項]:::info",
+            "      check.1[入力データの形式を確認]:::info",
+            "      check.2[テキストの長さを確認]:::info",
+            "      check.3[特殊文字の使用を確認]:::info",
+            "    solution[対処方法]:::info",
+            "      solution.1[ページを更新して再試行]:::info",
+            "      solution.2[入力データを修正]:::info",
+            "      solution.3[サポートに問い合わせ]:::info",
+            "    tips[ヒント]:::info",
+            "      tips.1[データ形式はJSONである必要があります]:::info",
+            "      tips.2[テキストは適切な長さに収める]:::info",
+            "      tips.3[特殊文字は適切にエスケープ]:::info"
+        ]
+        return "\n".join(lines)
 
     def _validate_json_structure(self, data: Dict) -> bool:
         """Validate the JSON structure with enhanced validation and logging"""
@@ -351,26 +391,57 @@ class MindMapGenerator:
         return "auxiliary"
 
     def _chunk_content(self, content: str, chunk_size: int = 40) -> List[str]:
-        """Chunk content into readable parts with smart splitting"""
+        """より自然な文章の分割を実現する改善版チャンク処理"""
         if len(content) <= chunk_size:
             return [content]
-            
+
+        # 句読点による分割を優先
+        sentence_delimiters = ['。', '！', '？', '．', '\n']
         parts = []
         current_chunk = ""
-        words = content.split()
-        
-        for word in words:
-            if len(current_chunk) + len(word) + 1 <= chunk_size:
-                current_chunk += (" " + word if current_chunk else word)
-            else:
+        buffer = ""
+
+        for char in content:
+            buffer += char
+            
+            # 句読点で区切る
+            if char in sentence_delimiters:
+                if len(current_chunk) + len(buffer) <= chunk_size:
+                    current_chunk += buffer
+                    buffer = ""
+                else:
+                    if current_chunk:
+                        parts.append(current_chunk)
+                    current_chunk = buffer
+                    buffer = ""
+            
+            # バッファが一定サイズを超えたら強制分割
+            if len(buffer) >= chunk_size:
                 if current_chunk:
                     parts.append(current_chunk)
-                current_chunk = word
-                
-        if current_chunk:
-            parts.append(current_chunk)
-            
-        return parts
+                parts.append(buffer.strip())
+                current_chunk = ""
+                buffer = ""
+
+        # 残りのテキストを処理
+        remaining = current_chunk + buffer
+        if remaining:
+            if len(remaining) <= chunk_size:
+                parts.append(remaining)
+            else:
+                words = remaining.split()
+                current_chunk = ""
+                for word in words:
+                    if len(current_chunk) + len(word) + 1 <= chunk_size:
+                        current_chunk += (" " + word if current_chunk else word)
+                    else:
+                        if current_chunk:
+                            parts.append(current_chunk)
+                        current_chunk = word
+                if current_chunk:
+                    parts.append(current_chunk)
+
+        return [part.strip() for part in parts if part.strip()]
 
     def generate_mindmap(self, text: str) -> Tuple[str, bool]:
         """Generate a mindmap from the given text"""
