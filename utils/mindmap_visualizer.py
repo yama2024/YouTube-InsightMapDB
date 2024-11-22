@@ -8,13 +8,20 @@ def render_mindmap(mindmap_data: dict) -> None:
     <div id="mindmap-container" style="width: 100%; height: 700px; background: rgba(255, 255, 255, 0.1); border-radius: 10px;">
         <style>
             .node {
-                padding: 12px;
                 border-radius: 8px;
                 margin: 5px;
                 background: rgba(255, 255, 255, 0.9);
                 box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
                 transition: all 0.3s ease;
                 cursor: pointer;
+                position: relative;
+            }
+            
+            .node-content {
+                padding: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: flex-start;
             }
             .node:hover {
                 transform: scale(1.02);
@@ -92,12 +99,17 @@ def render_mindmap(mindmap_data: dict) -> None:
                 .attr('rx', 8)
                 .attr('ry', 8);
                 
-            // Add text content
-            node.append('text')
+            console.log('Adding text content to nodes');
+            // Add text content with improved positioning
+            const textContainer = node.append('g')
+                .attr('class', 'node-content');
+
+            textContainer.append('text')
                 .text(d => d.data.text)
                 .attr('dy', '0.32em')
-                .attr('x', 5)
+                .attr('x', 10)
                 .each(function(d) {
+                    console.log('Processing text for node:', d.data.text);
                     // Wrap text if too long
                     const text = d3.select(this);
                     const words = d.data.text.split(/\\s+/);
@@ -129,20 +141,40 @@ def render_mindmap(mindmap_data: dict) -> None:
                     });
                 });
                 
-            // Adjust rectangle sizes to fit text
+            console.log('Adjusting node sizes');
+            // Adjust rectangle sizes to fit text with improved calculations
             node.selectAll('rect')
                 .attr('width', function(d) {
-                    const textBox = this.parentNode.querySelector('text').getBBox();
-                    return textBox.width + 20;
+                    try {
+                        const textBox = this.parentNode.querySelector('text').getBBox();
+                        const width = Math.max(textBox.width + 30, 100); // minimum width of 100px
+                        console.log('Node width calculated:', width);
+                        return width;
+                    } catch (error) {
+                        console.error('Error calculating width:', error);
+                        return 150; // fallback width
+                    }
                 })
                 .attr('height', function(d) {
-                    const textBox = this.parentNode.querySelector('text').getBBox();
-                    return textBox.height + 20;
+                    try {
+                        const textBox = this.parentNode.querySelector('text').getBBox();
+                        const height = Math.max(textBox.height + 20, 40); // minimum height of 40px
+                        console.log('Node height calculated:', height);
+                        return height;
+                    } catch (error) {
+                        console.error('Error calculating height:', error);
+                        return 50; // fallback height
+                    }
                 })
-                .attr('x', -5)
+                .attr('x', -10)
                 .attr('y', function(d) {
-                    const textBox = this.parentNode.querySelector('text').getBBox();
-                    return -textBox.height/2 - 5;
+                    try {
+                        const textBox = this.parentNode.querySelector('text').getBBox();
+                        return -textBox.height/2 - 10;
+                    } catch (error) {
+                        console.error('Error calculating y position:', error);
+                        return -25; // fallback y position
+                    }
                 });
                 
             // Add click handlers for node folding
