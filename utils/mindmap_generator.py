@@ -315,6 +315,46 @@ class MindMapGenerator:
         elif importance >= 3:
             return "normal"
         return "auxiliary"
+    def _escape_text(self, text: str) -> str:
+        """Mermaid構文のための特殊文字をエスケープ"""
+        if not text:
+            return ""
+            
+        # Mermaid構文の特殊文字をエスケープ
+        escape_chars = {
+            '"': '\\"',
+            '\\': '\\\\',
+            '[': '\\[',
+            ']': '\\]',
+            '(': '\\(',
+            ')': '\\)',
+            '{': '\\{',
+            '}': '\\}',
+            '#': '\\#',
+            '*': '\\*',
+            '_': '\\_',
+            '`': '\\`',
+            '+': '\\+',
+            '-': '\\-',
+            '.': '\\.',
+            '!': '\\!',
+            '&': '\\&',
+            '|': '\\|',
+            '<': '\\<',
+            '>': '\\>'
+        }
+        
+        escaped_text = text
+        for char, escaped_char in escape_chars.items():
+            escaped_text = escaped_text.replace(char, escaped_char)
+            
+        # 改行文字を空白に置換
+        escaped_text = escaped_text.replace('\n', ' ').replace('\r', ' ')
+        
+        # 連続する空白を1つに
+        escaped_text = ' '.join(escaped_text.split())
+        
+        return escaped_text
     def generate_mindmap(self, text: str) -> Tuple[str, bool]:
         """Generate a mindmap from the analyzed text with enhanced validation"""
         try:
@@ -540,45 +580,35 @@ class MindMapGenerator:
 
         return [part.strip() for part in parts if part.strip()]
 
-    def generate_mindmap(self, text: str) -> Tuple[str, bool]:
-        """マインドマップを生成し、検証とエラーハンドリングを強化"""
-        try:
-            if not text or not isinstance(text, str):
-                logger.error(f"無効な入力テキストタイプ: {type(text)}")
-                return self._create_fallback_mindmap("無効な入力テキスト形式"), False
-
-            # キャッシュの確認
-            cache_key = hashlib.md5(f"{text}_{self.__class__.__name__}".encode()).hexdigest()
-            if cache_key in self._cache:
-                logger.info("キャッシュからマインドマップを取得")
-                return self._cache[cache_key], True
-
-            # JSONデータの解析と検証
-            try:
-                data = json.loads(text)
-                if not self._validate_json_structure(data):
-                    logger.warning("無効なJSON構造を検出、フォールバック構造を使用")
-                    return self._create_fallback_mindmap("無効なデータ構造"), False
-            except json.JSONDecodeError as e:
-                logger.error(f"JSONパースエラー: {str(e)}")
-                return self._create_fallback_mindmap("JSONパースエラー"), False
-
-            # マインドマップの生成
-            try:
-                mermaid_syntax = self._create_mermaid_mindmap(data)
-                if not mermaid_syntax or mermaid_syntax.count('\n') < 3:
-                    logger.warning("生成されたマインドマップが無効")
-                    return self._create_fallback_mindmap("マインドマップ生成エラー"), False
-
-                # 有効な結果をキャッシュ
-                self._cache[cache_key] = mermaid_syntax
-                logger.info("新しいマインドマップを生成してキャッシュ")
-                return mermaid_syntax, True
-
-            except Exception as e:
-                logger.error(f"マインドマップ生成中のエラー: {str(e)}")
-                return self._create_fallback_mindmap(f"生成エラー: {str(e)}"), False
-
-        except Exception as e:
-            logger.error(f"予期せぬエラー: {str(e)}")
-            return self._create_fallback_mindmap(f"システムエラー: {str(e)}"), False
+    def _validate_mermaid_syntax(self, mermaid_syntax: str) -> bool:
+        """Mermaid構文の妥当性を検証"""
+        if not mermaid_syntax or not isinstance(mermaid_syntax, str):
+            return False
+            
+        required_elements = [
+            "mindmap",
+            "%%{init:",
+            "classDef",
+            "root(("
+        ]
+        
+        # 必須要素の確認
+        for element in required_elements:
+            if element not in mermaid_syntax:
+                logger.warning(f"Required Mermaid element missing: {element}")
+                return False
+                
+        # インデントの一貫性を確認
+        lines = mermaid_syntax.split('\n')
+        current_indent = 0
+        for line in lines:
+            if not line.strip():
+                continue
+            
+            indent = len(line) - len(line.lstrip())
+            if indent > current_indent + 2:
+                logger.warning(f"Invalid indentation detected: {indent}")
+                return False
+            current_indent = indent
+            
+        return True
