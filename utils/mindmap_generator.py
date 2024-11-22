@@ -12,7 +12,7 @@ class MindMapGenerator:
     def __init__(self):
         self._cache = {}
         self.api_key = os.environ.get('MAPIFY_API_KEY')
-        self.api_url = "https://api.mapify.ai/v1/mindmap"
+        self.api_url = "https://api.mapify.ai/api/v1/mindmaps"
 
     def _create_mermaid_mindmap(self, data: Dict) -> str:
         """Generate Mermaid mindmap syntax with proper escaping and validation"""
@@ -250,26 +250,62 @@ class MindMapGenerator:
             return None
 
     def _call_mapify_api(self, data: Dict) -> Optional[str]:
-        """Call Mapify API to generate mindmap"""
+        """Call Mapify API to generate mindmap with enhanced error handling"""
         try:
+            if not self.api_key:
+                logger.error("Mapify API key is not set")
+                return None
+
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Accept": "application/json"
             }
             
+            # 正しいAPIエンドポイントを使用
+            api_url = "https://api.mapify.ai/api/v1/mindmaps"
+            
+            logger.info(f"Sending request to Mapify API with data size: {len(str(data))} bytes")
             response = requests.post(
-                self.api_url,
+                api_url,
                 headers=headers,
-                json=data
+                json=data,
+                timeout=30  # タイムアウトを設定
             )
             
+            response_data = response.json() if response.text else {}
+            
             if response.status_code == 200:
-                return response.text
-            else:
-                logger.error(f"Mapify API error: {response.status_code} - {response.text}")
+                logger.info("Mapify API request successful")
+                if "html" in response_data:
+                    return response_data["html"]
+                else:
+                    logger.error("API response missing HTML content")
+                    return None
+            elif response.status_code == 401:
+                logger.error("Mapify API authentication failed. Please check your API key.")
                 return None
+            elif response.status_code == 429:
+                logger.error("Mapify API rate limit exceeded. Please try again later.")
+                return None
+            else:
+                logger.error(
+                    f"Mapify API error: Status={response.status_code}, "
+                    f"Response={response.text}, Headers={dict(response.headers)}"
+                )
+                return None
+
+        except requests.exceptions.Timeout:
+            logger.error("Mapify API request timed out")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Connection error while calling Mapify API: {str(e)}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Mapify API response: {str(e)}")
+            return None
         except Exception as e:
-            logger.error(f"Error calling Mapify API: {str(e)}")
+            logger.error(f"Unexpected error calling Mapify API: {str(e)}", exc_info=True)
             return None
 
     def generate_mindmap(self, text: str) -> Tuple[str, bool]:
