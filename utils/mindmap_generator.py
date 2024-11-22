@@ -1,6 +1,5 @@
 import logging
-import hashlib
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 import json
 
 # Set up logging
@@ -12,110 +11,66 @@ class MindMapGenerator:
         self._cache = {}
 
     def _create_mermaid_mindmap(self, data: Dict) -> str:
-        """Generate Mermaid mindmap syntax with enhanced styling and hierarchy"""
+        """Generate Mermaid mindmap syntax with proper escaping and validation"""
         try:
             logger.debug(f"Starting mindmap creation with data structure: {list(data.keys())}")
             lines = ["mindmap"]
             
-            # Enhanced style definitions
-            lines.extend([
-                "  %%{init: {",
-                "    'theme': 'base',",
-                "    'themeVariables': {",
-                "      'primaryColor': '#57C7FF',",
-                "      'primaryTextColor': '#000',",
-                "      'primaryBorderColor': '#7C0000',",
-                "      'lineColor': '#00B5AA',",
-                "      'fontSize': '16px'",
-                "    },",
-                "    'mindmap': {",
-                "      'padding': 16,",
-                "      'nodeSpacing': 50",
-                "    },",
-                "    'flowchart': {",
-                "      'curve': 'basis',",
-                "      'htmlLabels': true,",
-                "      'rankSpacing': 80,",
-                "      'nodeSpacing': 50",
-                "    }",
-                "  }}%%",
-                "",
-                "  classDef root fill:#FF9999,stroke:#FF0000,stroke-width:2px,color:#000",
-                "  classDef category fill:#99FF99,stroke:#00FF00,stroke-width:2px,color:#000",
-                "  classDef critical fill:#FF7070,stroke:#FF0000,stroke-width:2px,color:#000,font-weight:bold",
-                "  classDef important fill:#FFB570,stroke:#FF7F00,stroke-width:2px,color:#000",
-                "  classDef normal fill:#70FF70,stroke:#00FF00,stroke-width:1px,color:#000",
-                "  classDef auxiliary fill:#70B5FF,stroke:#0000FF,stroke-width:1px,color:#000",
-                "  classDef note fill:#FFE070,stroke:#FFD700,stroke-width:1px,color:#000,font-style:italic",
-                "  classDef content fill:#FFFFFF,stroke:#CCCCCC,stroke-width:1px,color:#000",
-                "  classDef conclusion fill:#FF99CC,stroke:#FF69B4,stroke-width:2px,color:#000,font-weight:bold"
-            ])
-            
-            # Root node with enhanced styling
+            # Root node from video overview
             overview = self._clean_text(data.get("動画の概要", "コンテンツ概要"))
             if len(overview) > 50:
                 overview = overview[:47] + "..."
-            lines.append(f"  root((📺 {overview})):::root")
+            lines.append(f"  root[{overview}]")
             logger.debug(f"Added root node: {overview}")
             
-            # Process points as primary branches with enhanced styling
+            # Process points as primary branches
             points = data.get("ポイント", [])
             if not points:
                 logger.warning("No points found in data")
                 return self._create_fallback_mindmap()
                 
             logger.debug(f"Processing {len(points)} points")
-            categories = self._categorize_points(points)
-            
-            # Process points by category
-            for category, cat_points in categories.items():
-                # Add category node
-                cat_id = self._get_category_id(category)
-                lines.append(f"    {cat_id}[{self._get_category_icon(category)} {category}]:::category")
+            for i, point in enumerate(points, 1):
+                if not isinstance(point, dict):
+                    logger.error(f"Invalid point structure at index {i}")
+                    continue
+                    
+                title = self._clean_text(point.get("タイトル", ""))
+                if not title:
+                    logger.warning(f"Empty title for point {i}")
+                    continue
                 
-                # Process points in this category
-                for i, point in enumerate(cat_points, 1):
-                    if not isinstance(point, dict):
-                        logger.error(f"Invalid point structure at index {i}")
-                        continue
-                        
-                    title = self._clean_text(point.get("タイトル", ""))
-                    if not title:
-                        logger.warning(f"Empty title for point {i}")
-                        continue
-                    
-                    # Style based on importance
-                    importance = point.get("重要度", 3)
-                    importance_style = self._get_importance_style(importance)
-                    point_id = f"{cat_id}.{i}"
-                    
-                    # Add point with styled node
-                    importance_mark = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "・"
-                    lines.append(f"      {point_id}({importance_mark} {title}):::{importance_style}")
-                    
-                    # Add content with enhanced styling
-                    content = self._clean_text(point.get("内容", ""))
-                    if content:
-                        # Create content chunks with better formatting
-                        content_parts = self._chunk_content(content)
-                        for j, part in enumerate(content_parts, 1):
-                            if part.strip():
-                                lines.append(f"        {point_id}.{j}[{part}]:::content")
-                    
-                    # Add supplementary info with distinct styling
-                    if "補足情報" in point and point["補足情報"]:
-                        suppl_info = self._clean_text(point["補足情報"])
-                        if suppl_info:
-                            lines.append(f"        {point_id}.s>💡 {suppl_info[:40]}...]:::note")
+                # Add importance indicator
+                importance = point.get("重要度", 3)
+                importance_mark = "🔥" if importance >= 4 else "⭐" if importance >= 2 else "・"
+                lines.append(f"    {i}[{importance_mark} {title}]")
+                
+                # Add content as sub-branch
+                content = self._clean_text(point.get("内容", ""))
+                if content:
+                    # Split long content into multiple lines
+                    content_parts = [content[j:j+40] for j in range(0, len(content), 40)]
+                    for j, part in enumerate(content_parts, 1):
+                        if part.strip():
+                            lines.append(f"      {i}.{j}[{part}]")
+                
+                # Add supplementary info if available
+                if "補足情報" in point and point["補足情報"]:
+                    suppl_info = self._clean_text(point["補足情報"])
+                    if suppl_info:
+                        lines.append(f"      {i}.s[💡 {suppl_info[:40]}...]")
             
-            # Add conclusion with special styling
+            # Add conclusion as a separate branch
             conclusion = self._clean_text(data.get("結論", ""))
             if conclusion:
-                lines.append("    c{💡 結論}:::conclusion")
-                conclusion_parts = self._chunk_content(conclusion)
-                for i, part in enumerate(conclusion_parts, 1):
-                    if part.strip():
-                        lines.append(f"      c.{i}[{part}]:::conclusion-content")
+                lines.append("    c[💡 結論]")
+                if len(conclusion) > 40:
+                    conclusion_parts = [conclusion[i:i+40] for i in range(0, len(conclusion), 40)]
+                    for i, part in enumerate(conclusion_parts, 1):
+                        if part.strip():
+                            lines.append(f"      c.{i}[{part}]")
+                else:
+                    lines.append(f"      c.1[{conclusion}]")
             
             mindmap = "\n".join(lines)
             logger.debug(f"Generated mindmap structure:\n{mindmap}")
@@ -139,32 +94,20 @@ class MindMapGenerator:
                    .replace(">", "＞")
                    .strip())
 
-    def _create_fallback_mindmap(self, error_details: str = None) -> str:
-        """より詳細な情報を含むフォールバックマインドマップの生成"""
-        lines = [
-            "mindmap",
-            "  %%{init: {'theme': 'base'}}%%",
-            "  classDef error fill:#FFE6E6,stroke:#FF0000,stroke-width:2px,color:#FF0000",
-            "  classDef warning fill:#FFF3E6,stroke:#FFA500,stroke-width:2px,color:#FFA500",
-            "  classDef info fill:#E6F3FF,stroke:#0066CC,stroke-width:1px,color:#0066CC",
-            "",
-            "  root((⚠️ マインドマップ生成エラー)):::error",
-            "    error[問題が発生しました]:::error",
-            f"      details[\"{error_details if error_details else 'マインドマップの生成に問題が発生しました'}\"]:::warning",
-            "    check[確認事項]:::info",
-            "      check.1[入力データの形式を確認]:::info",
-            "      check.2[テキストの長さを確認]:::info",
-            "      check.3[特殊文字の使用を確認]:::info",
-            "    solution[対処方法]:::info",
-            "      solution.1[ページを更新して再試行]:::info",
-            "      solution.2[入力データを修正]:::info",
-            "      solution.3[サポートに問い合わせ]:::info",
-            "    tips[ヒント]:::info",
-            "      tips.1[データ形式はJSONである必要があります]:::info",
-            "      tips.2[テキストは適切な長さに収める]:::info",
-            "      tips.3[特殊文字は適切にエスケープ]:::info"
-        ]
-        return "\n".join(lines)
+    def _create_fallback_mindmap(self) -> str:
+        """Create a more informative fallback mindmap when generation fails"""
+        return """mindmap
+  root[コンテンツ解析結果]
+    1[⚠️ 処理状態]
+      1.1[マインドマップの生成に問題が発生しました]
+      1.2[以下をご確認ください]
+        1.2.1[・入力データの形式]
+        1.2.2[・テキストの長さ]
+        1.2.3[・特殊文字の使用]
+    2[🔄 次のステップ]
+      2.1[・ページを更新]
+      2.2[・入力を確認]
+      2.3[・再度実行]"""
 
     def _validate_json_structure(self, data: Dict) -> bool:
         """Validate the JSON structure with enhanced validation and logging"""
@@ -247,11 +190,9 @@ class MindMapGenerator:
                 logger.error(f"Point {index} field {field} has wrong type: expected {expected_type}, got {type(value)}")
                 return False
                 
-            if expected_type == str and value is not None:
-                stripped_value = value.strip()
-                if len(stripped_value) < min_val or len(stripped_value) > max_val:
-                    logger.error(f"Point {index} field {field} length out of range: {len(stripped_value)} not in [{min_val}, {max_val}]")
-                    return False
+            if expected_type == str and (len(value.strip()) < min_val or len(value.strip()) > max_val):
+                logger.error(f"Point {index} field {field} length out of range: {len(value)} not in [{min_val}, {max_val}]")
+                return False
                 
             if expected_type == int and (value < min_val or value > max_val):
                 logger.error(f"Point {index} field {field} value out of range: {value} not in [{min_val}, {max_val}]")
@@ -259,102 +200,6 @@ class MindMapGenerator:
         
         return True
             
-    def _categorize_points(self, points: List[Dict]) -> Dict:
-        """ポイントをカテゴリー別に分類する"""
-        categories = {}
-        
-        for point in points:
-            # カテゴリーを決定（タイトルとキーワードから推測）
-            title = point.get("タイトル", "").lower()
-            content = point.get("内容", "").lower()
-            importance = point.get("重要度", 3)
-            
-            # カテゴリー判定ロジック
-            if any(key in title or key in content for key in ["概要", "まとめ", "導入"]):
-                category = "概要・導入"
-            elif any(key in title or key in content for key in ["手順", "方法", "やり方"]):
-                category = "手順・方法"
-            elif any(key in title or key in content for key in ["結果", "効果", "成果"]):
-                category = "結果・効果"
-            elif importance >= 4:
-                category = "重要ポイント"
-            else:
-                category = "その他"
-            
-            # カテゴリーにポイントを追加
-            if category not in categories:
-                categories[category] = []
-            categories[category].append(point)
-            
-        return categories
-
-    def _get_category_id(self, category: str) -> str:
-        """カテゴリー名から一意のIDを生成"""
-        # 特殊文字を処理し、短いハッシュを生成
-        safe_category = "".join(c for c in category if c.isalnum())
-        hash_obj = hashlib.md5(safe_category.encode())
-        return f"cat_{hash_obj.hexdigest()[:6]}"
-
-    def _get_category_icon(self, category: str) -> str:
-        """カテゴリーに応じた適切なアイコンを割り当て"""
-        icons = {
-            "概要・導入": "📝",
-            "手順・方法": "📌",
-            "結果・効果": "🎯",
-            "重要ポイント": "⭐",
-            "その他": "💡"
-        }
-        return icons.get(category, "•")
-
-    def _get_importance_style(self, importance: int) -> str:
-        """重要度に応じたスタイルクラスを割り当て"""
-        if importance >= 5:
-            return "critical"
-        elif importance >= 4:
-            return "important"
-        elif importance >= 3:
-            return "normal"
-        return "auxiliary"
-    def _escape_text(self, text: str) -> str:
-        """Mermaid構文のための特殊文字をエスケープ"""
-        if not text:
-            return ""
-            
-        # Mermaid構文の特殊文字をエスケープ
-        escape_chars = {
-            '"': '\\"',
-            '\\': '\\\\',
-            '[': '\\[',
-            ']': '\\]',
-            '(': '\\(',
-            ')': '\\)',
-            '{': '\\{',
-            '}': '\\}',
-            '#': '\\#',
-            '*': '\\*',
-            '_': '\\_',
-            '`': '\\`',
-            '+': '\\+',
-            '-': '\\-',
-            '.': '\\.',
-            '!': '\\!',
-            '&': '\\&',
-            '|': '\\|',
-            '<': '\\<',
-            '>': '\\>'
-        }
-        
-        escaped_text = text
-        for char, escaped_char in escape_chars.items():
-            escaped_text = escaped_text.replace(char, escaped_char)
-            
-        # 改行文字を空白に置換
-        escaped_text = escaped_text.replace('\n', ' ').replace('\r', ' ')
-        
-        # 連続する空白を1つに
-        escaped_text = ' '.join(escaped_text.split())
-        
-        return escaped_text
     def generate_mindmap(self, text: str) -> Tuple[str, bool]:
         """Generate a mindmap from the analyzed text with enhanced validation"""
         try:
@@ -404,7 +249,7 @@ class MindMapGenerator:
                     }],
                     "結論": "テキストの解析に失敗しました"
                 }
-                
+
             # Generate mindmap with validated data
             mermaid_syntax = self._create_mermaid_mindmap(data)
             
@@ -418,197 +263,5 @@ class MindMapGenerator:
             return self._create_fallback_mindmap(), False
             
         except Exception as e:
-            logger.error(f"Error processing text: {str(e)}", exc_info=True)
+            logger.error(f"マインドマップの生成中にエラーが発生しました: {str(e)}")
             return self._create_fallback_mindmap(), False
-
-    def _validate_data(self, text: str) -> Optional[Dict]:
-        """Validate and parse the input text data"""
-        try:
-            # Parse JSON data
-            data = json.loads(text)
-            
-            # Validate structure
-            if not self._validate_json_structure(data):
-                return None
-                
-            return data
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON format")
-            return None
-        except Exception as e:
-            logger.error(f"Data validation error: {str(e)}")
-            return None
-
-    def _create_mermaid_mindmap(self, data: Dict) -> str:
-        """Mermaid構文に準拠したマインドマップを生成"""
-        try:
-            lines = [
-                "mindmap",
-                "  %%{init: {'theme': 'default', 'themeVariables': { 'fontSize': '16px'}}}%%",
-                "  classDef important fill:#ffebee,stroke:#f44336,stroke-width:2px,color:#d32f2f",
-                "  classDef normal fill:#e8f5e9,stroke:#4caf50,stroke-width:1px,color:#2e7d32",
-                "  classDef auxiliary fill:#e3f2fd,stroke:#2196f3,stroke-width:1px,color:#1976d2",
-                ""
-            ]
-
-            # ルートノードの追加
-            title = self._escape_text(data.get("動画の概要", "コンテンツ概要"))
-            lines.append(f"  root(({title}))")
-
-            # ポイントのカテゴリー分類
-            points = data.get("ポイント", [])
-            categories = self._categorize_points(points)
-
-            # カテゴリーごとのノード生成
-            for category, items in categories.items():
-                cat_id = self._get_category_id(category)
-                icon = self._get_category_icon(category)
-                cat_text = self._escape_text(f"{icon} {category}")
-                lines.append(f"    {cat_id}[{cat_text}]")
-
-                # カテゴリー内のポイントを追加
-                for idx, point in enumerate(items):
-                    point_id = f"{cat_id}_{idx}"
-                    title = self._escape_text(point.get("タイトル", ""))
-                    content = self._escape_text(point.get("内容", ""))
-                    importance = point.get("重要度", 3)
-                    style_class = self._get_importance_style(importance)
-
-                    # タイトルとコンテンツを分割して追加
-                    lines.append(f"      {point_id}[\"{title}\"]:::{style_class}")
-                    
-                    # コンテンツを適切なサイズに分割
-                    content_chunks = self._chunk_content(content)
-                    for chunk_idx, chunk in enumerate(content_chunks):
-                        chunk_id = f"{point_id}_c{chunk_idx}"
-                        chunk_text = self._escape_text(chunk)
-                        lines.append(f"        {chunk_id}[\"{chunk_text}\"]")
-
-            # 結論の追加
-            conclusion = self._escape_text(data.get("結論", ""))
-            if conclusion:
-                lines.append("    conclusion[\"💡 結論\"]")
-                conclusion_chunks = self._chunk_content(conclusion)
-                for idx, chunk in enumerate(conclusion_chunks):
-                    chunk_text = self._escape_text(chunk)
-                    lines.append(f"      conclusion_{idx}[\"{chunk_text}\"]")
-
-            return "\n".join(lines)
-
-        except Exception as e:
-            logger.error(f"マインドマップ生成中にエラーが発生: {str(e)}")
-            return self._create_fallback_mindmap(str(e))
-
-    def _get_category_id(self, category: str) -> str:
-        """Generate a unique ID for each category"""
-        category_ids = {
-            "重要ポイント": "key",
-            "主要な情報": "main",
-            "補足説明": "sub"
-        }
-        return category_ids.get(category, "misc")
-
-    def _get_category_icon(self, category: str) -> str:
-        """Get appropriate icon for each category"""
-        icons = {
-            "重要ポイント": "🎯",
-            "主要な情報": "📌",
-            "補足説明": "ℹ️"
-        }
-        return icons.get(category, "•")
-
-    def _get_importance_style(self, importance: int) -> str:
-        """Get style class based on importance level"""
-        if importance >= 4:
-            return "critical"
-        elif importance >= 3:
-            return "important"
-        elif importance >= 2:
-            return "normal"
-        return "auxiliary"
-
-    def _chunk_content(self, content: str, chunk_size: int = 40) -> List[str]:
-        """より自然な文章の分割を実現する改善版チャンク処理"""
-        if len(content) <= chunk_size:
-            return [content]
-
-        # 句読点による分割を優先
-        sentence_delimiters = ['。', '！', '？', '．', '\n']
-        parts = []
-        current_chunk = ""
-        buffer = ""
-
-        for char in content:
-            buffer += char
-            
-            # 句読点で区切る
-            if char in sentence_delimiters:
-                if len(current_chunk) + len(buffer) <= chunk_size:
-                    current_chunk += buffer
-                    buffer = ""
-                else:
-                    if current_chunk:
-                        parts.append(current_chunk)
-                    current_chunk = buffer
-                    buffer = ""
-            
-            # バッファが一定サイズを超えたら強制分割
-            if len(buffer) >= chunk_size:
-                if current_chunk:
-                    parts.append(current_chunk)
-                parts.append(buffer.strip())
-                current_chunk = ""
-                buffer = ""
-
-        # 残りのテキストを処理
-        remaining = current_chunk + buffer
-        if remaining:
-            if len(remaining) <= chunk_size:
-                parts.append(remaining)
-            else:
-                words = remaining.split()
-                current_chunk = ""
-                for word in words:
-                    if len(current_chunk) + len(word) + 1 <= chunk_size:
-                        current_chunk += (" " + word if current_chunk else word)
-                    else:
-                        if current_chunk:
-                            parts.append(current_chunk)
-                        current_chunk = word
-                if current_chunk:
-                    parts.append(current_chunk)
-
-        return [part.strip() for part in parts if part.strip()]
-
-    def _validate_mermaid_syntax(self, mermaid_syntax: str) -> bool:
-        """Mermaid構文の妥当性を検証"""
-        if not mermaid_syntax or not isinstance(mermaid_syntax, str):
-            return False
-            
-        required_elements = [
-            "mindmap",
-            "%%{init:",
-            "classDef",
-            "root(("
-        ]
-        
-        # 必須要素の確認
-        for element in required_elements:
-            if element not in mermaid_syntax:
-                logger.warning(f"Required Mermaid element missing: {element}")
-                return False
-                
-        # インデントの一貫性を確認
-        lines = mermaid_syntax.split('\n')
-        current_indent = 0
-        for line in lines:
-            if not line.strip():
-                continue
-            
-            indent = len(line) - len(line.lstrip())
-            if indent > current_indent + 2:
-                logger.warning(f"Invalid indentation detected: {indent}")
-                return False
-            current_indent = indent
-            
-        return True
