@@ -1,6 +1,8 @@
 import logging
-from typing import Dict, List, Tuple
+import os
+from typing import Dict, List, Tuple, Optional
 import json
+import requests
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -9,6 +11,8 @@ logger = logging.getLogger(__name__)
 class MindMapGenerator:
     def __init__(self):
         self._cache = {}
+        self.api_key = os.environ.get('MAPIFY_API_KEY')
+        self.api_url = "https://api.mapify.ai/v1/mindmap"
 
     def _create_mermaid_mindmap(self, data: Dict) -> str:
         """Generate Mermaid mindmap syntax with proper escaping and validation"""
@@ -200,8 +204,76 @@ class MindMapGenerator:
         
         return True
             
+    def _convert_to_mapify_format(self, data: Dict) -> Dict:
+        """Convert our JSON structure to Mapify API format"""
+        try:
+            # Convert the structure to Mapify's format
+            mapify_data = {
+                "title": data.get("動画の概要", "コンテンツ概要"),
+                "nodes": []
+            }
+            
+            # Add points as main nodes
+            points = data.get("ポイント", [])
+            for point in points:
+                node = {
+                    "text": f"{point.get('重要度', 3)*'★'} {point.get('タイトル', '')}",
+                    "children": []
+                }
+                
+                # Add content as child node
+                if point.get("内容"):
+                    node["children"].append({
+                        "text": point["内容"]
+                    })
+                
+                # Add supplementary info if available
+                if point.get("補足情報"):
+                    node["children"].append({
+                        "text": f"💡 {point['補足情報']}"
+                    })
+                
+                mapify_data["nodes"].append(node)
+            
+            # Add conclusion as a separate node
+            if "結論" in data and data["結論"]:
+                mapify_data["nodes"].append({
+                    "text": "💡 結論",
+                    "children": [{
+                        "text": data["結論"]
+                    }]
+                })
+            
+            return mapify_data
+        except Exception as e:
+            logger.error(f"Error converting to Mapify format: {str(e)}")
+            return None
+
+    def _call_mapify_api(self, data: Dict) -> Optional[str]:
+        """Call Mapify API to generate mindmap"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(
+                self.api_url,
+                headers=headers,
+                json=data
+            )
+            
+            if response.status_code == 200:
+                return response.text
+            else:
+                logger.error(f"Mapify API error: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            logger.error(f"Error calling Mapify API: {str(e)}")
+            return None
+
     def generate_mindmap(self, text: str) -> Tuple[str, bool]:
-        """Generate a mindmap from the analyzed text with enhanced validation"""
+        """Generate a mindmap from the analyzed text using Mapify API"""
         try:
             if not text or not isinstance(text, str):
                 logger.error(f"Invalid input text type: {type(text)}")
@@ -209,57 +281,37 @@ class MindMapGenerator:
 
             logger.info(f"Generating mindmap for text of length: {len(text)}")
             
-            # Check cache with reliable key generation
+            # Check cache
             cache_key = hash(f"{text}_{self.__class__.__name__}")
             if cache_key in self._cache:
                 logger.info("キャッシュからマインドマップを取得しました")
-                cached_content = self._cache[cache_key]
-                logger.debug(f"Cached mindmap length: {len(cached_content)}")
-                return cached_content, True
+                return self._cache[cache_key], True
 
-            # Parse and validate JSON
+            # Parse JSON
             try:
-                logger.debug("Attempting to parse JSON data")
                 data = json.loads(text)
-                logger.info("JSON parsing successful")
-                
                 if not self._validate_json_structure(data):
                     logger.warning("Invalid JSON structure detected, using fallback structure")
-                    logger.debug(f"Received data structure: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
-                    data = {
-                        "動画の概要": "コンテンツの要約",
-                        "ポイント": [
-                            {
-                                "タイトル": "主要なポイント",
-                                "内容": "動画の内容を確認できませんでした",
-                                "重要度": 3
-                            }
-                        ],
-                        "結論": "内容を確認できませんでした"
-                    }
-                    logger.info("Using fallback data structure")
+                    return self._create_fallback_mindmap(), False
+                    
+                # Convert to Mapify format
+                mapify_data = self._convert_to_mapify_format(data)
+                if not mapify_data:
+                    logger.error("Failed to convert data to Mapify format")
+                    return self._create_fallback_mindmap(), False
+                
+                # Call Mapify API
+                mindmap_html = self._call_mapify_api(mapify_data)
+                if mindmap_html:
+                    self._cache[cache_key] = mindmap_html
+                    logger.info("新しいマインドマップを生成してキャッシュしました")
+                    return mindmap_html, True
+                
             except json.JSONDecodeError as e:
-                logger.warning("Invalid JSON format, creating basic structure")
-                data = {
-                    "動画の概要": "コンテンツ概要",
-                    "ポイント": [{
-                        "タイトル": "概要",
-                        "内容": text[:100] + "..." if len(text) > 100 else text,
-                        "重要度": 3
-                    }],
-                    "結論": "テキストの解析に失敗しました"
-                }
-
-            # Generate mindmap with validated data
-            mermaid_syntax = self._create_mermaid_mindmap(data)
+                logger.error(f"JSON parsing error: {str(e)}")
+                return self._create_fallback_mindmap(), False
             
-            # Cache only valid results
-            if mermaid_syntax and mermaid_syntax.count('\n') > 2:
-                self._cache[cache_key] = mermaid_syntax
-                logger.info("新しいマインドマップを生成してキャッシュしました")
-                return mermaid_syntax, True
-            
-            logger.warning("生成されたマインドマップが無効です")
+            logger.warning("マインドマップの生成に失敗しました")
             return self._create_fallback_mindmap(), False
             
         except Exception as e:
