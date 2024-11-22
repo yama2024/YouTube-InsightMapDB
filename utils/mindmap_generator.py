@@ -399,24 +399,65 @@ class MindMapGenerator:
             logger.error(f"Data validation error: {str(e)}")
             return None
 
-    def _categorize_points(self, points: List[Dict]) -> Dict:
-        """Categorize points based on their content and importance"""
-        categories = {
-            "重要ポイント": [],
-            "主要な情報": [],
-            "補足説明": []
-        }
-        
-        for point in points:
-            importance = point.get("重要度", 3)
-            if importance >= 4:
-                categories["重要ポイント"].append(point)
-            elif importance >= 2:
-                categories["主要な情報"].append(point)
-            else:
-                categories["補足説明"].append(point)
-                
-        return {k: v for k, v in categories.items() if v}  # Only return non-empty categories
+    def _create_mermaid_mindmap(self, data: Dict) -> str:
+        """Mermaid構文に準拠したマインドマップを生成"""
+        try:
+            lines = [
+                "mindmap",
+                "  %%{init: {'theme': 'default', 'themeVariables': { 'fontSize': '16px'}}}%%",
+                "  classDef important fill:#ffebee,stroke:#f44336,stroke-width:2px,color:#d32f2f",
+                "  classDef normal fill:#e8f5e9,stroke:#4caf50,stroke-width:1px,color:#2e7d32",
+                "  classDef auxiliary fill:#e3f2fd,stroke:#2196f3,stroke-width:1px,color:#1976d2",
+                ""
+            ]
+
+            # ルートノードの追加
+            title = self._escape_text(data.get("動画の概要", "コンテンツ概要"))
+            lines.append(f"  root(({title}))")
+
+            # ポイントのカテゴリー分類
+            points = data.get("ポイント", [])
+            categories = self._categorize_points(points)
+
+            # カテゴリーごとのノード生成
+            for category, items in categories.items():
+                cat_id = self._get_category_id(category)
+                icon = self._get_category_icon(category)
+                cat_text = self._escape_text(f"{icon} {category}")
+                lines.append(f"    {cat_id}[{cat_text}]")
+
+                # カテゴリー内のポイントを追加
+                for idx, point in enumerate(items):
+                    point_id = f"{cat_id}_{idx}"
+                    title = self._escape_text(point.get("タイトル", ""))
+                    content = self._escape_text(point.get("内容", ""))
+                    importance = point.get("重要度", 3)
+                    style_class = self._get_importance_style(importance)
+
+                    # タイトルとコンテンツを分割して追加
+                    lines.append(f"      {point_id}[\"{title}\"]:::{style_class}")
+                    
+                    # コンテンツを適切なサイズに分割
+                    content_chunks = self._chunk_content(content)
+                    for chunk_idx, chunk in enumerate(content_chunks):
+                        chunk_id = f"{point_id}_c{chunk_idx}"
+                        chunk_text = self._escape_text(chunk)
+                        lines.append(f"        {chunk_id}[\"{chunk_text}\"]")
+
+            # 結論の追加
+            conclusion = self._escape_text(data.get("結論", ""))
+            if conclusion:
+                lines.append("    conclusion[\"💡 結論\"]")
+                conclusion_chunks = self._chunk_content(conclusion)
+                for idx, chunk in enumerate(conclusion_chunks):
+                    chunk_text = self._escape_text(chunk)
+                    lines.append(f"      conclusion_{idx}[\"{chunk_text}\"]")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.error(f"マインドマップ生成中にエラーが発生: {str(e)}")
+            return self._create_fallback_mindmap(str(e))
 
     def _get_category_id(self, category: str) -> str:
         """Generate a unique ID for each category"""
@@ -500,30 +541,44 @@ class MindMapGenerator:
         return [part.strip() for part in parts if part.strip()]
 
     def generate_mindmap(self, text: str) -> Tuple[str, bool]:
-        """Generate a mindmap from the given text"""
+        """マインドマップを生成し、検証とエラーハンドリングを強化"""
         try:
-            cache_key = hashlib.md5(text.encode()).hexdigest()
+            if not text or not isinstance(text, str):
+                logger.error(f"無効な入力テキストタイプ: {type(text)}")
+                return self._create_fallback_mindmap("無効な入力テキスト形式"), False
+
+            # キャッシュの確認
+            cache_key = hashlib.md5(f"{text}_{self.__class__.__name__}".encode()).hexdigest()
             if cache_key in self._cache:
-                logger.info("キャッシュからマインドマップを取得しました")
+                logger.info("キャッシュからマインドマップを取得")
                 return self._cache[cache_key], True
 
-            data = self._validate_data(text)
-            if not data:
-                logger.error("データの検証に失敗しました")
-                return self._create_fallback_mindmap(), False
+            # JSONデータの解析と検証
+            try:
+                data = json.loads(text)
+                if not self._validate_json_structure(data):
+                    logger.warning("無効なJSON構造を検出、フォールバック構造を使用")
+                    return self._create_fallback_mindmap("無効なデータ構造"), False
+            except json.JSONDecodeError as e:
+                logger.error(f"JSONパースエラー: {str(e)}")
+                return self._create_fallback_mindmap("JSONパースエラー"), False
 
-            # Generate mindmap with validated data
-            mermaid_syntax = self._create_mermaid_mindmap(data)
-            
-            # Cache only valid results
-            if mermaid_syntax and mermaid_syntax.count('\n') > 2:
+            # マインドマップの生成
+            try:
+                mermaid_syntax = self._create_mermaid_mindmap(data)
+                if not mermaid_syntax or mermaid_syntax.count('\n') < 3:
+                    logger.warning("生成されたマインドマップが無効")
+                    return self._create_fallback_mindmap("マインドマップ生成エラー"), False
+
+                # 有効な結果をキャッシュ
                 self._cache[cache_key] = mermaid_syntax
-                logger.info("新しいマインドマップを生成してキャッシュしました")
+                logger.info("新しいマインドマップを生成してキャッシュ")
                 return mermaid_syntax, True
-            
-            logger.warning("生成されたマインドマップが無効です")
-            return self._create_fallback_mindmap(), False
-            
+
+            except Exception as e:
+                logger.error(f"マインドマップ生成中のエラー: {str(e)}")
+                return self._create_fallback_mindmap(f"生成エラー: {str(e)}"), False
+
         except Exception as e:
-            logger.error(f"マインドマップの生成中にエラーが発生しました: {str(e)}")
-            return self._create_fallback_mindmap(), False
+            logger.error(f"予期せぬエラー: {str(e)}")
+            return self._create_fallback_mindmap(f"システムエラー: {str(e)}"), False
