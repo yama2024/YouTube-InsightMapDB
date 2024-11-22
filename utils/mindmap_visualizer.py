@@ -9,10 +9,10 @@ def render_mindmap(mindmap_data: dict) -> None:
         <style>
             /* Base node styles */
             .node {
-                position: relative;
                 margin: 5px;
                 cursor: pointer;
                 transition: all 0.3s ease;
+                transform-origin: center;
             }
             
             /* Node background styles */
@@ -124,14 +124,15 @@ def render_mindmap(mindmap_data: dict) -> None:
                 
             const nodes = tree(root);
             
-            // Add connections with curved paths
+            // Add connections with curved paths and improved positioning
             svg.selectAll('.connection')
                 .data(nodes.links())
                 .join('path')
                 .attr('class', 'connection')
                 .attr('d', d3.linkHorizontal()
                     .x(d => d.y)
-                    .y(d => d.x));
+                    .y(d => d.x))
+                .attr('transform', 'translate(0, 0)');
                 
             // Add node groups
             const node = svg.selectAll('.node')
@@ -192,9 +193,11 @@ def render_mindmap(mindmap_data: dict) -> None:
             node.selectAll('rect')
                 .attr('width', function(d) {
                     try {
-                        const textBox = this.parentNode.querySelector('text').getBBox();
-                        const width = Math.max(textBox.width + 30, 100); // minimum width of 100px
-                        console.log('Node width calculated:', width);
+                        const textNode = this.parentNode.querySelector('text');
+                        const textBox = textNode.getBBox();
+                        const padding = 40;
+                        const minWidth = 100;
+                        const width = Math.max(textBox.width + padding, minWidth);
                         return width;
                     } catch (error) {
                         console.error('Error calculating width:', error);
@@ -238,25 +241,49 @@ def render_mindmap(mindmap_data: dict) -> None:
             function update(source) {
                 const duration = 750;
                 
+                // Compute the new tree layout
                 const nodes = tree(root);
+                const descendants = nodes.descendants();
+                const links = nodes.links();
                 
-                // Update nodes
+                // Update the nodes
                 const node = svg.selectAll('g.node')
-                    .data(nodes.descendants(), d => d.id || (d.id = ++i));
-                    
-                // Update connections
-                svg.selectAll('.connection')
-                    .data(nodes.links())
-                    .join('path')
-                    .transition()
+                    .data(descendants, d => d.id || (d.id = ++i));
+                
+                // Enter any new nodes at the parent's previous position
+                const nodeEnter = node.enter().append('g')
+                    .attr('class', d => `node ${d.data.class || ''}`)
+                    .attr('transform', d => `translate(${source.y0 || source.y},${source.x0 || source.x})`);
+                
+                // Update connections with smooth transitions
+                const link = svg.selectAll('.connection')
+                    .data(links, d => d.target.id);
+                
+                // Enter any new links at the parent's previous position
+                link.enter().insert('path', 'g')
+                    .attr('class', 'connection')
+                    .attr('d', d3.linkHorizontal()
+                        .x(d => d.y)
+                        .y(d => d.x));
+                
+                // Transition links to their new position
+                link.transition()
                     .duration(duration)
                     .attr('d', d3.linkHorizontal()
                         .x(d => d.y)
                         .y(d => d.x));
-                        
-                node.transition()
+                
+                // Transition nodes to their new position
+                const nodeUpdate = node.merge(nodeEnter)
+                    .transition()
                     .duration(duration)
                     .attr('transform', d => `translate(${d.y},${d.x})`);
+                
+                // Store the old positions for transitions
+                descendants.forEach(d => {
+                    d.x0 = d.x;
+                    d.y0 = d.y;
+                });
             }
         </script>
     </div>
