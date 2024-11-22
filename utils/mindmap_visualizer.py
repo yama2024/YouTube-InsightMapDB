@@ -7,40 +7,67 @@ def render_mindmap(mindmap_data: dict) -> None:
     html_template = """
     <div id="mindmap-container" style="width: 100%; height: 700px; background: rgba(255, 255, 255, 0.1); border-radius: 10px;">
         <style>
+            /* Base node styles */
             .node {
-                border-radius: 8px;
-                margin: 5px;
-                background: rgba(255, 255, 255, 0.9);
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                transition: all 0.3s ease;
-                cursor: pointer;
                 position: relative;
+                margin: 5px;
+                cursor: pointer;
+                transition: all 0.3s ease;
             }
             
+            /* Node background styles */
+            .node rect {
+                fill: rgba(255, 255, 255, 0.9);
+                rx: 8;
+                ry: 8;
+                stroke: rgba(0, 0, 0, 0.1);
+                stroke-width: 1;
+                filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+            }
+            
+            /* Node content styles */
             .node-content {
                 padding: 10px;
                 display: flex;
                 align-items: center;
                 justify-content: flex-start;
             }
+            
+            /* Node text styles */
+            .node text {
+                font-size: 14px;
+                fill: #333;
+                dominant-baseline: middle;
+            }
             .node:hover {
                 transform: scale(1.02);
                 box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
             }
-            .node.root {
-                background: linear-gradient(135deg, rgba(100, 180, 255, 0.9), rgba(70, 150, 255, 0.9));
-                color: white;
+            /* Node type specific styles */
+            .node.root rect {
+                fill: url(#rootGradient);
+            }
+            .node.root text {
+                fill: white;
                 font-weight: bold;
             }
-            .node.critical-category { background: rgba(255, 200, 200, 0.9); }
-            .node.main-category { background: rgba(200, 255, 200, 0.9); }
-            .node.sub-category { background: rgba(200, 200, 255, 0.9); }
-            .node.critical { background: rgba(255, 180, 180, 0.9); }
-            .node.important { background: rgba(255, 220, 180, 0.9); }
-            .node.normal { background: rgba(220, 255, 220, 0.9); }
-            .node.auxiliary { background: rgba(220, 220, 255, 0.9); }
-            .node.continuation { 
-                background: rgba(245, 245, 245, 0.9);
+            
+            /* Category nodes */
+            .node.critical-category rect { fill: rgba(255, 200, 200, 0.9); }
+            .node.main-category rect { fill: rgba(200, 255, 200, 0.9); }
+            .node.sub-category rect { fill: rgba(200, 200, 255, 0.9); }
+            
+            /* Content nodes */
+            .node.critical rect { fill: rgba(255, 180, 180, 0.9); }
+            .node.important rect { fill: rgba(255, 220, 180, 0.9); }
+            .node.normal rect { fill: rgba(220, 255, 220, 0.9); }
+            .node.auxiliary rect { fill: rgba(220, 220, 255, 0.9); }
+            
+            /* Continuation nodes */
+            .node.continuation rect { 
+                fill: rgba(245, 245, 245, 0.9);
+            }
+            .node.continuation text {
                 font-style: italic;
             }
             .connection {
@@ -72,8 +99,27 @@ def render_mindmap(mindmap_data: dict) -> None:
             const svg = d3.select('#mindmap-container')
                 .append('svg')
                 .attr('width', width)
-                .attr('height', height)
-                .append('g')
+                .attr('height', height);
+                
+            // Define gradient for root node
+            const defs = svg.append('defs');
+            const gradient = defs.append('linearGradient')
+                .attr('id', 'rootGradient')
+                .attr('x1', '0%')
+                .attr('y1', '0%')
+                .attr('x2', '100%')
+                .attr('y2', '100%');
+                
+            gradient.append('stop')
+                .attr('offset', '0%')
+                .attr('stop-color', 'rgba(100, 180, 255, 0.9)');
+                
+            gradient.append('stop')
+                .attr('offset', '100%')
+                .attr('stop-color', 'rgba(70, 150, 255, 0.9)');
+                
+            // Main container group
+            const container = svg.append('g')
                 .attr('transform', 'translate(100, 50)');
                 
             const nodes = tree(root);
