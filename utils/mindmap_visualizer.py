@@ -1,15 +1,27 @@
 import streamlit.components.v1 as components
 import json
 
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 def render_mindmap(mindmap_data: dict) -> None:
-    """Render the mindmap using a custom HTML/JS component"""
-    
-    html_template = """
+    """Render the mindmap using a custom HTML/JS component with error handling"""
+    try:
+        logger.info("マインドマップの描画を開始します")
+        
+        # JSONデータをエスケープ
+        safe_json = json.dumps(mindmap_data).replace('"', '&quot;')
+        
+        html_template = """
     <div id="mindmap-container" style="width: 100%; height: 700px; background: rgba(255, 255, 255, 0.1); border-radius: 10px;">
         <style>
             /* Base node styles */
             .node {
-                margin: 5px;
+                margin: 10px 15px;
+                padding: 8px;
                 cursor: pointer;
                 transition: all 0.3s ease;
                 transform-origin: center;
@@ -17,12 +29,12 @@ def render_mindmap(mindmap_data: dict) -> None:
             
             /* Node background styles */
             .node rect {
-                fill: rgba(255, 255, 255, 0.9);
-                rx: 8;
-                ry: 8;
-                stroke: rgba(0, 0, 0, 0.1);
-                stroke-width: 1;
-                filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+                fill: rgba(255, 255, 255, 0.95);
+                rx: 8px;
+                ry: 8px;
+                stroke: rgba(0, 0, 0, 0.12);
+                stroke-width: 1.5px;
+                filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
             }
             
             /* Node content styles */
@@ -35,9 +47,12 @@ def render_mindmap(mindmap_data: dict) -> None:
             
             /* Node text styles */
             .node text {
+                font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
                 font-size: 14px;
-                fill: #333;
+                fill: #333333;
                 dominant-baseline: middle;
+                font-weight: 500;
+                letter-spacing: 0.3px;
             }
             .node:hover {
                 transform: scale(1.02);
@@ -241,23 +256,44 @@ def render_mindmap(mindmap_data: dict) -> None:
             function update(source) {
                 const duration = 750;
                 
-                // Compute the new tree layout
-                const nodes = tree(root);
-                const descendants = nodes.descendants();
-                const links = nodes.links();
-                
-                // Update the nodes
-                const node = svg.selectAll('g.node')
-                    .data(descendants, d => d.id || (d.id = ++i));
-                
-                // Enter any new nodes at the parent's previous position
-                const nodeEnter = node.enter().append('g')
-                    .attr('class', d => `node ${d.data.class || ''}`)
-                    .attr('transform', d => `translate(${source.y0 || source.y},${source.x0 || source.x})`);
-                
-                // Update connections with smooth transitions
-                const link = svg.selectAll('.connection')
-                    .data(links, d => d.target.id);
+                try {
+                    // Compute the new tree layout with optimized spacing
+                    const nodes = tree.nodeSize([50, 120])(root);
+                    const descendants = nodes.descendants();
+                    const links = nodes.links();
+                    
+                    // Calculate bounds and center the layout
+                    let left = Infinity;
+                    let right = -Infinity;
+                    let top = Infinity;
+                    let bottom = -Infinity;
+                    
+                    descendants.forEach(d => {
+                        if (d.x < left) left = d.x;
+                        if (d.x > right) right = d.x;
+                        if (d.y < top) top = d.y;
+                        if (d.y > bottom) bottom = d.y;
+                    });
+                    
+                    const width = right - left;
+                    const height = bottom - top;
+                    
+                    // Update the nodes with error handling
+                    const node = svg.selectAll('g.node')
+                        .data(descendants, d => d.id || (d.id = ++i));
+                    
+                    // Enter any new nodes at the parent's previous position
+                    const nodeEnter = node.enter().append('g')
+                        .attr('class', d => `node ${d.data.class || ''}`)
+                        .attr('transform', d => {
+                            const x = source.x0 || source.x;
+                            const y = source.y0 || source.y;
+                            return `translate(${y},${x})`;
+                        });
+                    
+                    // Update connections with smooth transitions and error handling
+                    const link = svg.selectAll('.connection')
+                        .data(links, d => d.target.id || Math.random());
                 
                 // Enter any new links at the parent's previous position
                 link.enter().insert('path', 'g')
@@ -289,12 +325,17 @@ def render_mindmap(mindmap_data: dict) -> None:
     </div>
     """
     
-    # JSONデータをエスケープして挿入
-    html_content = html_template.format(json.dumps(mindmap_data))
-    
-    # Render the component
-    components.html(
-        html_content,
-        height=750,
-        scrolling=True
-    )
+    # HTMLコンテンツを作成
+        html_content = html_template.format(safe_json)
+        
+        # コンポーネントをレンダリング
+        components.html(
+            html_content,
+            height=750,
+            scrolling=True
+        )
+        logger.info("マインドマップの描画が完了しました")
+        
+    except Exception as e:
+        logger.error(f"マインドマップの描画中にエラーが発生しました: {str(e)}")
+        raise
