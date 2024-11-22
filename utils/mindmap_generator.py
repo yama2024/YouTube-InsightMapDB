@@ -39,24 +39,68 @@ class MindMapGenerator:
             return self._create_fallback_mindmap(), False
 
     def _validate_data(self, text: str) -> Optional[Dict]:
-        """Validate and parse the input data"""
+        """データの検証と解析を行う"""
         try:
-            data = json.loads(text)
+            # JSONとしての解析を試みる
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSONの解析に失敗しました: {str(e)}")
+                logger.error(f"問題のある位置: {e.pos}, 行: {e.lineno}, カラム: {e.colno}")
+                return None
+
+            # データ型の検証
             if not isinstance(data, dict):
-                logger.error("Invalid data format")
+                logger.error("データがオブジェクト形式ではありません")
                 return None
-            
-            required_fields = ["タイトル", "ポイント"]
-            if not all(field in data for field in required_fields):
-                logger.error("Required fields missing in data")
-                return None
-                
+
+            # 必須フィールドの検証
+            required_fields = {
+                "タイトル": str,
+                "ポイント": list
+            }
+
+            for field, expected_type in required_fields.items():
+                if field not in data:
+                    logger.error(f"必須フィールド '{field}' が見つかりません")
+                    return None
+                if not isinstance(data[field], expected_type):
+                    logger.error(f"フィールド '{field}' の型が不正です。期待: {expected_type.__name__}, 実際: {type(data[field]).__name__}")
+                    return None
+
+            # ポイント配列の内容を検証
+            for i, point in enumerate(data["ポイント"]):
+                if not isinstance(point, dict):
+                    logger.error(f"ポイント {i+1} がオブジェクト形式ではありません")
+                    return None
+
+                # ポイントの必須フィールドを検証
+                point_required_fields = {
+                    "内容": str,
+                    "重要度": (int, float)  # 重要度は整数または小数を許容
+                }
+
+                for field, expected_type in point_required_fields.items():
+                    if field not in point:
+                        logger.error(f"ポイント {i+1} に必須フィールド '{field}' が見つかりません")
+                        return None
+                    if not isinstance(point[field], expected_type):
+                        if isinstance(expected_type, tuple):
+                            type_names = " または ".join([t.__name__ for t in expected_type])
+                            logger.error(f"ポイント {i+1} のフィールド '{field}' の型が不正です。期待: {type_names}, 実際: {type(point[field]).__name__}")
+                        else:
+                            logger.error(f"ポイント {i+1} のフィールド '{field}' の型が不正です。期待: {expected_type.__name__}, 実際: {type(point[field]).__name__}")
+                        return None
+
+                # 重要度の値を検証
+                if not (1 <= point["重要度"] <= 5):
+                    logger.error(f"ポイント {i+1} の重要度が範囲外です: {point['重要度']} (期待: 1-5)")
+                    return None
+
             return data
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON format")
-            return None
+
         except Exception as e:
-            logger.error(f"Data validation error: {str(e)}")
+            logger.error(f"データ検証中に予期せぬエラーが発生しました: {str(e)}")
             return None
 
     def _create_mindmap(self, data: Dict) -> Optional[Dict]:
