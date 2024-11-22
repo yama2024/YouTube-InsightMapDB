@@ -19,13 +19,7 @@ def render_mindmap(mindmap_data: dict) -> None:
     <div id="mindmap-container" style="width: 100%; height: 700px; background: rgba(255, 255, 255, 0.1); border-radius: 10px;">
         <style>
             /* Base node styles */
-            .node {
-                margin: 10px 15px;
-                padding: 8px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                transform-origin: center;
-            }
+            .node { margin: 10px 15px; padding: 8px; cursor: pointer; transition: all 0.3s ease; transform-origin: center; }
             
             /* Node background styles */
             .node rect {
