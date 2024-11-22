@@ -1,0 +1,75 @@
+import requests
+import json
+import streamlit as st
+
+# Mapify APIのエンドポイントとAPIキー
+MAPIFY_API_URL = "https://api.mapify.ai/generate_mindmap"
+API_KEY = "YOUR_MAPIFY_API_KEY"  # 必ず有効なAPIキーをここに設定
+
+def fetch_mindmap_from_mapify(title: str, points: list) -> dict:
+    """
+    Mapify APIを使用してマインドマップを生成する
+    """
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "title": title,
+        "points": points
+    }
+
+    response = requests.post(MAPIFY_API_URL, headers=headers, json=payload)
+
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Mapify APIエラー: {response.status_code}, {response.text}")
+
+def render_mindmap(mindmap_data: dict) -> None:
+    """
+    Streamlitでマインドマップを表示する
+    """
+    st.write("マインドマップを生成しました:")
+    st.json(mindmap_data)
+
+    # 簡易的なツリー形式の表示
+    def display_node(node, level=0):
+        st.write(" " * level * 2 + f"- {node['text']}")
+        for child in node.get('children', []):
+            display_node(child, level + 1)
+
+    display_node(mindmap_data)
+
+def main():
+    st.title("Mapifyを利用したマインドマップ生成ツール")
+
+    # ユーザー入力フォーム
+    title = st.text_input("マインドマップのタイトルを入力してください", value="サンプルタイトル")
+    points_raw = st.text_area(
+        "ポイントを入力してください（JSON形式で記述してください）",
+        value="""
+        [
+            {"text": "重要なポイント1", "children": [{"text": "詳細1-1"}, {"text": "詳細1-2"}]},
+            {"text": "重要なポイント2", "children": [{"text": "詳細2-1"}]}
+        ]
+        """
+    )
+
+    if st.button("マインドマップを生成"):
+        try:
+            # 入力データをパース
+            points = json.loads(points_raw)
+
+            # Mapify APIを呼び出してマインドマップを生成
+            mindmap_data = fetch_mindmap_from_mapify(title, points)
+
+            # マインドマップを表示
+            render_mindmap(mindmap_data)
+
+        except Exception as e:
+            st.error(f"エラーが発生しました: {str(e)}")
+
+if __name__ == "__main__":
+    main()

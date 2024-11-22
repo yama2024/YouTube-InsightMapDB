@@ -12,7 +12,7 @@ class MindMapGenerator:
     def __init__(self):
         self._cache = {}
         self.api_key = os.environ.get('MAPIFY_API_KEY')
-        self.api_url = "https://api.mapify.ai/api/v1/mindmaps"
+        self.api_url = "https://api.mapify.ai/generate_mindmap"
 
     def _create_mermaid_mindmap(self, data: Dict) -> str:
         """Generate Mermaid mindmap syntax with proper escaping and validation"""
@@ -262,14 +262,17 @@ class MindMapGenerator:
                 "Accept": "application/json"
             }
             
-            # 正しいAPIエンドポイントを使用
-            api_url = "https://api.mapify.ai/api/v1/mindmaps"
+            # リクエストペイロードを変換
+            payload = {
+                "title": data["title"],
+                "points": data["nodes"]  # nodesをpointsに変更
+            }
             
-            logger.info(f"Sending request to Mapify API with data size: {len(str(data))} bytes")
+            logger.info(f"Sending request to Mapify API with data size: {len(str(payload))} bytes")
             response = requests.post(
-                api_url,
+                self.api_url,
                 headers=headers,
-                json=data,
+                json=payload,
                 timeout=30  # タイムアウトを設定
             )
             
@@ -277,11 +280,7 @@ class MindMapGenerator:
             
             if response.status_code == 200:
                 logger.info("Mapify API request successful")
-                if "html" in response_data:
-                    return response_data["html"]
-                else:
-                    logger.error("API response missing HTML content")
-                    return None
+                return response_data.get("html") or response_data.get("mindmap_html") or str(response_data)
             elif response.status_code == 401:
                 logger.error("Mapify API authentication failed. Please check your API key.")
                 return None
