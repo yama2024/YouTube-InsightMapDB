@@ -259,6 +259,62 @@ class MindMapGenerator:
         
         return True
             
+    def _categorize_points(self, points: List[Dict]) -> Dict:
+        """ポイントをカテゴリー別に分類する"""
+        categories = {}
+        
+        for point in points:
+            # カテゴリーを決定（タイトルとキーワードから推測）
+            title = point.get("タイトル", "").lower()
+            content = point.get("内容", "").lower()
+            importance = point.get("重要度", 3)
+            
+            # カテゴリー判定ロジック
+            if any(key in title or key in content for key in ["概要", "まとめ", "導入"]):
+                category = "概要・導入"
+            elif any(key in title or key in content for key in ["手順", "方法", "やり方"]):
+                category = "手順・方法"
+            elif any(key in title or key in content for key in ["結果", "効果", "成果"]):
+                category = "結果・効果"
+            elif importance >= 4:
+                category = "重要ポイント"
+            else:
+                category = "その他"
+            
+            # カテゴリーにポイントを追加
+            if category not in categories:
+                categories[category] = []
+            categories[category].append(point)
+            
+        return categories
+
+    def _get_category_id(self, category: str) -> str:
+        """カテゴリー名から一意のIDを生成"""
+        # 特殊文字を処理し、短いハッシュを生成
+        safe_category = "".join(c for c in category if c.isalnum())
+        hash_obj = hashlib.md5(safe_category.encode())
+        return f"cat_{hash_obj.hexdigest()[:6]}"
+
+    def _get_category_icon(self, category: str) -> str:
+        """カテゴリーに応じた適切なアイコンを割り当て"""
+        icons = {
+            "概要・導入": "📝",
+            "手順・方法": "📌",
+            "結果・効果": "🎯",
+            "重要ポイント": "⭐",
+            "その他": "💡"
+        }
+        return icons.get(category, "•")
+
+    def _get_importance_style(self, importance: int) -> str:
+        """重要度に応じたスタイルクラスを割り当て"""
+        if importance >= 5:
+            return "critical"
+        elif importance >= 4:
+            return "important"
+        elif importance >= 3:
+            return "normal"
+        return "auxiliary"
     def generate_mindmap(self, text: str) -> Tuple[str, bool]:
         """Generate a mindmap from the analyzed text with enhanced validation"""
         try:
