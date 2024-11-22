@@ -1,6 +1,7 @@
 from utils.youtube_helper import YouTubeHelper
 from utils.text_processor import TextProcessor
 from utils.mindmap_generator import MindMapGenerator
+from utils.mindmap_visualizer import render_mindmap
 from utils.pdf_generator import PDFGenerator
 import streamlit as st
 import os
@@ -15,8 +16,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import streamlit_mermaid at the top level
-from streamlit_mermaid import st_mermaid
+# Import required packages
+import streamlit.components.v1 as components
+import json
 
 try:
     # Page configuration
@@ -374,7 +376,7 @@ try:
                         not st.session_state.summary or
                         st.session_state.current_summary_style != summary_style):
                         
-                        # Clear previous summary when style changes
+                # Clear previous summary when style changes
                         st.session_state.current_summary_style = summary_style
                         try:
                             summary, quality_scores = st.session_state.text_processor.generate_summary(
@@ -394,19 +396,19 @@ try:
                         display_summary(st.session_state.summary)
 
                 with tabs[2]:
-                    st.markdown("### 🔄 Mind Map")
+                    st.markdown("### 🔄 マインドマップ")
                     if not st.session_state.summary:
                         st.info("マインドマップを生成するには、まず要約を生成してください。")
                     else:
                         generate_mindmap = st.button("マインドマップ生成")
-                        if generate_mindmap:
+                        if generate_mindmap or 'mindmap' not in st.session_state:
                             st.markdown("### マインドマップを生成中...")
                             try:
                                 logger.info("Starting mindmap generation process")
                                 mindmap_generator = MindMapGenerator()
-                                mindmap_content, success = mindmap_generator.generate_mindmap(st.session_state.summary)
+                                mindmap_data, success = mindmap_generator.generate_mindmap(st.session_state.summary)
                                 if success:
-                                    st.session_state.mindmap = mindmap_content
+                                    st.session_state.mindmap = mindmap_data
                                     logger.info("マインドマップを生成し、セッションに保存しました")
                                     update_step_progress('mindmap')
                                     st.rerun()
@@ -418,7 +420,7 @@ try:
 
                         if st.session_state.mindmap:
                             try:
-                                st_mermaid(st.session_state.mindmap, key="mindmap_display_1")
+                                render_mindmap(st.session_state.mindmap)
                             except Exception as e:
                                 st.error(f"マインドマップの表示中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error displaying mindmap: {str(e)}")
