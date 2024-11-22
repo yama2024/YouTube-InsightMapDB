@@ -51,7 +51,7 @@ def render_mindmap(mindmap_data: dict) -> None:
         </style>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <script>
-            const mindmapData = %s;
+            const mindmapData = JSON.parse(`{}`);
             
             const width = document.getElementById('mindmap-container').offsetWidth;
             const height = 700;
@@ -184,9 +184,12 @@ def render_mindmap(mindmap_data: dict) -> None:
     </div>
     """
     
+    # JSONデータをエスケープして挿入
+    html_content = html_template.format(json.dumps(mindmap_data))
+    
     # Render the component
     components.html(
-        html_template % json.dumps(mindmap_data),
+        html_content,
         height=750,
         scrolling=True
     )
