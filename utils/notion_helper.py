@@ -13,6 +13,28 @@ class NotionHelper:
         self.notion = Client(auth=os.environ["NOTION_API_KEY"])
         self.database_id = os.environ["NOTION_DATABASE_ID"]
 
+    def _split_text(self, text, max_length=2000):
+        """テキストを指定された最大長で分割する"""
+        if not text:
+            return []
+        chunks = []
+        current_chunk = ""
+        
+        # 文単位で分割（。で区切る）
+        sentences = text.split("。")
+        
+        for sentence in sentences:
+            if len(current_chunk) + len(sentence) < max_length:
+                current_chunk += sentence + "。"
+            else:
+                chunks.append(current_chunk)
+                current_chunk = sentence + "。"
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        return chunks
+
     def _convert_view_count(self, view_count_str):
         """
         視聴回数の文字列を数値に変換する
@@ -37,7 +59,6 @@ class NotionHelper:
             # 単位がなければそのまま数値に変換
             return int(count.replace(',', ''))
         except (ValueError, TypeError):
-            # 変換できない場合は0を返す
             logger.warning(f"視聴回数の変換に失敗しました: {view_count_str}")
             return 0
 
@@ -153,12 +174,21 @@ class NotionHelper:
                     },
                     {
                         "object": "block",
-                        "type": "paragraph",
-                        "paragraph": {
-                            "rich_text": [{"type": "text", "text": {"content": transcript}}]
-                        }
+                        "type": "divider",
+                        "divider": {}
                     }
                 ])
+                
+                # 文字起こしを分割して追加
+                transcript_chunks = self._split_text(transcript)
+                for chunk in transcript_chunks:
+                    children.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": chunk}}]
+                        }
+                    })
 
             # 要約セクション
             try:
@@ -173,12 +203,22 @@ class NotionHelper:
                     },
                     {
                         "object": "block",
-                        "type": "paragraph",
-                        "paragraph": {
-                            "rich_text": [{"type": "text", "text": {"content": summary_data.get("動画の概要", "")}}]
-                        }
+                        "type": "divider",
+                        "divider": {}
                     }
                 ])
+                
+                # 概要を分割して追加
+                overview_chunks = self._split_text(summary_data.get("動画の概要", ""))
+                for chunk in overview_chunks:
+                    children.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": chunk}}]
+                        }
+                    })
+                
             except json.JSONDecodeError as e:
                 logger.error(f"サマリーJSONの解析に失敗しました: {str(e)}")
                 return False, "サマリーデータの形式が正しくありません"
@@ -192,6 +232,11 @@ class NotionHelper:
                         "heading_2": {
                             "rich_text": [{"type": "text", "text": {"content": "マインドマップ"}}]
                         }
+                    },
+                    {
+                        "object": "block",
+                        "type": "divider",
+                        "divider": {}
                     },
                     {
                         "object": "block",
@@ -215,12 +260,21 @@ class NotionHelper:
                     },
                     {
                         "object": "block",
-                        "type": "paragraph",
-                        "paragraph": {
-                            "rich_text": [{"type": "text", "text": {"content": proofread_text}}]
-                        }
+                        "type": "divider",
+                        "divider": {}
                     }
                 ])
+                
+                # 校正済みテキストを分割して追加
+                proofread_chunks = self._split_text(proofread_text)
+                for chunk in proofread_chunks:
+                    children.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": chunk}}]
+                        }
+                    })
 
             # Notionページの作成
             try:
