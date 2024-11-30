@@ -363,7 +363,7 @@ try:
                 
                 # Initialize tabs
                 tabs = st.tabs([
-                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Proofreading"
+                    "📝 Transcript", "📊 Summary", "🔄 Mind Map", "✨ Proofreading", "📋 Notion"
                 ])
 
                 with tabs[0]:
@@ -420,33 +420,6 @@ try:
                         if st.session_state.mindmap:
                             try:
                                 st_mermaid(st.session_state.mindmap, key="mindmap_display_1")
-                                
-                                # Notion保存セクション
-                                st.markdown("### 📋 Notionに保存")
-                                st.info("分析結果をNotionデータベースに保存できます。")
-                                
-                                if st.button("🔄 Notionに保存", help="クリックして分析結果をNotionに保存"):
-                                    with st.spinner("Notionに保存中..."):
-                                        try:
-                                            notion_helper = NotionHelper()
-                                            success, message = notion_helper.save_video_analysis(
-                                                video_info=st.session_state.video_info,
-                                                summary=st.session_state.summary,
-                                                transcript=st.session_state.transcript,
-                                                mindmap=st.session_state.mindmap,
-                                                proofread_text=st.session_state.enhanced_text
-                                            )
-                                            
-                                            if success:
-                                                st.success("✅ " + message)
-                                                st.balloons()
-                                            else:
-                                                st.error("❌ " + message)
-                                                
-                                        except Exception as e:
-                                            st.error(f"❌ Notionへの保存中にエラーが発生しました: {str(e)}")
-                                            logger.error(f"Error saving to Notion: {str(e)}")
-                                        
                             except Exception as e:
                                 st.error(f"マインドマップの表示中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error displaying mindmap: {str(e)}")
@@ -459,6 +432,32 @@ try:
                         if not st.session_state.enhanced_text:
                             if st.button("文章を校正する"):
                                 st.markdown("### テキストを校正中...")
+                                
+                with tabs[4]:  # Notionタブ
+                    st.markdown("### 📋 Notionに保存")
+                    st.info("分析結果をNotionデータベースに保存できます。")
+                    
+                    if st.button("🔄 Notionに保存", help="クリックして分析結果をNotionに保存"):
+                        with st.spinner("Notionに保存中..."):
+                            try:
+                                notion_helper = NotionHelper()
+                                success, message = notion_helper.save_video_analysis(
+                                    video_info=st.session_state.video_info,
+                                    summary=st.session_state.summary,
+                                    transcript=st.session_state.transcript,
+                                    mindmap=st.session_state.mindmap,
+                                    proofread_text=st.session_state.enhanced_text
+                                )
+                                
+                                if success:
+                                    st.success("✅ " + message)
+                                    st.balloons()
+                                else:
+                                    st.error("❌ " + message)
+                                    
+                            except Exception as e:
+                                st.error(f"❌ Notionへの保存中にエラーが発生しました: {str(e)}")
+                                logger.error(f"Error saving to Notion: {str(e)}")
                                 try:
                                     proofread_prompt = f'''
 以下のテキストを高品質な文章に校正してください。以下の観点から包括的に改善を行ってください：
