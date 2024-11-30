@@ -41,25 +41,59 @@ class NotionHelper:
             logger.warning(f"視聴回数の変換に失敗しました: {view_count_str}")
             return 0
 
-    def save_video_analysis(self, video_info, summary, mindmap=None):
+    def _validate_content(self, content_dict):
+        """コンテンツの存在チェックとバリデーション"""
+        required_fields = {
+            'video_info': ['title', 'channel_title', 'video_url', 'view_count', 'duration'],
+            'contents': ['summary']
+        }
+        
+        # 必須フィールドのチェック
+        for category, fields in required_fields.items():
+            if category not in content_dict:
+                raise ValueError(f"必須カテゴリ {category} が見つかりません")
+            
+            for field in fields:
+                if category == 'video_info' and field not in content_dict['video_info']:
+                    raise ValueError(f"必須フィールド {field} が video_info に見つかりません")
+                elif category == 'contents' and field not in content_dict['contents']:
+                    raise ValueError(f"必須フィールド {field} が contents に見つかりません")
+
+    def save_video_analysis(self, video_info, summary, transcript=None, mindmap=None, proofread_text=None):
         """
         動画分析結果をNotionデータベースに保存する
         
         Parameters:
         - video_info (dict): 動画の基本情報
         - summary (str): 動画の要約テキスト
+        - transcript (str, optional): 文字起こしテキスト
         - mindmap (str, optional): マインドマップのMermaid形式テキスト
+        - proofread_text (str, optional): 校正済みテキスト
         """
         try:
-            # 現在の日時を取得
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # コンテンツのバリデーション
+            content = {
+                'video_info': video_info,
+                'contents': {
+                    'summary': summary,
+                    'transcript': transcript,
+                    'mindmap': mindmap,
+                    'proofread_text': proofread_text
+                }
+            }
+            self._validate_content(content)
             
             # 視聴回数を数値に変換
             view_count = self._convert_view_count(video_info["view_count"])
             
+            # URLをmulti_select用に変換
+            url_select = [{
+                "name": video_info["video_url"]
+            }]
+            
             # ページプロパティの設定
             properties = {
-                "Title": {
+                "name": {
                     "title": [
                         {
                             "text": {
@@ -68,7 +102,7 @@ class NotionHelper:
                         }
                     ]
                 },
-                "Channel": {
+                "channel": {
                     "rich_text": [
                         {
                             "text": {
@@ -77,13 +111,13 @@ class NotionHelper:
                         }
                     ]
                 },
-                "URL": {
-                    "url": video_info["video_url"]
+                "url": {
+                    "multi_select": url_select
                 },
-                "ViewCount": {
+                "view_count": {
                     "number": view_count
                 },
-                "Duration": {
+                "duration": {
                     "rich_text": [
                         {
                             "text": {
@@ -92,51 +126,64 @@ class NotionHelper:
                         }
                     ]
                 },
-                "AnalysisDate": {
+                "analysis_date": {
                     "date": {
                         "start": datetime.now().isoformat()
                     }
                 },
-                "Status": {
+                "status": {
                     "status": {
                         "name": "Complete"
                     }
                 }
             }
 
+            # ページ本文の設定
+            children = []
+            
+            # 文字起こしセクション
+            if transcript:
+                children.extend([
+                    {
+                        "object": "block",
+                        "type": "heading_2",
+                        "heading_2": {
+                            "rich_text": [{"type": "text", "text": {"content": "文字起こし"}}]
+                        }
+                    },
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": transcript}}]
+                        }
+                    }
+                ])
+
+            # 要約セクション
             try:
-                # サマリーJSONの解析
                 summary_data = json.loads(summary)
+                children.extend([
+                    {
+                        "object": "block",
+                        "type": "heading_2",
+                        "heading_2": {
+                            "rich_text": [{"type": "text", "text": {"content": "要約"}}]
+                        }
+                    },
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": summary_data.get("動画の概要", "")}}]
+                        }
+                    }
+                ])
             except json.JSONDecodeError as e:
                 logger.error(f"サマリーJSONの解析に失敗しました: {str(e)}")
                 return False, "サマリーデータの形式が正しくありません"
-            
-            # ページ本文の設定
-            children = [
-                {
-                    "object": "block",
-                    "type": "heading_2",
-                    "heading_2": {
-                        "rich_text": [{"type": "text", "text": {"content": "動画の概要"}}]
-                    }
-                },
-                {
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [{"type": "text", "text": {"content": summary_data.get("動画の概要", "")}}]
-                    }
-                },
-                {
-                    "object": "block",
-                    "type": "heading_2",
-                    "heading_2": {
-                        "rich_text": [{"type": "text", "text": {"content": "主要ポイント"}}]
-                    }
-                }
-            ]
 
-            # マインドマップが存在する場合、追加
+            # マインドマップセクション
             if mindmap:
                 children.extend([
                     {
@@ -156,16 +203,45 @@ class NotionHelper:
                     }
                 ])
 
+            # 校正済みテキストセクション
+            if proofread_text:
+                children.extend([
+                    {
+                        "object": "block",
+                        "type": "heading_2",
+                        "heading_2": {
+                            "rich_text": [{"type": "text", "text": {"content": "校正済みテキスト"}}]
+                        }
+                    },
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": proofread_text}}]
+                        }
+                    }
+                ])
+
             # Notionページの作成
-            response = self.notion.pages.create(
-                parent={"database_id": self.database_id},
-                properties=properties,
-                children=children
-            )
+            try:
+                response = self.notion.pages.create(
+                    parent={"database_id": self.database_id},
+                    properties=properties,
+                    children=children
+                )
+                logger.info(f"Notionに分析結果を保存しました: {video_info['title']}")
+                return True, "保存が完了しました"
+            except Exception as e:
+                error_message = str(e)
+                if "is not a property that exists" in error_message:
+                    return False, "データベースのプロパティ設定が正しくありません。プロパティ名と型を確認してください。"
+                else:
+                    return False, f"Notionページの作成に失敗しました: {error_message}"
 
-            logger.info(f"Notionに分析結果を保存しました: {video_info['title']}")
-            return True, "保存が完了しました"
-
+        except ValueError as ve:
+            error_message = str(ve)
+            logger.error(f"コンテンツバリデーションエラー: {error_message}")
+            return False, f"バリデーションエラー: {error_message}"
         except Exception as e:
             logger.error(f"Notionへの保存中にエラーが発生しました: {str(e)}")
             return False, f"保存に失敗しました: {str(e)}"

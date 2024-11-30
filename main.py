@@ -432,7 +432,9 @@ try:
                                             success, message = notion_helper.save_video_analysis(
                                                 video_info=st.session_state.video_info,
                                                 summary=st.session_state.summary,
-                                                mindmap=st.session_state.mindmap
+                                                transcript=st.session_state.transcript,
+                                                mindmap=st.session_state.mindmap,
+                                                proofread_text=st.session_state.enhanced_text
                                             )
                                             
                                             if success:
