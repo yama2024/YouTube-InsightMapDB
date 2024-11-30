@@ -1,5 +1,6 @@
 from notion_client import Client
 import os
+import json
 import logging
 from datetime import datetime
 
@@ -49,13 +50,7 @@ class NotionHelper:
                     "url": video_info["video_url"]
                 },
                 "視聴回数": {
-                    "rich_text": [
-                        {
-                            "text": {
-                                "content": video_info["view_count"]
-                            }
-                        }
-                    ]
+                    "number": int(video_info["view_count"].replace(',', '').replace('回視聴', ''))
                 },
                 "動画時間": {
                     "rich_text": [
@@ -67,30 +62,41 @@ class NotionHelper:
                     ]
                 },
                 "分析日時": {
-                    "rich_text": [
-                        {
-                            "text": {
-                                "content": current_time
-                            }
-                        }
-                    ]
+                    "date": {
+                        "start": datetime.now().isoformat()
+                    }
+                },
+                "ステータス": {
+                    "status": {
+                        "name": "完了"
+                    }
                 }
             }
 
+            # サマリーJSONの解析
+            summary_data = json.loads(summary)
+            
             # ページ本文の設定
             children = [
                 {
                     "object": "block",
                     "type": "heading_2",
                     "heading_2": {
-                        "rich_text": [{"type": "text", "text": {"content": "動画の要約"}}]
+                        "rich_text": [{"type": "text", "text": {"content": "動画の概要"}}]
                     }
                 },
                 {
                     "object": "block",
                     "type": "paragraph",
                     "paragraph": {
-                        "rich_text": [{"type": "text", "text": {"content": summary}}]
+                        "rich_text": [{"type": "text", "text": {"content": summary_data.get("動画の概要", "")}}]
+                    }
+                },
+                {
+                    "object": "block",
+                    "type": "heading_2",
+                    "heading_2": {
+                        "rich_text": [{"type": "text", "text": {"content": "主要ポイント"}}]
                     }
                 }
             ]
