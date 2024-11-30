@@ -59,7 +59,7 @@ class NotionHelper:
             
             # ページプロパティの設定
             properties = {
-                "タイトル": {
+                "Title": {
                     "title": [
                         {
                             "text": {
@@ -68,7 +68,7 @@ class NotionHelper:
                         }
                     ]
                 },
-                "チャンネル": {
+                "Channel": {
                     "rich_text": [
                         {
                             "text": {
@@ -80,10 +80,10 @@ class NotionHelper:
                 "URL": {
                     "url": video_info["video_url"]
                 },
-                "視聴回数": {
+                "ViewCount": {
                     "number": view_count
                 },
-                "動画時間": {
+                "Duration": {
                     "rich_text": [
                         {
                             "text": {
@@ -92,14 +92,14 @@ class NotionHelper:
                         }
                     ]
                 },
-                "分析日時": {
+                "AnalysisDate": {
                     "date": {
                         "start": datetime.now().isoformat()
                     }
                 },
-                "ステータス": {
+                "Status": {
                     "status": {
-                        "name": "完了"
+                        "name": "Complete"
                     }
                 }
             }
