@@ -79,12 +79,12 @@ class TextProcessor:
                 summary = summary[:-3]
             
             # JSON文字列のクリーニング
-            summary = re.sub(r'(?<!\)"', '\"', summary)  # エスケープされていない引用符の処理
-            summary = re.sub(r'\{2,}"', '\"', summary)   # 重複したエスケープの正規化
-            summary = re.sub(r'[ -]', '', summary)  # 制御文字の削除
+            summary = re.sub(r'([^\\])"', r'\1\\"', summary)  # エスケープされていない引用符の処理
+            summary = re.sub(r'\\{2,}"', '\\"', summary)      # 重複したエスケープの正規化
+            summary = re.sub(r'[\x00-\x1F\x7F-\x9F]', '', summary)  # 制御文字の削除
 
             # プロパティ名のクォート処理
-            summary = re.sub(r'([{,])\s*([a-zA-Z0-9_]+)\s*:', r'"\2":', summary)
+            summary = re.sub(r'([{,])\s*([a-zA-Z0-9_]+)\s*:', r'\1"\2":', summary)
             
             # 文字列の正規化
             summary = re.sub(r'\s+', ' ', summary)
