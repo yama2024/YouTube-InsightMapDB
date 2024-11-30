@@ -69,7 +69,7 @@ class TextProcessor:
             if not response.text:
                 raise ValueError("空の応答が返されました")
 
-            # Clean and parse the response
+            # レスポンスの整形処理を追加
             summary = response.text.strip()
             
             # Remove markdown code block if present
@@ -78,17 +78,17 @@ class TextProcessor:
             if summary.endswith('```'):
                 summary = summary[:-3]
             
-            # Additional cleanup and formatting
-            summary = summary.strip()
+            # JSON文字列のクリーニング
+            summary = re.sub(r'(?<!\)"', '\"', summary)  # エスケープされていない引用符の処理
+            summary = re.sub(r'\+"', '\"', summary)     # 重複したエスケープの正規化
+            summary = re.sub(r'[ -]', '', summary)  # 制御文字の削除
             
-            # Remove any irregular whitespace and normalize newlines
+            # プロパティ名のクォート処理
+            summary = re.sub(r'(\{|\,)\s*([a-zA-Z0-9_]+)\s*:', r'"\2":', summary)
+            
+            # 文字列の正規化
             summary = re.sub(r'\s+', ' ', summary)
             summary = re.sub(r'[\n\r]+', '\n', summary)
-            
-            # Fix common JSON formatting issues
-            summary = re.sub(r'(?<!\\)"', '\\"', summary)  # エスケープされていない引用符の処理
-            summary = re.sub(r'\\+\"', '\\"', summary)     # 重複したエスケープの正規化
-            summary = re.sub(r'[\x00-\x1F]', '', summary)  # 制御文字の削除
             
             # Try to detect and fix truncated JSON
             if not summary.endswith('}'):
@@ -97,18 +97,32 @@ class TextProcessor:
                 summary += '}'
             
             try:
+                # JSONの構造検証
+                def validate_json_structure(data):
+                    if not isinstance(data, dict):
+                        raise ValueError("トップレベルの要素はオブジェクトである必要があります")
+                    
+                    required_fields = ["動画の概要", "ポイント", "結論"]
+                    missing_fields = [field for field in required_fields if field not in data]
+                    if missing_fields:
+                        raise ValueError(f"必須フィールドが不足しています: {', '.join(missing_fields)}")
+                    
+                    if not isinstance(data["ポイント"], list):
+                        raise ValueError("'ポイント'は配列である必要があります")
+                    
+                    for point in data["ポイント"]:
+                        if not isinstance(point, dict):
+                            raise ValueError("各ポイントはオブジェクトである必要があります")
+                        required_point_fields = ["番号", "タイトル", "内容", "重要度"]
+                        missing_point_fields = [field for field in required_point_fields if field not in point]
+                        if missing_point_fields:
+                            raise ValueError(f"ポイントに必須フィールドが不足しています: {', '.join(missing_point_fields)}")
+                
                 # First attempt to parse with strict JSON rules
                 json_data = json.loads(summary, strict=False)
                 
-                # Verify required fields
-                required_fields = ["動画の概要", "ポイント", "結論"]
-                missing_fields = [field for field in required_fields if field not in json_data]
-                if missing_fields:
-                    raise ValueError(f"必須フィールドが不足しています: {', '.join(missing_fields)}")
-                
-                # Ensure proper structure of nested objects
-                if not isinstance(json_data["ポイント"], list):
-                    raise ValueError("'ポイント'は配列である必要があります")
+                # Validate JSON structure
+                validate_json_structure(json_data)
                 
                 # Re-serialize with proper formatting
                 summary = json.dumps(json_data, ensure_ascii=False, indent=2)
@@ -118,16 +132,38 @@ class TextProcessor:
                 logger.error(f"Received text: {summary}")
                 
                 try:
-                    # Try to fix common JSON formatting issues
-                    summary = re.sub(r',\s*}', '}', summary)  # Remove trailing commas
-                    summary = re.sub(r',\s*]', ']', summary)  # Remove trailing commas in arrays
+                    # エラー発生時のフォールバック処理
+                    fixes = [
+                        (r',\s*}', '}'),           # Remove trailing commas in objects
+                        (r',\s*]', ']'),           # Remove trailing commas in arrays
+                        (r'(?<!\\\)"', '\\"'),     # Escape unescaped quotes
+                        (r'\\+\"', '\\"'),         # Normalize escaped quotes
+                        (r'(\{|\,)\s*([a-zA-Z0-9_]+)\s*:', r'"\2":')  # Quote property names
+                    ]
+                    
+                    for pattern, replacement in fixes:
+                        summary = re.sub(pattern, replacement, summary)
                     
                     # Try parsing again with the fixed JSON
                     json_data = json.loads(summary, strict=False)
-                    logger.info("JSON was successfully parsed after fixing formatting issues")
+                    logger.info("JSON was successfully parsed after applying fixes")
+                    
+                    # Validate the fixed JSON
+                    validate_json_structure(json_data)
+                    
                 except Exception as inner_e:
                     logger.error(f"Failed to fix JSON: {str(inner_e)}")
-                    raise ValueError(f"不正なJSON形式の応答が返されました。修正を試みましたが失敗しました: {str(e)}")
+                    logger.error(f"Original JSON error: {str(e)}")
+                    raise ValueError(f"""
+JSONの解析に失敗しました。以下の問題が考えられます：
+1. プロパティ名が適切にクォートされていない
+2. JSON構造が不正
+3. 必須フィールドの欠落
+4. 不正な文字や制御文字の混入
+
+エラー詳細: {str(e)}
+修正試行時のエラー: {str(inner_e)}
+                    """.strip())
             except ValueError as e:
                 logger.error(f"JSON validation error: {str(e)}")
                 raise ValueError(f"JSON構造の検証に失敗しました: {str(e)}")
