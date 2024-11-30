@@ -41,9 +41,9 @@ class TextProcessor:
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from YouTube URL"""
         patterns = [
-            r'v=([0-9A-Za-z_-]{11})',
-            r'embed/([0-9A-Za-z_-]{11})',
-            r'watch\?v=([0-9A-Za-z_-]{11})'
+            r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
+            r'(?:embed\/)([0-9A-Za-z_-]{11})',
+            r'(?:watch\?v=)([0-9A-Za-z_-]{11})'
         ]
         for pattern in patterns:
             match = re.search(pattern, url)
@@ -69,7 +69,7 @@ class TextProcessor:
             if not response.text:
                 raise ValueError("空の応答が返されました")
 
-            # レスポンスの整形処理を追加
+            # Clean and parse the response
             summary = response.text.strip()
             
             # Remove markdown code block if present
@@ -77,53 +77,24 @@ class TextProcessor:
                 summary = summary[7:]
             if summary.endswith('```'):
                 summary = summary[:-3]
-
-            # JSON文字列のクリーニング処理
+            
+            # Additional cleanup
             summary = summary.strip()
-            summary = re.sub(r'(?<!\)"', '\"', summary)  # エスケープされていない引用符の処理
-            summary = re.sub(r'\{2,}"', '\"', summary)   # 重複したエスケープの正規化
-            summary = re.sub(r'[ --]', '', summary)  # 制御文字の削除
-
-            # プロパティ名のクォート処理
-            summary = re.sub(r'([{,])\s*([a-zA-Z0-9_]+)\s*:', r'"":', summary)
             
-            # 文字列の正規化
-            summary = re.sub(r'\s+', ' ', summary)
-            summary = re.sub(r'[\n\r]+', '\n', summary)
-            
-            # Try to detect and fix truncated JSON
-            if not summary.endswith('}'):
-                summary += '}'
-            if summary.count('{') > summary.count('}'):
-                summary += '}'
-            
+            # Validate and format JSON structure
             try:
-                # JSONの構造検証
-                def validate_json_structure(data):
-                    if not isinstance(data, dict):
-                        raise ValueError("トップレベルの要素はオブジェクトである必要があります")
-                    
-                    required_fields = ["動画の概要", "ポイント", "結論"]
-                    missing_fields = [field for field in required_fields if field not in data]
-                    if missing_fields:
-                        raise ValueError(f"必須フィールドが不足しています: {', '.join(missing_fields)}")
-                    
-                    if not isinstance(data["ポイント"], list):
-                        raise ValueError("'ポイント'は配列である必要があります")
-                    
-                    for point in data["ポイント"]:
-                        if not isinstance(point, dict):
-                            raise ValueError("各ポイントはオブジェクトである必要があります")
-                        required_point_fields = ["番号", "タイトル", "内容", "重要度"]
-                        missing_point_fields = [field for field in required_point_fields if field not in point]
-                        if missing_point_fields:
-                            raise ValueError(f"ポイントに必須フィールドが不足しています: {', '.join(missing_point_fields)}")
+                # First, try to parse as is
+                json_data = json.loads(summary)
                 
-                # First attempt to parse with strict JSON rules
-                json_data = json.loads(summary, strict=False)
+                # Verify required fields
+                required_fields = ["動画の概要", "ポイント", "結論"]
+                missing_fields = [field for field in required_fields if field not in json_data]
+                if missing_fields:
+                    raise ValueError(f"必須フィールドが不足しています: {', '.join(missing_fields)}")
                 
-                # Validate JSON structure
-                validate_json_structure(json_data)
+                # Ensure proper structure of nested objects
+                if not isinstance(json_data["ポイント"], list):
+                    raise ValueError("'ポイント'は配列である必要があります")
                 
                 # Re-serialize with proper formatting
                 summary = json.dumps(json_data, ensure_ascii=False, indent=2)
@@ -131,40 +102,7 @@ class TextProcessor:
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON response: {str(e)}")
                 logger.error(f"Received text: {summary}")
-                
-                try:
-                    # エラー発生時のフォールバック処理
-                    fixes = [
-                        (r',\s*}', '}'),           # Remove trailing commas in objects
-                        (r',\s*]', ']'),           # Remove trailing commas in arrays
-                        (r'(?<!\\\)"', '\\"'),     # Escape unescaped quotes
-                        (r'\\+\"', '\\"'),         # Normalize escaped quotes
-                        (r'(\{|\,)\s*([a-zA-Z0-9_]+)\s*:', r'"\2":')  # Quote property names
-                    ]
-                    
-                    for pattern, replacement in fixes:
-                        summary = re.sub(pattern, replacement, summary)
-                    
-                    # Try parsing again with the fixed JSON
-                    json_data = json.loads(summary, strict=False)
-                    logger.info("JSON was successfully parsed after applying fixes")
-                    
-                    # Validate the fixed JSON
-                    validate_json_structure(json_data)
-                    
-                except Exception as inner_e:
-                    logger.error(f"Failed to fix JSON: {str(inner_e)}")
-                    logger.error(f"Original JSON error: {str(e)}")
-                    raise ValueError(f"""
-JSONの解析に失敗しました。以下の問題が考えられます：
-1. プロパティ名が適切にクォートされていない
-2. JSON構造が不正
-3. 必須フィールドの欠落
-4. 不正な文字や制御文字の混入
-
-エラー詳細: {str(e)}
-修正試行時のエラー: {str(inner_e)}
-                    """.strip())
+                raise ValueError(f"不正なJSON形式の応答が返されました: {str(e)}")
             except ValueError as e:
                 logger.error(f"JSON validation error: {str(e)}")
                 raise ValueError(f"JSON構造の検証に失敗しました: {str(e)}")
