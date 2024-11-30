@@ -70,18 +70,45 @@ class TextProcessor:
                 raise ValueError("空の応答が返されました")
 
             # Clean and parse the response
-            summary = response.text
+            summary = response.text.strip()
+            
+            # Remove markdown code block if present
             if summary.startswith('```json'):
                 summary = summary[7:]
             if summary.endswith('```'):
                 summary = summary[:-3]
-
-            # Validate JSON structure
+            
+            # Additional cleanup
+            summary = summary.strip()
+            
+            # Validate and format JSON structure
             try:
-                json.loads(summary)
-            except json.JSONDecodeError:
-                logger.error("Invalid JSON response")
-                raise ValueError("不正なJSON形式の応答が返されました")
+                # First, try to parse as is
+                json_data = json.loads(summary)
+                
+                # Verify required fields
+                required_fields = ["動画の概要", "ポイント", "結論"]
+                missing_fields = [field for field in required_fields if field not in json_data]
+                if missing_fields:
+                    raise ValueError(f"必須フィールドが不足しています: {', '.join(missing_fields)}")
+                
+                # Ensure proper structure of nested objects
+                if not isinstance(json_data["ポイント"], list):
+                    raise ValueError("'ポイント'は配列である必要があります")
+                
+                # Re-serialize with proper formatting
+                summary = json.dumps(json_data, ensure_ascii=False, indent=2)
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON response: {str(e)}")
+                logger.error(f"Received text: {summary}")
+                raise ValueError(f"不正なJSON形式の応答が返されました: {str(e)}")
+            except ValueError as e:
+                logger.error(f"JSON validation error: {str(e)}")
+                raise ValueError(f"JSON構造の検証に失敗しました: {str(e)}")
+            except Exception as e:
+                logger.error(f"Unexpected error in JSON processing: {str(e)}")
+                raise ValueError(f"JSON処理中に予期せぬエラーが発生しました: {str(e)}")
 
             # Evaluate summary quality
             quality_scores = self._evaluate_summary_quality(summary, text, style)
