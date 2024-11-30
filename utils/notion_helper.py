@@ -13,6 +13,34 @@ class NotionHelper:
         self.notion = Client(auth=os.environ["NOTION_API_KEY"])
         self.database_id = os.environ["NOTION_DATABASE_ID"]
 
+    def _convert_view_count(self, view_count_str):
+        """
+        視聴回数の文字列を数値に変換する
+        例: "3万回視聴" → 30000
+        """
+        try:
+            # "回視聴"を削除
+            count = view_count_str.replace('回視聴', '')
+            
+            # 単位変換マップ
+            unit_map = {
+                '万': 10000,
+                '千': 1000
+            }
+            
+            # 単位があれば変換
+            for unit, multiplier in unit_map.items():
+                if unit in count:
+                    number = float(count.replace(unit, ''))
+                    return int(number * multiplier)
+            
+            # 単位がなければそのまま数値に変換
+            return int(count.replace(',', ''))
+        except (ValueError, TypeError):
+            # 変換できない場合は0を返す
+            logger.warning(f"視聴回数の変換に失敗しました: {view_count_str}")
+            return 0
+
     def save_video_analysis(self, video_info, summary, mindmap=None):
         """
         動画分析結果をNotionデータベースに保存する
@@ -25,6 +53,9 @@ class NotionHelper:
         try:
             # 現在の日時を取得
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # 視聴回数を数値に変換
+            view_count = self._convert_view_count(video_info["view_count"])
             
             # ページプロパティの設定
             properties = {
@@ -50,7 +81,7 @@ class NotionHelper:
                     "url": video_info["video_url"]
                 },
                 "視聴回数": {
-                    "number": int(video_info["view_count"].replace(',', '').replace('回視聴', ''))
+                    "number": view_count
                 },
                 "動画時間": {
                     "rich_text": [
@@ -73,8 +104,12 @@ class NotionHelper:
                 }
             }
 
-            # サマリーJSONの解析
-            summary_data = json.loads(summary)
+            try:
+                # サマリーJSONの解析
+                summary_data = json.loads(summary)
+            except json.JSONDecodeError as e:
+                logger.error(f"サマリーJSONの解析に失敗しました: {str(e)}")
+                return False, "サマリーデータの形式が正しくありません"
             
             # ページ本文の設定
             children = [
