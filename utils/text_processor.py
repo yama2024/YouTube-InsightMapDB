@@ -41,9 +41,9 @@ class TextProcessor:
     def _extract_video_id(self, url: str) -> str:
         """Extract video ID from YouTube URL"""
         patterns = [
-            r'(?:v=|\/)([0-9A-Za-z_-]{11})(?:[\/?&].*)?$',
-            r'(?:embed\/)([0-9A-Za-z_-]{11})(?:[\/?&].*)?$',
-            r'(?:watch\?v=)([0-9A-Za-z_-]{11})(?:[\/?&].*)?$'
+            r'v=([0-9A-Za-z_-]{11})',
+            r'embed/([0-9A-Za-z_-]{11})',
+            r'watch\?v=([0-9A-Za-z_-]{11})'
         ]
         for pattern in patterns:
             match = re.search(pattern, url)
@@ -80,12 +80,12 @@ class TextProcessor:
 
             # JSON文字列のクリーニング処理
             summary = summary.strip()
-            summary = re.sub(r'(?<!\)"', r'\"', summary)  # エスケープされていない引用符の処理
-            summary = re.sub(r'\{2,}"', r'\"', summary)   # 重複したエスケープの正規化
+            summary = re.sub(r'(?<!\)"', '\"', summary)  # エスケープされていない引用符の処理
+            summary = re.sub(r'\{2,}"', '\"', summary)   # 重複したエスケープの正規化
             summary = re.sub(r'[ --]', '', summary)  # 制御文字の削除
 
             # プロパティ名のクォート処理
-            summary = re.sub(r'([{,])\s*([a-zA-Z0-9_]+)\s*:', r'"\2":', summary)
+            summary = re.sub(r'([{,])\s*([a-zA-Z0-9_]+)\s*:', r'"":', summary)
             
             # 文字列の正規化
             summary = re.sub(r'\s+', ' ', summary)
