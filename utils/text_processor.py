@@ -78,13 +78,27 @@ class TextProcessor:
             if summary.endswith('```'):
                 summary = summary[:-3]
             
-            # Additional cleanup
+            # Additional cleanup and formatting
             summary = summary.strip()
             
-            # Validate and format JSON structure
+            # Remove any irregular whitespace and normalize newlines
+            summary = re.sub(r'\s+', ' ', summary)
+            summary = re.sub(r'[\n\r]+', '\n', summary)
+            
+            # Fix common JSON formatting issues
+            summary = re.sub(r'(?<!\\)"', '\\"', summary)  # エスケープされていない引用符の処理
+            summary = re.sub(r'\\+\"', '\\"', summary)     # 重複したエスケープの正規化
+            summary = re.sub(r'[\x00-\x1F]', '', summary)  # 制御文字の削除
+            
+            # Try to detect and fix truncated JSON
+            if not summary.endswith('}'):
+                summary += '}'
+            if summary.count('{') > summary.count('}'):
+                summary += '}'
+            
             try:
-                # First, try to parse as is
-                json_data = json.loads(summary)
+                # First attempt to parse with strict JSON rules
+                json_data = json.loads(summary, strict=False)
                 
                 # Verify required fields
                 required_fields = ["動画の概要", "ポイント", "結論"]
@@ -102,7 +116,18 @@ class TextProcessor:
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON response: {str(e)}")
                 logger.error(f"Received text: {summary}")
-                raise ValueError(f"不正なJSON形式の応答が返されました: {str(e)}")
+                
+                try:
+                    # Try to fix common JSON formatting issues
+                    summary = re.sub(r',\s*}', '}', summary)  # Remove trailing commas
+                    summary = re.sub(r',\s*]', ']', summary)  # Remove trailing commas in arrays
+                    
+                    # Try parsing again with the fixed JSON
+                    json_data = json.loads(summary, strict=False)
+                    logger.info("JSON was successfully parsed after fixing formatting issues")
+                except Exception as inner_e:
+                    logger.error(f"Failed to fix JSON: {str(inner_e)}")
+                    raise ValueError(f"不正なJSON形式の応答が返されました。修正を試みましたが失敗しました: {str(e)}")
             except ValueError as e:
                 logger.error(f"JSON validation error: {str(e)}")
                 raise ValueError(f"JSON構造の検証に失敗しました: {str(e)}")
