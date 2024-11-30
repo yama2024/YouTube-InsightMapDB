@@ -2,6 +2,7 @@ from utils.youtube_helper import YouTubeHelper
 from utils.text_processor import TextProcessor
 from utils.mindmap_generator import MindMapGenerator
 from utils.pdf_generator import PDFGenerator
+from utils.notion_helper import NotionHelper
 import streamlit as st
 import os
 import time
@@ -419,6 +420,26 @@ try:
                         if st.session_state.mindmap:
                             try:
                                 st_mermaid(st.session_state.mindmap, key="mindmap_display_1")
+                                
+                                # Notion保存ボタンを追加
+                                if st.button("Notionに保存"):
+                                    try:
+                                        notion_helper = NotionHelper()
+                                        success, message = notion_helper.save_video_analysis(
+                                            video_info=st.session_state.video_info,
+                                            summary=st.session_state.summary,
+                                            mindmap=st.session_state.mindmap
+                                        )
+                                        
+                                        if success:
+                                            st.success(message)
+                                        else:
+                                            st.error(message)
+                                            
+                                    except Exception as e:
+                                        st.error(f"Notionへの保存中にエラーが発生しました: {str(e)}")
+                                        logger.error(f"Error saving to Notion: {str(e)}")
+                                        
                             except Exception as e:
                                 st.error(f"マインドマップの表示中にエラーが発生しました: {str(e)}")
                                 logger.error(f"Error displaying mindmap: {str(e)}")
