@@ -13,23 +13,56 @@ class NotionHelper:
         self.notion = Client(auth=os.environ["NOTION_API_KEY"])
         self.database_id = os.environ["NOTION_DATABASE_ID"]
 
-    def _split_text(self, text, max_length=2000):
-        """テキストを指定された最大長で分割する"""
+    def _split_text(self, text, max_length=1900):
+        """テキストを指定された最大長で分割する（文章の区切りを考慮）"""
         if not text:
             return []
+        
         chunks = []
         current_chunk = ""
+        current_length = 0
         
-        # 文単位で分割（。で区切る）
-        sentences = text.split("。")
+        # 段落で分割（改行で区切る）
+        paragraphs = text.split("\n")
         
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) < max_length:
-                current_chunk += sentence + "。"
-            else:
-                chunks.append(current_chunk)
-                current_chunk = sentence + "。"
+        for paragraph in paragraphs:
+            # 段落内の文を分割
+            sentences = paragraph.split("。")
+            
+            for sentence in sentences:
+                # 文末の句点を追加
+                sentence = sentence + "。" if sentence else ""
+                sentence_length = len(sentence)
+                
+                # 1つの文が最大長を超える場合は、強制的に分割
+                if sentence_length > max_length:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                        current_chunk = ""
+                        current_length = 0
+                    
+                    # 長い文を適切な長さで分割
+                    for i in range(0, len(sentence), max_length):
+                        chunk = sentence[i:i + max_length]
+                        chunks.append(chunk)
+                    continue
+                
+                # 現在のチャンクに文を追加できるかチェック
+                if current_length + sentence_length <= max_length:
+                    current_chunk += sentence
+                    current_length += sentence_length
+                else:
+                    # 現在のチャンクを保存し、新しいチャンクを開始
+                    chunks.append(current_chunk)
+                    current_chunk = sentence
+                    current_length = sentence_length
+            
+            # 段落の終わりに改行を追加（最後の段落以外）
+            if current_chunk and paragraph != paragraphs[-1]:
+                current_chunk += "\n"
+                current_length += 1
         
+        # 最後のチャンクを追加
         if current_chunk:
             chunks.append(current_chunk)
         
