@@ -74,26 +74,55 @@ try:
             )
             
             if success and pages:
-                st.markdown("## 📚 保存済み分析データ")
+                st.markdown("""
+                <div class="saved-data-header">
+                    <h2>📚 保存済み分析データ</h2>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 for page in pages:
-                    with st.expander(f"🎥 {page['title']}"):
-                        col1, col2, col3 = st.columns([2, 1, 1])
-                        with col1:
-                            st.markdown(f"**チャンネル:** {page['channel']}")
-                            # UTC文字列をdatetimeオブジェクトに変換
-                            utc_dt = datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00'))
-                            # JSTに変換（UTC+9）
-                            jst_dt = utc_dt.astimezone(timezone(timedelta(hours=9)))
-                            # フォーマットを'YYYY-MM-DD HH:mm:ss (JST)'に変更
-                            formatted_date = jst_dt.strftime('%Y-%m-%d %H:%M:%S (JST)')
-                            st.markdown(f"**分析日時:** {formatted_date}")
-                        with col2:
-                            st.markdown(f"**視聴回数:** {page['view_count']:,}回")
-                            st.markdown(f"**動画時間:** {page['duration']}")
-                        with col3:
-                            st.markdown(f"**ステータス:** {page['status']}")
-                            st.markdown(f"[動画を見る]({page['url']})")
+                    st.markdown(f"""
+                    <div class="video-card glass-container">
+                        <div class="video-card-header">
+                            <h3 class="video-title">🎥 {page['title']}</h3>
+                        </div>
+                        <div class="video-card-content">
+                            <div class="video-info-grid">
+                                <div class="info-section">
+                                    <div class="info-item">
+                                        <span class="info-label">📺 チャンネル</span>
+                                        <span class="info-value">{page['channel']}</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="info-label">📅 分析日時</span>
+                                        <span class="info-value">{datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S (JST)')}</span>
+                                    </div>
+                                </div>
+                                <div class="info-section">
+                                    <div class="info-item">
+                                        <span class="info-label">👁️ 視聴回数</span>
+                                        <span class="info-value">{page['view_count']:,}回</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <span class="info-label">⏱️ 動画時間</span>
+                                        <span class="info-value">{page['duration']}</span>
+                                    </div>
+                                </div>
+                                <div class="info-section">
+                                    <div class="info-item">
+                                        <span class="info-label">📊 ステータス</span>
+                                        <span class="info-value status-badge">{page['status']}</span>
+                                    </div>
+                                    <div class="info-item">
+                                        <a href="{page['url']}" target="_blank" class="video-link">
+                                            <span class="link-icon">🔗</span> 動画を見る
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
             elif not success:
                 st.error(pages)  # エラーメッセージを表示
             else:
