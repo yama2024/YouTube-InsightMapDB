@@ -73,9 +73,13 @@ class NotionHelper:
         視聴回数の文字列を数値に変換する
         例: "3万回視聴" → 30000
         """
+        if not view_count_str:
+            logger.warning("視聴回数が空です")
+            return 0
+
         try:
             # "回視聴"を削除
-            count = view_count_str.replace('回視聴', '')
+            count = view_count_str.replace('回視聴', '').strip()
             
             # 単位変換マップ
             unit_map = {
@@ -83,16 +87,28 @@ class NotionHelper:
                 '千': 1000
             }
             
+            # カンマを削除
+            count = count.replace(',', '')
+            
             # 単位があれば変換
             for unit, multiplier in unit_map.items():
                 if unit in count:
-                    number = float(count.replace(unit, ''))
-                    return int(number * multiplier)
+                    try:
+                        number = float(count.replace(unit, ''))
+                        return int(number * multiplier)
+                    except ValueError as e:
+                        logger.error(f"数値変換エラー ({count}): {str(e)}")
+                        return 0
             
             # 単位がなければそのまま数値に変換
-            return int(count.replace(',', ''))
-        except (ValueError, TypeError):
-            logger.warning(f"視聴回数の変換に失敗しました: {view_count_str}")
+            try:
+                return int(count)
+            except ValueError as e:
+                logger.error(f"数値変換エラー ({count}): {str(e)}")
+                return 0
+                
+        except Exception as e:
+            logger.error(f"視聴回数の変換に失敗しました ({view_count_str}): {str(e)}")
             return 0
 
     def _validate_content(self, content_dict):
@@ -140,11 +156,6 @@ class NotionHelper:
             # 視聴回数を数値に変換
             view_count = self._convert_view_count(video_info["view_count"])
             
-            # URLをmulti_select用に変換
-            url_select = [{
-                "name": video_info["video_url"]
-            }]
-            
             # ページプロパティの設定
             properties = {
                 "name": {
@@ -166,7 +177,7 @@ class NotionHelper:
                     ]
                 },
                 "url": {
-                    "multi_select": url_select
+                    "url": video_info["video_url"]
                 },
                 "view_count": {
                     "number": view_count
