@@ -100,9 +100,9 @@ try:
                             <div class="stat-badge">⏱️ 動画時間: {page['duration']}</div>
                             """, unsafe_allow_html=True)
                         with col3:
-                            sync_status = "🟢" if page.get('sync_status', 'synced') == 'synced' else "🔄"
+                            status_icon = page.get('status_icon', '🔄')
                             st.markdown(f"""
-                            <div class="stat-badge">{sync_status} ステータス: {page['status']}</div>
+                            <div class="stat-badge">{status_icon} ステータス: {page['status']}</div>
                             <div class="stat-badge">🔗 <a href="{page['url']}" target="_blank">動画を見る</a></div>
                             """, unsafe_allow_html=True)
                         
