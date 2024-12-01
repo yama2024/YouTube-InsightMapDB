@@ -70,7 +70,7 @@ try:
             success, pages = notion_helper.get_video_pages(
                 search_query=search_query,
                 sort_by=sort_by,
-                ascending=(sort_order == "ascending")
+                ascending=ascending
             )
             
             if success and pages:
@@ -131,7 +131,6 @@ try:
         except Exception as e:
             st.error(f"データの表示中にエラーが発生しました: {str(e)}")
             logger.error(f"Error displaying saved data: {str(e)}")
-
 
     def copy_text_block(text, label=""):
         try:
@@ -335,11 +334,10 @@ try:
             st.error("要約の表示中にエラーが発生しました")
 
     # Feature Introduction
-    # サイドバーの設定と保存済みデータの表示
+    # サイドバーの設定と保存済みデータの準備
     try:
         notion_helper = NotionHelper()
         search_query, sort_by, sort_order = setup_sidebar()
-        display_saved_data(notion_helper, search_query, sort_by, sort_order == "ascending")
     except Exception as e:
         st.sidebar.error(f"データの読み込みに失敗しました: {str(e)}")
         logger.error(f"Error loading saved data: {str(e)}")
@@ -597,6 +595,13 @@ try:
     except Exception as e:
         st.error(f"アプリケーションエラー: {str(e)}")
         logger.error(f"Application error: {str(e)}")
+
+    # 保存済みデータの表示（最下部）
+    try:
+        display_saved_data(notion_helper, search_query, sort_by, sort_order == "ascending")
+    except Exception as e:
+        st.error(f"保存済みデータの表示中にエラーが発生しました: {str(e)}")
+        logger.error(f"Error displaying saved data: {str(e)}")
 
 except Exception as e:
     st.error(f"初期化エラー: {str(e)}")
