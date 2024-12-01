@@ -2,7 +2,9 @@ from notion_client import Client
 import os
 import json
 import logging
+import requests
 from datetime import datetime
+from typing import Optional, Tuple
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -129,17 +131,49 @@ class NotionHelper:
                 elif category == 'contents' and field not in content_dict['contents']:
                     raise ValueError(f"必須フィールド {field} が contents に見つかりません")
 
-    def _download_thumbnail(self, thumbnail_url):
-        """サムネイル画像をダウンロードしてbase64エンコードする"""
+    def _download_thumbnail(self, thumbnail_url: str) -> Optional[bytes]:
+        """
+        サムネイル画像をダウンロードする
+
+        Args:
+            thumbnail_url (str): サムネイル画像のURL
+
+        Returns:
+            Optional[bytes]: ダウンロードした画像データ。失敗した場合はNone
+        """
+        if not thumbnail_url:
+            logger.warning("サムネイルURLが指定されていません")
+            return None
+
         try:
-            response = requests.get(thumbnail_url)
+            # タイムアウトを設定してリクエスト
+            response = requests.get(thumbnail_url, timeout=10, 
+                                 headers={'User-Agent': 'Mozilla/5.0'})
+            
             if response.status_code == 200:
+                content_type = response.headers.get('content-type', '')
+                if not content_type.startswith('image/'):
+                    logger.error(f"不正なコンテンツタイプです: {content_type}")
+                    return None
+                    
+                if len(response.content) > 5 * 1024 * 1024:  # 5MB制限
+                    logger.error("画像サイズが大きすぎます")
+                    return None
+                    
+                logger.info("サムネイル画像のダウンロードに成功しました")
                 return response.content
             else:
-                logger.error(f"サムネイル画像のダウンロードに失敗しました: {response.status_code}")
+                logger.error(f"サムネイル画像のダウンロードに失敗しました: HTTP {response.status_code}")
                 return None
+                
+        except requests.Timeout:
+            logger.error("サムネイル画像のダウンロードがタイムアウトしました")
+            return None
+        except requests.RequestException as e:
+            logger.error(f"サムネイル画像のダウンロード中にネットワークエラーが発生しました: {str(e)}")
+            return None
         except Exception as e:
-            logger.error(f"サムネイル画像のダウンロード中にエラーが発生しました: {str(e)}")
+            logger.error(f"サムネイル画像のダウンロード中に予期せぬエラーが発生しました: {str(e)}")
             return None
 
     def save_video_analysis(self, video_info, summary, transcript=None, mindmap=None, proofread_text=None):
