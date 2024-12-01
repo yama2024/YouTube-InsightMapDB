@@ -48,10 +48,23 @@ try:
     function handleCardClick(pageId) {
         const detailsSection = document.getElementById(`details_${pageId}`);
         const detailsContent = detailsSection.querySelector('.details-content');
+        const allDetailsSections = document.querySelectorAll('.video-details-section');
+        const allDetailsContents = document.querySelectorAll('.details-content');
         
+        // 他の開いているセクションを閉じる
+        allDetailsSections.forEach(section => {
+            if (section !== detailsSection && section.classList.contains('expanded')) {
+                section.classList.remove('expanded');
+                section.querySelector('.details-content').classList.remove('visible');
+            }
+        });
+        
+        // クリックされたセクションの表示を切り替え
         if (detailsSection.classList.contains('expanded')) {
             detailsSection.classList.remove('expanded');
-            detailsContent.classList.remove('visible');
+            setTimeout(() => {
+                detailsContent.classList.remove('visible');
+            }, 100);
         } else {
             detailsSection.classList.add('expanded');
             setTimeout(() => {

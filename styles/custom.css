@@ -905,28 +905,34 @@ div.stApp {
 
 .video-details-section {
     max-height: 0;
+    opacity: 0;
     overflow: hidden;
-    transition: max-height 0.5s ease-out;
+    transition: all 0.5s ease-out;
     background: rgba(255, 255, 255, 0.05);
     border-radius: 0 0 8px 8px;
+    transform: translateY(-20px);
 }
 
 .video-details-section.expanded {
     max-height: 2000px;
-    padding: 1rem;
+    opacity: 1;
+    padding: 1.5rem;
     margin-top: 1rem;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+    transform: translateY(0);
 }
 
 .details-content {
     opacity: 0;
     transform: translateY(-10px);
-    transition: all 0.3s ease;
+    transition: all 0.4s ease;
+    visibility: hidden;
 }
 
 .details-content.visible {
     opacity: 1;
     transform: translateY(0);
+    visibility: visible;
 }
 
 .details-section {
