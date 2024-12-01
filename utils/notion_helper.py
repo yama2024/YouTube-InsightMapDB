@@ -1,29 +1,16 @@
+from notion_client import Client
 import os
 import json
 import logging
 import requests
 from datetime import datetime
-from notion_client import Client
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, Tuple
 
 # Set up logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class NotionHelper:
-    # ステータス定義
-    SYNC_STATUS = {
-        'SYNCED': '同期済み',
-        'SYNCING': '同期中',
-        'ERROR': 'エラー'
-    }
-
-    # ステータスアイコン定義
-    STATUS_ICONS = {
-        'SYNCED': '🟢',
-        'SYNCING': '🔄',
-        'ERROR': '⚠️'
-    }
-
     def __init__(self):
         self.notion = Client(auth=os.environ["NOTION_API_KEY"])
         self.database_id = os.environ["NOTION_DATABASE_ID"]
@@ -426,7 +413,6 @@ class NotionHelper:
         except Exception as e:
             logger.error(f"Notionへの保存中にエラーが発生しました: {str(e)}")
             return False, f"保存に失敗しました: {str(e)}"
-
     def get_video_pages(self, search_query=None, sort_by="analysis_date", ascending=False):
         """
         保存された動画ページの一覧を取得する
@@ -485,13 +471,6 @@ class NotionHelper:
                 analysis_date = properties.get("analysis_date", {}).get("date", {}).get("start", "")
                 status = properties.get("status", {}).get("status", {}).get("name", "Unknown")
                 
-                # 同期ステータスの判定
-                sync_status = 'SYNCED'
-                if status.lower() == 'error':
-                    sync_status = 'ERROR'
-                elif status.lower() == 'syncing':
-                    sync_status = 'SYNCING'
-                
                 pages.append({
                     "id": page.get("id"),
                     "title": title,
@@ -500,9 +479,7 @@ class NotionHelper:
                     "view_count": view_count,
                     "duration": duration,
                     "analysis_date": analysis_date,
-                    "status": self.SYNC_STATUS[sync_status],
-                    "sync_status": sync_status,
-                    "status_icon": self.STATUS_ICONS[sync_status]
+                    "status": status
                 })
             
             return True, pages
