@@ -73,60 +73,58 @@ try:
                 ascending=ascending
             )
             
-            if success and pages:
-                st.markdown("""
-                <div class="saved-data-header">
-                    <h2>📚 保存済み分析データ</h2>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                for page in pages:
-                    st.markdown(f"""
-                    <div class="video-card glass-container">
-                        <div class="video-card-header">
-                            <h3 class="video-title">🎥 {page['title']}</h3>
-                        </div>
-                        <div class="video-card-content">
-                            <div class="video-info-grid">
-                                <div class="info-section">
-                                    <div class="info-item">
-                                        <span class="info-label">📺 チャンネル</span>
-                                        <span class="info-value">{page['channel']}</span>
-                                    </div>
-                                    <div class="info-item">
-                                        <span class="info-label">📅 分析日時</span>
-                                        <span class="info-value">{datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S (JST)')}</span>
-                                    </div>
+            if success:
+                data_count = len(pages) if pages else 0
+                with st.expander(f"📚 保存済み分析データ ({data_count}件)", expanded=True):
+                    if pages:
+                        for page in pages:
+                            st.markdown(f"""
+                            <div class="video-card glass-container">
+                                <div class="video-card-header">
+                                    <h3 class="video-title">🎥 {page['title']}</h3>
                                 </div>
-                                <div class="info-section">
-                                    <div class="info-item">
-                                        <span class="info-label">👁️ 視聴回数</span>
-                                        <span class="info-value">{page['view_count']:,}回</span>
-                                    </div>
-                                    <div class="info-item">
-                                        <span class="info-label">⏱️ 動画時間</span>
-                                        <span class="info-value">{page['duration']}</span>
-                                    </div>
-                                </div>
-                                <div class="info-section">
-                                    <div class="info-item">
-                                        <span class="info-label">📊 ステータス</span>
-                                        <span class="info-value status-badge">{page['status']}</span>
-                                    </div>
-                                    <div class="info-item">
-                                        <a href="{page['url']}" target="_blank" class="video-link">
-                                            <span class="link-icon">🔗</span> 動画を見る
-                                        </a>
+                                <div class="video-card-content">
+                                    <div class="video-info-grid">
+                                        <div class="info-section">
+                                            <div class="info-item">
+                                                <span class="info-label">📺 チャンネル</span>
+                                                <span class="info-value">{page['channel']}</span>
+                                            </div>
+                                            <div class="info-item">
+                                                <span class="info-label">📅 分析日時</span>
+                                                <span class="info-value">{datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S (JST)')}</span>
+                                            </div>
+                                        </div>
+                                        <div class="info-section">
+                                            <div class="info-item">
+                                                <span class="info-label">👁️ 視聴回数</span>
+                                                <span class="info-value">{page['view_count']:,}回</span>
+                                            </div>
+                                            <div class="info-item">
+                                                <span class="info-label">⏱️ 動画時間</span>
+                                                <span class="info-value">{page['duration']}</span>
+                                            </div>
+                                        </div>
+                                        <div class="info-section">
+                                            <div class="info-item">
+                                                <span class="info-label">📊 ステータス</span>
+                                                <span class="info-value status-badge">{page['status']}</span>
+                                            </div>
+                                            <div class="info-item">
+                                                <a href="{page['url']}" target="_blank" class="video-link">
+                                                    <span class="link-icon">🔗</span> 動画を見る
+                                                </a>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            elif not success:
-                st.error(pages)  # エラーメッセージを表示
+                            """, unsafe_allow_html=True)
+                    else:
+                        st.info("保存された分析データがありません")
             else:
-                st.info("保存された分析データがありません")
+                with st.expander(f"📚 保存済み分析データ (0件)", expanded=True):
+                    st.error(pages)  # エラーメッセージを表示
                 
         except Exception as e:
             st.error(f"データの表示中にエラーが発生しました: {str(e)}")
