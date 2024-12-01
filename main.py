@@ -42,6 +42,25 @@ try:
             logger.error(f"Error loading CSS: {str(e)}")
 
     load_css()
+    # JavaScriptの追加
+    st.markdown("""
+    <script>
+    function handleCardClick(pageId) {
+        const detailsSection = document.getElementById(`details_${pageId}`);
+        const detailsContent = detailsSection.querySelector('.details-content');
+        
+        if (detailsSection.classList.contains('expanded')) {
+            detailsSection.classList.remove('expanded');
+            detailsContent.classList.remove('visible');
+        } else {
+            detailsSection.classList.add('expanded');
+            setTimeout(() => {
+                detailsContent.classList.add('visible');
+            }, 300);
+        }
+    }
+    </script>
+    """, unsafe_allow_html=True)
 
     # サイドバーの設定
     def setup_sidebar():
@@ -89,8 +108,13 @@ try:
                 
                 for page in pages:
                     if view_style == "grid":
-                        st.markdown(f"""
-                        <div class="video-card glass-container">
+                        # 詳細表示用のセッション状態を初期化
+                        if f"show_details_{page['id']}" not in st.session_state:
+                            st.session_state[f"show_details_{page['id']}"] = False
+
+                        # カードをクリックして詳細表示を切り替え
+                        card_clicked = st.markdown(f"""
+                        <div class="video-card glass-container" onclick="handleCardClick('{page['id']}')">
                             <div class="video-card-header">
                                 <h3 class="video-title">🎥 {page['title']}</h3>
                             </div>
@@ -126,6 +150,26 @@ try:
                                                 <span class="link-icon">🔗</span> 動画を見る
                                             </a>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="video-details-section" id="details_{page['id']}">
+                                <div class="details-content">
+                                    <div class="details-section">
+                                        <h4>📝 文字起こし</h4>
+                                        <div class="content">分析内容をクリックして表示</div>
+                                    </div>
+                                    <div class="details-section">
+                                        <h4>📊 要約</h4>
+                                        <div class="content">分析内容をクリックして表示</div>
+                                    </div>
+                                    <div class="details-section">
+                                        <h4>🔄 マインドマップ</h4>
+                                        <div class="mindmap">分析内容をクリックして表示</div>
+                                    </div>
+                                    <div class="details-section">
+                                        <h4>✨ 校正済みテキスト</h4>
+                                        <div class="content">分析内容をクリックして表示</div>
                                     </div>
                                 </div>
                             </div>

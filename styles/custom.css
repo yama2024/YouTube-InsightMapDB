@@ -897,6 +897,64 @@ div.stApp {
 .score-fill.medium { background: #f1c40f; }
 .score-fill.low { background: #e74c3c; }
 
+/* Expandable Card Styles */
+.video-card, .video-list-item {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.video-details-section {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.5s ease-out;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0 0 8px 8px;
+}
+
+.video-details-section.expanded {
+    max-height: 2000px;
+    padding: 1rem;
+    margin-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.details-content {
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+}
+
+.details-content.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.details-section {
+    margin: 1rem 0;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+}
+
+.details-section h4 {
+    margin-bottom: 0.5rem;
+    color: #fff;
+    font-size: 1.1rem;
+}
+
+.details-section .content {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.details-section .mindmap {
+    margin: 1rem 0;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+}
+
 /* List View Styles */
 .video-list-item {
     margin-bottom: 1rem !important;
