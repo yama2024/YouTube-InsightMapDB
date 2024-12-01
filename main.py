@@ -69,24 +69,87 @@ try:
             success, pages = notion_helper.get_video_pages(
                 search_query=search_query,
                 sort_by=sort_by,
-                ascending=(sort_order == "ascending")
+                ascending=ascending
             )
             
             if success and pages:
-                st.markdown("## 📚 保存済み分析データ")
+                st.markdown("""
+                <div class="glass-container">
+                    <h2 class="section-header">📚 保存済み分析データ</h2>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 for page in pages:
-                    with st.expander(f"🎥 {page['title']}"):
+                    with st.expander(f"🎥 {page['title']}", expanded=False):
+                        # 基本情報セクション
+                        st.markdown("""
+                        <div class="glass-container">
+                            <h4 class="section-header" style="margin-top: 0;">📌 基本情報</h4>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
                         col1, col2, col3 = st.columns([2, 1, 1])
                         with col1:
-                            st.markdown(f"**チャンネル:** {page['channel']}")
-                            st.markdown(f"**分析日時:** {page['analysis_date']}")
+                            st.markdown(f"""
+                            <div class="stat-badge">📺 チャンネル: {page['channel']}</div>
+                            <div class="stat-badge">📅 分析日時: {page['analysis_date']}</div>
+                            """, unsafe_allow_html=True)
                         with col2:
-                            st.markdown(f"**視聴回数:** {page['view_count']:,}回")
-                            st.markdown(f"**動画時間:** {page['duration']}")
+                            st.markdown(f"""
+                            <div class="stat-badge">👁️ 視聴回数: {page['view_count']:,}回</div>
+                            <div class="stat-badge">⏱️ 動画時間: {page['duration']}</div>
+                            """, unsafe_allow_html=True)
                         with col3:
-                            st.markdown(f"**ステータス:** {page['status']}")
-                            st.markdown(f"[動画を見る]({page['url']})")
+                            sync_status = "🟢" if page.get('sync_status', 'synced') == 'synced' else "🔄"
+                            st.markdown(f"""
+                            <div class="stat-badge">{sync_status} ステータス: {page['status']}</div>
+                            <div class="stat-badge">🔗 <a href="{page['url']}" target="_blank">動画を見る</a></div>
+                            """, unsafe_allow_html=True)
+                        
+                        # データタイプの表示
+                        st.markdown("""
+                        <div class="glass-container" style="margin-top: 1rem;">
+                            <h4 class="section-header" style="margin-top: 0;">📊 保存データ</h4>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        data_cols = st.columns(4)
+                        with data_cols[0]:
+                            st.markdown(f"""
+                            <div class="feature-card">
+                                <div class="feature-icon">📝</div>
+                                <h5 class="feature-title">文字起こし</h5>
+                                <div class="stat-badge">{"✅ 保存済み" if page.get('has_transcript', False) else "❌ なし"}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with data_cols[1]:
+                            st.markdown(f"""
+                            <div class="feature-card">
+                                <div class="feature-icon">📊</div>
+                                <h5 class="feature-title">要約</h5>
+                                <div class="stat-badge">{"✅ 保存済み" if page.get('has_summary', False) else "❌ なし"}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with data_cols[2]:
+                            st.markdown(f"""
+                            <div class="feature-card">
+                                <div class="feature-icon">🔄</div>
+                                <h5 class="feature-title">マインドマップ</h5>
+                                <div class="stat-badge">{"✅ 保存済み" if page.get('has_mindmap', False) else "❌ なし"}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with data_cols[3]:
+                            st.markdown(f"""
+                            <div class="feature-card">
+                                <div class="feature-icon">✨</div>
+                                <h5 class="feature-title">校正済み</h5>
+                                <div class="stat-badge">{"✅ 保存済み" if page.get('has_proofread', False) else "❌ なし"}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
             elif not success:
                 st.error(pages)  # エラーメッセージを表示
             else:
