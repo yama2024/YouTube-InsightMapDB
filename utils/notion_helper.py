@@ -129,6 +129,19 @@ class NotionHelper:
                 elif category == 'contents' and field not in content_dict['contents']:
                     raise ValueError(f"必須フィールド {field} が contents に見つかりません")
 
+    def _download_thumbnail(self, thumbnail_url):
+        """サムネイル画像をダウンロードしてbase64エンコードする"""
+        try:
+            response = requests.get(thumbnail_url)
+            if response.status_code == 200:
+                return response.content
+            else:
+                logger.error(f"サムネイル画像のダウンロードに失敗しました: {response.status_code}")
+                return None
+        except Exception as e:
+            logger.error(f"サムネイル画像のダウンロード中にエラーが発生しました: {str(e)}")
+            return None
+
     def save_video_analysis(self, video_info, summary, transcript=None, mindmap=None, proofread_text=None):
         """
         動画分析結果をNotionデータベースに保存する
@@ -205,6 +218,29 @@ class NotionHelper:
 
             # ページ本文の設定
             children = []
+            
+            # サムネイル画像セクション
+            if "thumbnail_url" in video_info and video_info["thumbnail_url"]:
+                thumbnail_data = self._download_thumbnail(video_info["thumbnail_url"])
+                if thumbnail_data:
+                    children.extend([
+                        {
+                            "object": "block",
+                            "type": "image",
+                            "image": {
+                                "type": "external",
+                                "external": {
+                                    "url": video_info["thumbnail_url"]
+                                }
+                            }
+                        },
+                        {
+                            "object": "block",
+                            "type": "divider",
+                            "divider": {}
+                        }
+                    ])
+                    logger.info("サムネイル画像をNotionページに追加しました")
             
             # 文字起こしセクション
             if transcript:
