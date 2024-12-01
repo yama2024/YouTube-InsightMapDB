@@ -67,33 +67,148 @@ try:
     # データ一覧の表示
     def display_saved_data(notion_helper, search_query, sort_by, ascending):
         try:
+            # 日付範囲フィルターの追加
+            st.sidebar.markdown("### 📅 日付フィルター")
+            start_date = st.sidebar.date_input("開始日", None)
+            end_date = st.sidebar.date_input("終了日", None)
+
+            # 視聴回数範囲フィルターの追加
+            st.sidebar.markdown("### 👁️ 視聴回数フィルター")
+            min_views = st.sidebar.number_input("最小視聴回数", min_value=0, value=0)
+            max_views = st.sidebar.number_input("最大視聴回数", min_value=0, value=0)
+
+            # チャンネル名での検索タイプ
+            st.sidebar.markdown("### 🎥 チャンネル名検索")
+            channel_search_type = st.sidebar.radio(
+                "検索タイプ",
+                ["部分一致", "完全一致"],
+                horizontal=True
+            )
+
+            # 表示形式の選択
+            st.sidebar.markdown("### 📊 表示形式")
+            view_type = st.sidebar.radio(
+                "表示形式",
+                ["グリッド", "リスト"],
+                horizontal=True
+            )
+
+            # ページネーションの設定
+            items_per_page = st.sidebar.selectbox(
+                "1ページあたりの表示件数",
+                [10, 20, 50, 100],
+                index=0
+            )
+
             success, pages = notion_helper.get_video_pages(
                 search_query=search_query,
                 sort_by=sort_by,
-                ascending=(sort_order == "ascending")
+                ascending=ascending
             )
             
             if success and pages:
-                st.markdown("## 📚 保存済み分析データ")
-                
+                # データのフィルタリング
+                filtered_pages = []
                 for page in pages:
-                    with st.expander(f"🎥 {page['title']}"):
-                        col1, col2, col3 = st.columns([2, 1, 1])
-                        with col1:
-                            st.markdown(f"**チャンネル:** {page['channel']}")
-                            # UTC文字列をdatetimeオブジェクトに変換
-                            utc_dt = datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00'))
-                            # JSTに変換（UTC+9）
-                            jst_dt = utc_dt.astimezone(timezone(timedelta(hours=9)))
-                            # フォーマットを'YYYY-MM-DD HH:mm:ss (JST)'に変更
-                            formatted_date = jst_dt.strftime('%Y-%m-%d %H:%M:%S (JST)')
-                            st.markdown(f"**分析日時:** {formatted_date}")
-                        with col2:
-                            st.markdown(f"**視聴回数:** {page['view_count']:,}回")
-                            st.markdown(f"**動画時間:** {page['duration']}")
-                        with col3:
-                            st.markdown(f"**ステータス:** {page['status']}")
-                            st.markdown(f"[動画を見る]({page['url']})")
+                    # 日付フィルター
+                    analysis_date = datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00'))
+                    if start_date and analysis_date.date() < start_date:
+                        continue
+                    if end_date and analysis_date.date() > end_date:
+                        continue
+
+                    # 視聴回数フィルター
+                    view_count = int(page['view_count'].replace(',', ''))
+                    if min_views > 0 and view_count < min_views:
+                        continue
+                    if max_views > 0 and view_count > max_views:
+                        continue
+
+                    # チャンネル名フィルター
+                    if channel_search_type == "完全一致" and search_query and page['channel'] != search_query:
+                        continue
+                    if channel_search_type == "部分一致" and search_query and search_query.lower() not in page['channel'].lower():
+                        continue
+
+                    filtered_pages.append(page)
+
+                # データ件数の表示
+                st.markdown(f"## 📚 保存済み分析データ （{len(filtered_pages)}件）")
+
+                # ページネーション
+                total_pages = (len(filtered_pages) + items_per_page - 1) // items_per_page
+                if total_pages > 1:
+                    page_number = st.selectbox("ページ", range(1, total_pages + 1)) - 1
+                    start_idx = page_number * items_per_page
+                    end_idx = min(start_idx + items_per_page, len(filtered_pages))
+                    current_pages = filtered_pages[start_idx:end_idx]
+                else:
+                    current_pages = filtered_pages
+
+                # グリッドビュー/リストビューの表示
+                if view_type == "グリッド":
+                    cols = st.columns(2)
+                    for idx, page in enumerate(current_pages):
+                        with cols[idx % 2]:
+                            with st.container():
+                                # サムネイル画像の表示
+                                if 'thumbnail_url' in page:
+                                    st.image(page['thumbnail_url'], use_column_width=True)
+                                
+                                st.markdown(f"### 🎥 {page['title']}")
+                                
+                                # UTC文字列をJSTに変換
+                                utc_dt = datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00'))
+                                jst_dt = utc_dt.astimezone(timezone(timedelta(hours=9)))
+                                formatted_date = jst_dt.strftime('%Y-%m-%d %H:%M:%S (JST)')
+                                
+                                # ステータスアイコンの設定
+                                status_icons = {
+                                    'completed': '✅',
+                                    'processing': '⏳',
+                                    'error': '❌',
+                                    'pending': '⏸️'
+                                }
+                                status_icon = status_icons.get(page['status'].lower(), '❔')
+                                
+                                st.markdown(f"""
+                                    - 📺 **チャンネル:** {page['channel']}
+                                    - 🕒 **分析日時:** {formatted_date}
+                                    - 👁️ **視聴回数:** {page['view_count']:,}回
+                                    - ⏱️ **動画時間:** {page['duration']}
+                                    - {status_icon} **ステータス:** {page['status']}
+                                    - 🔗 [動画を見る]({page['url']})
+                                """)
+                else:  # リストビュー
+                    for page in current_pages:
+                        with st.expander(f"🎥 {page['title']}"):
+                            cols = st.columns([1, 2])
+                            with cols[0]:
+                                if 'thumbnail_url' in page:
+                                    st.image(page['thumbnail_url'], use_column_width=True)
+                            with cols[1]:
+                                # UTC文字列をJSTに変換
+                                utc_dt = datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00'))
+                                jst_dt = utc_dt.astimezone(timezone(timedelta(hours=9)))
+                                formatted_date = jst_dt.strftime('%Y-%m-%d %H:%M:%S (JST)')
+                                
+                                # ステータスアイコンの設定
+                                status_icons = {
+                                    'completed': '✅',
+                                    'processing': '⏳',
+                                    'error': '❌',
+                                    'pending': '⏸️'
+                                }
+                                status_icon = status_icons.get(page['status'].lower(), '❔')
+                                
+                                st.markdown(f"""
+                                    - 📺 **チャンネル:** {page['channel']}
+                                    - 🕒 **分析日時:** {formatted_date}
+                                    - 👁️ **視聴回数:** {page['view_count']:,}回
+                                    - ⏱️ **動画時間:** {page['duration']}
+                                    - {status_icon} **ステータス:** {page['status']}
+                                    - 🔗 [動画を見る]({page['url']})
+                                """)
             elif not success:
                 st.error(pages)  # エラーメッセージを表示
             else:
