@@ -80,9 +80,10 @@ try:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                for page in pages:
+                for i, page in enumerate(pages):
+                    # ビデオカードのHTML
                     st.markdown(f"""
-                    <div class="video-card glass-container">
+                    <div class="video-card glass-container" style="cursor: pointer;">
                         <div class="video-card-header">
                             <h3 class="video-title">🎥 {page['title']}</h3>
                         </div>
@@ -123,6 +124,41 @@ try:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+
+                    # 詳細情報を表示するexpander
+                    with st.expander(f"詳細情報を表示 - {page['title']}", expanded=False):
+                        st.markdown("### 📝 文字起こし")
+                        if page.get('transcript'):
+                            st.markdown(page['transcript'])
+                        else:
+                            st.info("文字起こしデータがありません")
+
+                        st.markdown("### 📊 要約")
+                        if page.get('summary'):
+                            try:
+                                summary_data = json.loads(page['summary'])
+                                st.markdown("#### 📑 動画の概要")
+                                st.markdown(summary_data.get("動画の概要", ""))
+                                st.markdown("#### 💡 結論")
+                                st.markdown(summary_data.get("結論", ""))
+                            except:
+                                st.markdown(page['summary'])
+                        else:
+                            st.info("要約データがありません")
+
+                        if page.get('mindmap'):
+                            st.markdown("### 🔄 マインドマップ")
+                            try:
+                                st_mermaid(page['mindmap'])
+                            except:
+                                st.error("マインドマップの表示に失敗しました")
+
+                        st.markdown("### ✨ 校正済みテキスト")
+                        if page.get('proofread_text'):
+                            st.markdown(page['proofread_text'])
+                        else:
+                            st.info("校正済みテキストがありません")
+
             elif not success:
                 st.error(pages)  # エラーメッセージを表示
             else:
