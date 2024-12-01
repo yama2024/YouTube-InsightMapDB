@@ -1,79 +1,30 @@
-from utils.youtube_helper import YouTubeHelper
-from utils.text_processor import TextProcessor
-from utils.mindmap_generator import MindMapGenerator
-from utils.pdf_generator import PDFGenerator
-from utils.notion_helper import NotionHelper
-import streamlit as st
 import os
-import time
-import logging
 import json
+import time
 from datetime import datetime, timezone, timedelta
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Import streamlit_mermaid at the top level
+import logging
+from helpers.youtube_helper import YouTubeHelper
+from helpers.text_processor import TextProcessor
+from helpers.mindmap_generator import MindMapGenerator
+from helpers.notion_helper import NotionHelper
+import streamlit as st
 from streamlit_mermaid import st_mermaid
 
-try:
-    # Page configuration
-    st.set_page_config(page_title="YouTube InsightMap",
-                       page_icon="🎯",
-                       layout="wide",
-                       initial_sidebar_state="collapsed")
+# ロギングの設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-    # Load CSS
-    def load_css():
-        try:
-            css_path = os.path.join(os.path.dirname(__file__), 'styles',
-                                    'custom.css')
-            if os.path.exists(css_path):
-                with open(css_path) as f:
-                    st.markdown(f'<style>{f.read()}</style>',
-                               unsafe_allow_html=True)
-            else:
-                logger.error("CSS file not found!")
-        except Exception as e:
-            logger.error(f"Error loading CSS: {str(e)}")
+def load_css():
+    """CSSファイルを読み込む"""
+    try:
+        with open("styles/custom.css") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    except Exception as e:
+        logger.error(f"Error loading CSS: {str(e)}")
 
+def main():
+    # CSSの読み込み
     load_css()
-    # JavaScriptの追加
-    st.markdown("""
-    <script>
-    function handleCardClick(pageId) {
-        const detailsSection = document.getElementById(`details_${pageId}`);
-        const detailsContent = detailsSection.querySelector('.details-content');
-        const allDetailsSections = document.querySelectorAll('.video-details-section');
-        const allDetailsContents = document.querySelectorAll('.details-content');
-        
-        // 他の開いているセクションを閉じる
-        allDetailsSections.forEach(section => {
-            if (section !== detailsSection && section.classList.contains('expanded')) {
-                section.classList.remove('expanded');
-                section.querySelector('.details-content').classList.remove('visible');
-            }
-        });
-        
-        // クリックされたセクションの表示を切り替え
-        if (detailsSection.classList.contains('expanded')) {
-            detailsSection.classList.remove('expanded');
-            setTimeout(() => {
-                detailsContent.classList.remove('visible');
-            }, 100);
-        } else {
-            detailsSection.classList.add('expanded');
-            setTimeout(() => {
-                detailsContent.classList.add('visible');
-            }, 300);
-        }
-    }
-    </script>
-    """, unsafe_allow_html=True)
 
     # サイドバーの設定
     def setup_sidebar():
@@ -94,12 +45,17 @@ try:
                 format_func=lambda x: "降順" if x == "descending" else "昇順",
                 horizontal=True
             )
-            view_style = st.radio(
-                "表示スタイル",
+            if 'view_style' not in st.session_state:
+                st.session_state.view_style = "grid"
+            
+            view_style = st.sidebar.radio(
+                "表示スタイル 🔲/📝",
                 options=["grid", "list"],
+                key="view_style_radio",
                 format_func=lambda x: "グリッド表示" if x == "grid" else "リスト表示",
                 horizontal=True,
-                help="データの表示形式を選択できます"
+                help="データの表示形式を選択できます",
+                on_change=lambda: setattr(st.session_state, 'view_style', st.session_state.view_style_radio)
             )
             return search_query, sort_by, sort_order, view_style
 
@@ -113,101 +69,129 @@ try:
             )
             
             if success and pages:
-                st.markdown("""
+                # ヘッダーとコンテナの開始
+                st.markdown(f"""
                 <div class="saved-data-header">
                     <h2>📚 保存済み分析データ</h2>
+                    <div class="view-style-indicator">
+                        {('🔲 グリッド表示' if view_style == 'grid' else '📝 リスト表示')}
+                    </div>
                 </div>
+                <div class="view-transition-container {view_style}-view">
                 """, unsafe_allow_html=True)
                 
+                # 各ページのデータを表示
                 for page in pages:
                     if view_style == "grid":
-                        # 詳細表示用のセッション状態を初期化
-                        if f"show_details_{page['id']}" not in st.session_state:
-                            st.session_state[f"show_details_{page['id']}"] = False
+                        # グリッド表示用の状態管理
+                        details_key = f"show_details_{page['id']}"
+                        if details_key not in st.session_state:
+                            st.session_state[details_key] = False
 
-                        # カードをクリックして詳細表示を切り替え
-                        card_clicked = st.markdown(f"""
-                        <div class="video-card glass-container" onclick="handleCardClick('{page['id']}')">
-                            <div class="video-card-header">
-                                <h3 class="video-title">🎥 {page['title']}</h3>
-                            </div>
-                            <div class="video-card-content">
-                                <div class="video-info-grid">
-                                    <div class="info-section">
-                                        <div class="info-item">
-                                            <span class="info-label">📺 チャンネル</span>
-                                            <span class="info-value">{page['channel']}</span>
-                                        </div>
-                                        <div class="info-item">
-                                            <span class="info-label">📅 分析日時</span>
-                                            <span class="info-value">{datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S (JST)')}</span>
-                                        </div>
-                                    </div>
-                                    <div class="info-section">
-                                        <div class="info-item">
-                                            <span class="info-label">👁️ 視聴回数</span>
-                                            <span class="info-value">{page['view_count']:,}回</span>
-                                        </div>
-                                        <div class="info-item">
-                                            <span class="info-label">⏱️ 動画時間</span>
-                                            <span class="info-value">{page['duration']}</span>
-                                        </div>
-                                    </div>
-                                    <div class="info-section">
-                                        <div class="info-item">
-                                            <span class="info-label">📊 ステータス</span>
-                                            <span class="info-value status-badge">{page['status']}</span>
-                                        </div>
-                                        <div class="info-item">
-                                            <a href="{page['url']}" target="_blank" class="video-link">
-                                                <span class="link-icon">🔗</span> 動画を見る
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="video-details-section" id="details_{page['id']}">
-                                <div class="details-content">
-                                    <div class="details-section">
-                                        <h4>📝 文字起こし</h4>
-                                        <div class="content">分析内容をクリックして表示</div>
-                                    </div>
-                                    <div class="details-section">
-                                        <h4>📊 要約</h4>
-                                        <div class="content">分析内容をクリックして表示</div>
-                                    </div>
-                                    <div class="details-section">
-                                        <h4>🔄 マインドマップ</h4>
-                                        <div class="mindmap">分析内容をクリックして表示</div>
-                                    </div>
-                                    <div class="details-section">
-                                        <h4>✨ 校正済みテキスト</h4>
-                                        <div class="content">分析内容をクリックして表示</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:  # リスト表示
-                        st.markdown(f"""
-                        <div class="video-list-item glass-container">
-                            <div class="video-list-content">
-                                <div class="video-list-header">
+                        # グリッドカードの表示
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="video-card glass-container">
+                                <div class="video-card-header">
                                     <h3 class="video-title">🎥 {page['title']}</h3>
-                                    <span class="status-badge">{page['status']}</span>
                                 </div>
-                                <div class="video-list-details">
-                                    <span class="list-info-item">📺 {page['channel']}</span>
-                                    <span class="list-info-item">👁️ {page['view_count']:,}回</span>
-                                    <span class="list-info-item">⏱️ {page['duration']}</span>
-                                    <span class="list-info-item">📅 {datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S')}</span>
-                                    <a href="{page['url']}" target="_blank" class="video-link">
-                                        <span class="link-icon">🔗</span> 動画を見る
-                                    </a>
+                                <div class="video-card-content">
+                                    <div class="video-info-grid">
+                                        <div class="info-section">
+                                            <div class="info-item">
+                                                <span class="info-label">📺 チャンネル</span>
+                                                <span class="info-value">{page['channel']}</span>
+                                            </div>
+                                            <div class="info-item">
+                                                <span class="info-label">📅 分析日時</span>
+                                                <span class="info-value">{datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S (JST)')}</span>
+                                            </div>
+                                        </div>
+                                        <div class="info-section">
+                                            <div class="info-item">
+                                                <span class="info-label">👁️ 視聴回数</span>
+                                                <span class="info-value">{page['view_count']:,}回</span>
+                                            </div>
+                                            <div class="info-item">
+                                                <span class="info-label">⏱️ 動画時間</span>
+                                                <span class="info-value">{page['duration']}</span>
+                                            </div>
+                                        </div>
+                                        <div class="info-section">
+                                            <div class="info-item">
+                                                <span class="info-label">📊 ステータス</span>
+                                                <span class="info-value status-badge">{page['status']}</span>
+                                            </div>
+                                            <div class="info-item">
+                                                <a href="{page['url']}" target="_blank" class="video-link">
+                                                    <span class="link-icon">🔗</span> 動画を見る
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            """, unsafe_allow_html=True)
+
+                            # 詳細表示ボタン
+                            col1, col2 = st.columns([6, 1])
+                            with col2:
+                                if st.button(
+                                    "📎 詳細" + ("を閉じる" if st.session_state[details_key] else "を表示"),
+                                    key=f"btn_{page['id']}"
+                                ):
+                                    st.session_state[details_key] = not st.session_state[details_key]
+                                    st.rerun()
+
+                            # 詳細セクションの表示
+                            if st.session_state[details_key]:
+                                st.markdown(f"""
+                                <div class="video-details-section expanded">
+                                    <div class="details-content visible">
+                                        <div class="details-section">
+                                            <h4>📝 文字起こし</h4>
+                                            <div class="content">{page.get('transcript', '文字起こしデータがありません')}</div>
+                                        </div>
+                                        <div class="details-section">
+                                            <h4>📊 要約</h4>
+                                            <div class="content">{page.get('summary', '要約データがありません')}</div>
+                                        </div>
+                                        <div class="details-section">
+                                            <h4>🔄 マインドマップ</h4>
+                                            <div class="mindmap">{page.get('mindmap', 'マインドマップがありません')}</div>
+                                        </div>
+                                        <div class="details-section">
+                                            <h4>✨ 校正済みテキスト</h4>
+                                            <div class="content">{page.get('proofread_text', '校正済みテキストがありません')}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                    else:
+                        # リスト表示
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="video-list-item glass-container">
+                                <div class="video-list-content">
+                                    <div class="video-list-header">
+                                        <h3 class="video-title">🎥 {page['title']}</h3>
+                                        <span class="status-badge">{page['status']}</span>
+                                    </div>
+                                    <div class="video-list-details">
+                                        <span class="list-info-item">📺 {page['channel']}</span>
+                                        <span class="list-info-item">👁️ {page['view_count']:,}回</span>
+                                        <span class="list-info-item">⏱️ {page['duration']}</span>
+                                        <span class="list-info-item">📅 {datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S')}</span>
+                                        <a href="{page['url']}" target="_blank" class="video-link">
+                                            <span class="link-icon">🔗</span> 動画を見る
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                # コンテナの終了
+                st.markdown("</div>", unsafe_allow_html=True)
             elif not success:
                 st.error(pages)  # エラーメッセージを表示
             else:
@@ -217,15 +201,7 @@ try:
             st.error(f"データの表示中にエラーが発生しました: {str(e)}")
             logger.error(f"Error displaying saved data: {str(e)}")
 
-    def copy_text_block(text, label=""):
-        try:
-            if label:
-                st.markdown(f"#### {label}")
-            st.markdown(text, unsafe_allow_html=False)
-        except Exception as e:
-            logger.error(f"Error in copy_text_block: {str(e)}")
-
-    # Initialize session state with error handling
+    # Initialize session state
     if 'current_step' not in st.session_state:
         st.session_state.current_step = 1
     if 'steps_completed' not in st.session_state:
@@ -262,6 +238,8 @@ try:
         st.session_state.current_summary_style = "overview"  # Default to overview
     if 'show_saved_data' not in st.session_state:
         st.session_state.show_saved_data = True  # デフォルトで表示
+    if 'view_style' not in st.session_state:
+        st.session_state.view_style = "grid"  # デフォルトでグリッド表示
 
     def update_step_progress(step_name: str, completed: bool = True):
         """Update the completion status of a processing step"""
@@ -270,14 +248,13 @@ try:
         except Exception as e:
             logger.error(f"Error updating step progress: {str(e)}")
 
-    # Application Header
+    # アプリケーションのメインヘッダー
     st.markdown('''
     <div class="app-header">
         <div class="app-title">YouTube InsightMap</div>
         <div class="app-subtitle">Content Knowledge Visualization</div>
     </div>
-    ''',
-                unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
 
     def get_step_status(step_number):
         try:
@@ -420,15 +397,7 @@ try:
             logger.error(f"Summary display error: {str(e)}")
             st.error("要約の表示中にエラーが発生しました")
 
-    # Feature Introduction
-    # サイドバーの設定と保存済みデータの準備
-    try:
-        notion_helper = NotionHelper()
-        search_query, sort_by, sort_order, view_style = setup_sidebar()
-    except Exception as e:
-        st.sidebar.error(f"データの読み込みに失敗しました: {str(e)}")
-        logger.error(f"Error loading saved data: {str(e)}")
-
+    # 機能の紹介セクション
     st.markdown('''
     <div class="glass-container feature-container">
         <h4 class="section-header" style="margin-top: 0;">🎯 Advanced Content Analysis</h4>
@@ -450,7 +419,7 @@ try:
     ''',
                 unsafe_allow_html=True)
 
-    # Main application logic
+    # メインアプリケーションロジック
     try:
         # Step 1: Video Input
         with st.expander("Step 1: Video Input",
@@ -484,25 +453,43 @@ try:
             if st.session_state.video_info:
                 video_info = st.session_state.video_info
 
-                st.markdown(f'''
-                <div class="glass-container video-info">
-                    <div class="video-grid">
-                        <div class="video-thumbnail">
-                            <img src="{video_info['thumbnail_url']}" alt="Video thumbnail" style="width: 100%; border-radius: 8px;">
-                        </div>
-                        <div class="video-details">
-                            <h2 class="video-title">{video_info['title']}</h2>
-                            <div class="video-stats">
-                                <span class="stat-badge">👤 {video_info['channel_title']}</span>
-                                <span class="stat-badge">⏱️ {video_info['duration']}</span>
-                                <span class="stat-badge">👁️ {video_info['view_count']}回視聴</span>
+                if view_style == "grid":
+                    st.markdown(f'''
+                    <div class="glass-container video-info">
+                        <div class="video-grid">
+                            <div class="video-thumbnail">
+                                <img src="{video_info['thumbnail_url']}" alt="Video thumbnail" style="width: 100%; border-radius: 8px;">
                             </div>
-                            <p class="video-date">📅 投稿日: {video_info['published_at']}</p>
+                            <div class="video-details">
+                                <h2 class="video-title">{video_info['title']}</h2>
+                                <div class="video-stats">
+                                    <span class="stat-badge">👤 {video_info['channel_title']}</span>
+                                    <span class="stat-badge">⏱️ {video_info['duration']}</span>
+                                    <span class="stat-badge">👁️ {video_info['view_count']}回視聴</span>
+                                </div>
+                                <p class="video-date">📅 投稿日: {video_info['published_at']}</p>
+                            </div>
                         </div>
                     </div>
-                </div>
-                ''',
-                            unsafe_allow_html=True)
+                    ''',
+                                unsafe_allow_html=True)
+                else:
+                    st.markdown(f'''
+                    <div class="glass-container video-list-item">
+                        <div class="video-list-content">
+                            <div class="video-list-header">
+                                <h3 class="video-title">🎥 {video_info['title']}</h3>
+                            </div>
+                            <div class="video-list-details">
+                                <span class="list-info-item">👤 {video_info['channel_title']}</span>
+                                <span class="list-info-item">⏱️ {video_info['duration']}</span>
+                                <span class="list-info-item">👁️ {video_info['view_count']}回視聴</span>
+                                <span class="list-info-item">📅 {video_info['published_at']}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ''',
+                                unsafe_allow_html=True)
 
                 if 'transcript' not in st.session_state or not st.session_state.transcript:
                     st.markdown('''
@@ -553,7 +540,7 @@ try:
 
                 with tabs[0]:
                     st.markdown("### Original Transcript")
-                    copy_text_block(st.session_state.transcript)
+                    st.text_area("Transcript", st.session_state.transcript, height=300)
 
                 with tabs[1]:
                     if ('summary' not in st.session_state or 
@@ -650,8 +637,9 @@ try:
                             st.success("校正が完了しました。文章の論理構造、読みやすさ、表現の適切性を改善しました。")
 
                 with tabs[4]:
-                    st.markdown("### 📚 Notion Database")
-                    if not (st.session_state.video_info and st.session_state.transcript):
+                    try:
+                        st.markdown("### 📚 Notion Database")
+                        if not (st.session_state.video_info and st.session_state.transcript):
                         st.info("Notionに保存するには、動画情報と文字起こしが必要です。")
                     else:
                         st.markdown("### 📋 Notionデータベース保存")
@@ -683,6 +671,14 @@ try:
         st.error(f"アプリケーションエラー: {str(e)}")
         logger.error(f"Application error: {str(e)}")
 
+    # サイドバーの設定と保存済みデータの準備
+    try:
+        notion_helper = NotionHelper()
+        search_query, sort_by, sort_order, view_style = setup_sidebar()
+    except Exception as e:
+        st.sidebar.error(f"データの読み込みに失敗しました: {str(e)}")
+        logger.error(f"Error loading saved data: {str(e)}")
+
     # 保存済みデータの表示（最下部）
     try:
         # トグルボタンで表示/非表示を切り替え
@@ -698,6 +694,16 @@ try:
         st.error(f"保存済みデータの表示中にエラーが発生しました: {str(e)}")
         logger.error(f"Error displaying saved data: {str(e)}")
 
-except Exception as e:
-    st.error(f"初期化エラー: {str(e)}")
-    logger.error(f"Initialization error: {str(e)}")
+# Notion DB関連の処理
+                        if st.session_state.video_info and st.session_state.transcript:
+                            st.markdown("### 📋 Notionデータベース保存")
+                            # Notion関連の処理を続ける
+                        else:
+                            st.info("Notionに保存するには、動画情報と文字起こしが必要です。")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        st.error(f"初期化エラー: {str(e)}")
+        logger.error(f"Initialization error: {str(e)}")
