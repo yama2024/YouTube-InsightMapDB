@@ -62,10 +62,17 @@ try:
                 format_func=lambda x: "降順" if x == "descending" else "昇順",
                 horizontal=True
             )
-            return search_query, sort_by, sort_order
+            view_style = st.radio(
+                "表示スタイル",
+                options=["grid", "list"],
+                format_func=lambda x: "グリッド表示" if x == "grid" else "リスト表示",
+                horizontal=True,
+                help="データの表示形式を選択できます"
+            )
+            return search_query, sort_by, sort_order, view_style
 
     # データ一覧の表示
-    def display_saved_data(notion_helper, search_query, sort_by, ascending):
+    def display_saved_data(notion_helper, search_query, sort_by, ascending, view_style="grid"):
         try:
             success, pages = notion_helper.get_video_pages(
                 search_query=search_query,
@@ -81,48 +88,69 @@ try:
                 """, unsafe_allow_html=True)
                 
                 for page in pages:
-                    st.markdown(f"""
-                    <div class="video-card glass-container">
-                        <div class="video-card-header">
-                            <h3 class="video-title">🎥 {page['title']}</h3>
-                        </div>
-                        <div class="video-card-content">
-                            <div class="video-info-grid">
-                                <div class="info-section">
-                                    <div class="info-item">
-                                        <span class="info-label">📺 チャンネル</span>
-                                        <span class="info-value">{page['channel']}</span>
+                    if view_style == "grid":
+                        st.markdown(f"""
+                        <div class="video-card glass-container">
+                            <div class="video-card-header">
+                                <h3 class="video-title">🎥 {page['title']}</h3>
+                            </div>
+                            <div class="video-card-content">
+                                <div class="video-info-grid">
+                                    <div class="info-section">
+                                        <div class="info-item">
+                                            <span class="info-label">📺 チャンネル</span>
+                                            <span class="info-value">{page['channel']}</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">📅 分析日時</span>
+                                            <span class="info-value">{datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S (JST)')}</span>
+                                        </div>
                                     </div>
-                                    <div class="info-item">
-                                        <span class="info-label">📅 分析日時</span>
-                                        <span class="info-value">{datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S (JST)')}</span>
+                                    <div class="info-section">
+                                        <div class="info-item">
+                                            <span class="info-label">👁️ 視聴回数</span>
+                                            <span class="info-value">{page['view_count']:,}回</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <span class="info-label">⏱️ 動画時間</span>
+                                            <span class="info-value">{page['duration']}</span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div class="info-section">
-                                    <div class="info-item">
-                                        <span class="info-label">👁️ 視聴回数</span>
-                                        <span class="info-value">{page['view_count']:,}回</span>
-                                    </div>
-                                    <div class="info-item">
-                                        <span class="info-label">⏱️ 動画時間</span>
-                                        <span class="info-value">{page['duration']}</span>
-                                    </div>
-                                </div>
-                                <div class="info-section">
-                                    <div class="info-item">
-                                        <span class="info-label">📊 ステータス</span>
-                                        <span class="info-value status-badge">{page['status']}</span>
-                                    </div>
-                                    <div class="info-item">
-                                        <a href="{page['url']}" target="_blank" class="video-link">
-                                            <span class="link-icon">🔗</span> 動画を見る
-                                        </a>
+                                    <div class="info-section">
+                                        <div class="info-item">
+                                            <span class="info-label">📊 ステータス</span>
+                                            <span class="info-value status-badge">{page['status']}</span>
+                                        </div>
+                                        <div class="info-item">
+                                            <a href="{page['url']}" target="_blank" class="video-link">
+                                                <span class="link-icon">🔗</span> 動画を見る
+                                            </a>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        """, unsafe_allow_html=True)
+                    else:  # リスト表示
+                        st.markdown(f"""
+                        <div class="video-list-item glass-container">
+                            <div class="video-list-content">
+                                <div class="video-list-header">
+                                    <h3 class="video-title">🎥 {page['title']}</h3>
+                                    <span class="status-badge">{page['status']}</span>
+                                </div>
+                                <div class="video-list-details">
+                                    <span class="list-info-item">📺 {page['channel']}</span>
+                                    <span class="list-info-item">👁️ {page['view_count']:,}回</span>
+                                    <span class="list-info-item">⏱️ {page['duration']}</span>
+                                    <span class="list-info-item">📅 {datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M:%S')}</span>
+                                    <a href="{page['url']}" target="_blank" class="video-link">
+                                        <span class="link-icon">🔗</span> 動画を見る
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
             elif not success:
                 st.error(pages)  # エラーメッセージを表示
             else:
@@ -337,7 +365,7 @@ try:
     # サイドバーの設定と保存済みデータの準備
     try:
         notion_helper = NotionHelper()
-        search_query, sort_by, sort_order = setup_sidebar()
+        search_query, sort_by, sort_order, view_style = setup_sidebar()
     except Exception as e:
         st.sidebar.error(f"データの読み込みに失敗しました: {str(e)}")
         logger.error(f"Error loading saved data: {str(e)}")
@@ -598,7 +626,7 @@ try:
 
     # 保存済みデータの表示（最下部）
     try:
-        display_saved_data(notion_helper, search_query, sort_by, sort_order == "ascending")
+        display_saved_data(notion_helper, search_query, sort_by, sort_order == "ascending", view_style)
     except Exception as e:
         st.error(f"保存済みデータの表示中にエラーが発生しました: {str(e)}")
         logger.error(f"Error displaying saved data: {str(e)}")
