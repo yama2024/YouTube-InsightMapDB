@@ -42,6 +42,61 @@ try:
 
     load_css()
 
+    # サイドバーの設定
+    def setup_sidebar():
+        with st.sidebar:
+            st.markdown("## 🔍 保存済みデータ検索")
+            search_query = st.text_input("検索", placeholder="タイトルまたはチャンネル名で検索")
+            sort_by = st.selectbox(
+                "並び替え",
+                options=["analysis_date", "view_count"],
+                format_func=lambda x: {
+                    "analysis_date": "分析日時",
+                    "view_count": "視聴回数"
+                }[x]
+            )
+            sort_order = st.radio(
+                "並び順",
+                options=["descending", "ascending"],
+                format_func=lambda x: "降順" if x == "descending" else "昇順",
+                horizontal=True
+            )
+            return search_query, sort_by, sort_order
+
+    # データ一覧の表示
+    def display_saved_data(notion_helper, search_query, sort_by, ascending):
+        try:
+            success, pages = notion_helper.get_video_pages(
+                search_query=search_query,
+                sort_by=sort_by,
+                ascending=(sort_order == "ascending")
+            )
+            
+            if success and pages:
+                st.markdown("## 📚 保存済み分析データ")
+                
+                for page in pages:
+                    with st.expander(f"🎥 {page['title']}"):
+                        col1, col2, col3 = st.columns([2, 1, 1])
+                        with col1:
+                            st.markdown(f"**チャンネル:** {page['channel']}")
+                            st.markdown(f"**分析日時:** {page['analysis_date']}")
+                        with col2:
+                            st.markdown(f"**視聴回数:** {page['view_count']:,}回")
+                            st.markdown(f"**動画時間:** {page['duration']}")
+                        with col3:
+                            st.markdown(f"**ステータス:** {page['status']}")
+                            st.markdown(f"[動画を見る]({page['url']})")
+            elif not success:
+                st.error(pages)  # エラーメッセージを表示
+            else:
+                st.info("保存された分析データがありません")
+                
+        except Exception as e:
+            st.error(f"データの表示中にエラーが発生しました: {str(e)}")
+            logger.error(f"Error displaying saved data: {str(e)}")
+
+
     def copy_text_block(text, label=""):
         try:
             if label:
@@ -244,6 +299,15 @@ try:
             st.error("要約の表示中にエラーが発生しました")
 
     # Feature Introduction
+    # サイドバーの設定と保存済みデータの表示
+    try:
+        notion_helper = NotionHelper()
+        search_query, sort_by, sort_order = setup_sidebar()
+        display_saved_data(notion_helper, search_query, sort_by, sort_order == "ascending")
+    except Exception as e:
+        st.sidebar.error(f"データの読み込みに失敗しました: {str(e)}")
+        logger.error(f"Error loading saved data: {str(e)}")
+
     st.markdown('''
     <div class="glass-container feature-container">
         <h4 class="section-header" style="margin-top: 0;">🎯 Advanced Content Analysis</h4>

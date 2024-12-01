@@ -343,3 +343,77 @@ class NotionHelper:
         except Exception as e:
             logger.error(f"Notionへの保存中にエラーが発生しました: {str(e)}")
             return False, f"保存に失敗しました: {str(e)}"
+    def get_video_pages(self, search_query=None, sort_by="analysis_date", ascending=False):
+        """
+        保存された動画ページの一覧を取得する
+
+        Parameters:
+        - search_query (str, optional): 検索クエリ
+        - sort_by (str): ソートするプロパティ名
+        - ascending (bool): 昇順にするかどうか
+
+        Returns:
+        - list: ページ情報のリスト
+        """
+        try:
+            # フィルター設定
+            filter_params = {
+                "database_id": self.database_id,
+                "sorts": [{
+                    "property": sort_by,
+                    "direction": "ascending" if ascending else "descending"
+                }]
+            }
+
+            # 検索クエリがある場合
+            if search_query:
+                filter_params["filter"] = {
+                    "or": [
+                        {
+                            "property": "name",
+                            "title": {
+                                "contains": search_query
+                            }
+                        },
+                        {
+                            "property": "channel",
+                            "rich_text": {
+                                "contains": search_query
+                            }
+                        }
+                    ]
+                }
+
+            # データの取得
+            response = self.notion.databases.query(**filter_params)
+            
+            # 結果の整形
+            pages = []
+            for page in response.get("results", []):
+                properties = page.get("properties", {})
+                
+                # 基本情報の取得
+                title = properties.get("name", {}).get("title", [{}])[0].get("text", {}).get("content", "No Title")
+                channel = properties.get("channel", {}).get("rich_text", [{}])[0].get("text", {}).get("content", "No Channel")
+                url = properties.get("url", {}).get("url", "")
+                view_count = properties.get("view_count", {}).get("number", 0)
+                duration = properties.get("duration", {}).get("rich_text", [{}])[0].get("text", {}).get("content", "")
+                analysis_date = properties.get("analysis_date", {}).get("date", {}).get("start", "")
+                status = properties.get("status", {}).get("status", {}).get("name", "Unknown")
+                
+                pages.append({
+                    "id": page.get("id"),
+                    "title": title,
+                    "channel": channel,
+                    "url": url,
+                    "view_count": view_count,
+                    "duration": duration,
+                    "analysis_date": analysis_date,
+                    "status": status
+                })
+            
+            return True, pages
+
+        except Exception as e:
+            logger.error(f"動画ページの取得中にエラーが発生しました: {str(e)}")
+            return False, f"データの取得に失敗しました: {str(e)}"
