@@ -8,6 +8,7 @@ import os
 import time
 import logging
 import json
+from datetime import datetime, timezone, timedelta
 
 # Set up logging
 logging.basicConfig(
@@ -80,7 +81,13 @@ try:
                         col1, col2, col3 = st.columns([2, 1, 1])
                         with col1:
                             st.markdown(f"**チャンネル:** {page['channel']}")
-                            st.markdown(f"**分析日時:** {page['analysis_date']}")
+                            # UTC文字列をdatetimeオブジェクトに変換
+                            utc_dt = datetime.fromisoformat(page['analysis_date'].replace('Z', '+00:00'))
+                            # JSTに変換（UTC+9）
+                            jst_dt = utc_dt.astimezone(timezone(timedelta(hours=9)))
+                            # フォーマットを'YYYY-MM-DD HH:mm:ss (JST)'に変更
+                            formatted_date = jst_dt.strftime('%Y-%m-%d %H:%M:%S (JST)')
+                            st.markdown(f"**分析日時:** {formatted_date}")
                         with col2:
                             st.markdown(f"**視聴回数:** {page['view_count']:,}回")
                             st.markdown(f"**動画時間:** {page['duration']}")
