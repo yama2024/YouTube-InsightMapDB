@@ -203,6 +203,8 @@ try:
         }
     if 'current_summary_style' not in st.session_state:
         st.session_state.current_summary_style = "overview"  # Default to overview
+    if 'show_saved_data' not in st.session_state:
+        st.session_state.show_saved_data = True  # デフォルトで表示
 
     def update_step_progress(step_name: str, completed: bool = True):
         """Update the completion status of a processing step"""
@@ -626,7 +628,15 @@ try:
 
     # 保存済みデータの表示（最下部）
     try:
-        display_saved_data(notion_helper, search_query, sort_by, sort_order == "ascending", view_style)
+        # トグルボタンで表示/非表示を切り替え
+        show_data = st.toggle("保存済み分析データを表示", value=st.session_state.show_saved_data)
+        
+        # セッション状態を更新
+        st.session_state.show_saved_data = show_data
+        
+        # トグルがオンの場合のみデータを表示
+        if show_data:
+            display_saved_data(notion_helper, search_query, sort_by, sort_order == "ascending", view_style)
     except Exception as e:
         st.error(f"保存済みデータの表示中にエラーが発生しました: {str(e)}")
         logger.error(f"Error displaying saved data: {str(e)}")
