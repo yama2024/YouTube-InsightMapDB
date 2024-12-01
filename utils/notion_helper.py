@@ -417,3 +417,156 @@ class NotionHelper:
         except Exception as e:
             logger.error(f"動画ページの取得中にエラーが発生しました: {str(e)}")
             return False, f"データの取得に失敗しました: {str(e)}"
+
+    def update_video_page(self, page_id, video_info=None, summary=None, transcript=None, mindmap=None, proofread_text=None):
+        """
+        既存の動画ページを更新する
+
+        Parameters:
+        - page_id (str): 更新するページのID
+        - video_info (dict): 動画情報
+        - summary (str): 要約テキスト
+        - transcript (str): 文字起こし
+        - mindmap (str): マインドマップ
+        - proofread_text (str): 校正済みテキスト
+
+        Returns:
+        - tuple: (成功したかどうか, メッセージ)
+        """
+        try:
+            # 更新するプロパティの準備
+            properties = {}
+            
+            if video_info:
+                properties.update({
+                    "name": {"title": [{"text": {"content": video_info['title']}}]},
+                    "channel": {"rich_text": [{"text": {"content": video_info['channel_title']}}]},
+                    "url": {"url": video_info['url']},
+                    "view_count": {"number": video_info['view_count']},
+                    "duration": {"rich_text": [{"text": {"content": video_info['duration']}}]},
+                    "status": {"status": {"name": "Updated"}},
+                    "last_updated": {"date": {"start": datetime.now().isoformat()}}
+                })
+
+            # ページの更新
+            response = self.notion.pages.update(
+                page_id=page_id,
+                properties=properties
+            )
+
+            # コンテンツブロックの更新
+            if any([summary, transcript, mindmap, proofread_text]):
+                blocks = []
+                
+                if summary:
+                    blocks.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": "要約:\n" + summary}}]
+                        }
+                    })
+                
+                if transcript:
+                    blocks.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": "文字起こし:\n" + transcript}}]
+                        }
+                    })
+                
+                if mindmap:
+                    blocks.append({
+                        "object": "block",
+                        "type": "code",
+                        "code": {
+                            "language": "mermaid",
+                            "rich_text": [{"type": "text", "text": {"content": mindmap}}]
+                        }
+                    })
+                
+                if proofread_text:
+                    blocks.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": "校正済みテキスト:\n" + proofread_text}}]
+                        }
+                    })
+
+                # 既存のブロックを削除
+                existing_blocks = self.notion.blocks.children.list(block_id=page_id)
+                for block in existing_blocks.get("results", []):
+                    self.notion.blocks.delete(block_id=block["id"])
+
+                # 新しいブロックを追加
+                self.notion.blocks.children.append(
+                    block_id=page_id,
+                    children=blocks
+                )
+
+            return True, "ページを更新しました"
+
+        except Exception as e:
+            logger.error(f"ページの更新中にエラーが発生しました: {str(e)}")
+            return False, f"更新に失敗しました: {str(e)}"
+
+    def sync_pages(self, local_data=None):
+        """
+        NotionデータベースとローカルデータとのSync処理を行う
+
+        Parameters:
+        - local_data (dict): ローカルのデータ（オプション）
+
+        Returns:
+        - tuple: (成功したかどうか, 同期結果のメッセージ)
+        """
+        try:
+            # Notionからデータを取得
+            success, pages = self.get_video_pages()
+            if not success:
+                return False, "Notionからのデータ取得に失敗しました"
+
+            sync_results = {
+                "updated": 0,
+                "failed": 0,
+                "skipped": 0
+            }
+
+            # ローカルデータがある場合は同期処理を実行
+            if local_data:
+                for page in pages:
+                    page_id = page["id"]
+                    local_video = local_data.get(page_id)
+                    
+                    if not local_video:
+                        sync_results["skipped"] += 1
+                        continue
+
+                    # 更新が必要かチェック
+                    needs_update = (
+                        local_video.get("status") != page.get("status") or
+                        local_video.get("view_count") != page.get("view_count")
+                    )
+
+                    if needs_update:
+                        success, _ = self.update_video_page(
+                            page_id=page_id,
+                            video_info=local_video
+                        )
+                        if success:
+                            sync_results["updated"] += 1
+                        else:
+                            sync_results["failed"] += 1
+                    else:
+                        sync_results["skipped"] += 1
+
+            return True, f"""同期完了:
+            - 更新: {sync_results['updated']}件
+            - 失敗: {sync_results['failed']}件
+            - スキップ: {sync_results['skipped']}件"""
+
+        except Exception as e:
+            logger.error(f"同期処理中にエラーが発生しました: {str(e)}")
+            return False, f"同期に失敗しました: {str(e)}"
